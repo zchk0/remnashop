@@ -163,10 +163,7 @@ async def on_export(
         await dialog_manager.switch_to(state=RemnashopPlans.MAIN)
 
     except ValueError:
-        await notifier.notify_user(
-            user=user,
-            payload=MessagePayloadDto(i18n_key="ntf-plan.export-failed"),
-        )
+        await notifier.notify_user(user, i18n_key="ntf-plan.export-failed")
 
 
 @inject
@@ -312,10 +309,7 @@ async def on_tag_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
 
     if message.text is None:
-        await notifier.notify_user(
-            user=user,
-            payload=MessagePayloadDto(i18n_key="ntf-common.invalid-value"),
-        )
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
     current_plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)

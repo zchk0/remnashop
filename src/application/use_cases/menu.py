@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Final, Optional
 
 from src.application.common import Interactor, TranslatorRunner
 from src.application.common.dao import PlanDao, SettingsDao, SubscriptionDao
@@ -61,3 +61,6 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
             referral_url=referral_url,
             custom_buttons=custom_buttons,
         )
+
+
+MENU_USE_CASES: Final[tuple[type[Interactor], ...]] = (GetMenuData,)

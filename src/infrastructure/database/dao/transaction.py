@@ -112,7 +112,7 @@ class TransactionDaoImpl(TransactionDao):
         logger.debug(f"Transaction '{payment_id}' existence status is '{is_exists}'")
         return is_exists
 
-    async def cancel_old_pending(self, minutes: int = 30) -> int:
+    async def cancel_old(self, minutes: int = 30) -> int:
         threshold = datetime_now() - timedelta(minutes=minutes)
 
         stmt = (

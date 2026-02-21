@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from loguru import logger
 
@@ -41,3 +42,6 @@ class GetLogs(Interactor[None, GetLogsResultDto]):
 
         logger.info(f"Log file '{log_path}' prepared for user '{actor.telegram_id}'")
         return GetLogsResultDto(path=log_path, display_name=display_name)
+
+
+LOGS_USE_CASES: Final[tuple[type[Interactor], ...]] = (GetLogs,)

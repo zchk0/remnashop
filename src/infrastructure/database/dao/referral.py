@@ -147,3 +147,21 @@ class ReferralDaoImpl(ReferralDao):
             f"Total rewards amount for user '{telegram_id}' with type '{reward_type}' is '{total}'"
         )
         return int(total)
+
+    async def get_referral_chain(
+        self,
+        referred_id: int,
+    ) -> tuple[Optional[ReferralDto], Optional[ReferralDto]]:
+        first_level = await self.get_by_referred_id(referred_id)
+        if not first_level:
+            return None, None
+
+        second_level = await self.get_by_referred_id(first_level.referrer.telegram_id)
+
+        logger.debug(
+            f"Referral chain for user '{referred_id}': "
+            f"level 1 '{first_level.referrer.telegram_id}', "
+            f"level 2 '{second_level.referrer.telegram_id if second_level else 'none'}'"
+        )
+
+        return first_level, second_level

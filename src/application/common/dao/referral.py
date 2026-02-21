@@ -34,3 +34,8 @@ class ReferralDao(Protocol):
         telegram_id: int,
         reward_type: ReferralRewardType,
     ) -> int: ...
+
+    async def get_referral_chain(
+        self,
+        referred_id: int,
+    ) -> tuple[Optional[ReferralDto], Optional[ReferralDto]]: ...

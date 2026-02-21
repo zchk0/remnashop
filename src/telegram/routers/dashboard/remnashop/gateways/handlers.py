@@ -10,6 +10,7 @@ from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao
 from src.application.dto import MessagePayloadDto, UserDto
 from src.application.use_cases.payment_gateway import (
+    CreateTestPayment,
     MovePaymentGatewayUp,
     TogglePaymentGatewayActive,
     UpdatePaymentGatewaySettings,
@@ -40,7 +41,7 @@ async def on_gateway_select(
     logger.info(f"{user.log} Gateway '{gateway_id}' selected")
 
     if not gateway.settings:
-        await notifier.notify_user(user=user, i18n_key="ntf-gateway.not-configurable")
+        await notifier.notify_user(user, i18n_key="ntf-gateway.not-configurable")
         return
 
     dialog_manager.dialog_data["gateway_id"] = gateway_id
@@ -53,6 +54,7 @@ async def on_gateway_test(
     widget: Button,
     dialog_manager: DialogManager,
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
+    create_test_payment: FromDishka[CreateTestPayment],
     notifier: FromDishka[Notifier],
 ) -> None:
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
@@ -64,16 +66,13 @@ async def on_gateway_test(
 
     if gateway.settings and not gateway.settings.is_configured:
         logger.warning(f"{user.log} Gateway '{gateway_id}' is not configured")
-        await notifier.notify_user(user=user, i18n_key="ntf-gateway.not-configured")
+        await notifier.notify_user(user, i18n_key="ntf-gateway.not-configured")
         return
 
     logger.info(f"{user.log} Testing gateway '{gateway_id}'")
 
     try:
-        payment = await payment_gateway_dao.create_test_payment(
-            user, gateway.type
-        )  # тут должен быть usecase а не дао
-        logger.info(f"{user.log} Test payment successful for gateway '{gateway_id}'")
+        payment = await create_test_payment(user, gateway.type)
         await notifier.notify_user(
             user=user,
             payload=MessagePayloadDto(
@@ -86,7 +85,7 @@ async def on_gateway_test(
         logger.exception(
             f"{user.log} Test payment failed for gateway '{gateway_id}'. Exception: {e}"
         )
-        await notifier.notify_user(user=user, i18n_key="ntf-gateway.test-payment-error")
+        await notifier.notify_user(user, i18n_key="ntf-gateway.test-payment-error")
         raise
 
 
@@ -104,7 +103,7 @@ async def on_active_toggle(
     try:
         await toggle_payment_gateway_active(user, gateway_id)
     except GatewayNotConfiguredError:
-        await notifier.notify_user(user=user, i18n_key="ntf-gateway.not-configured")
+        await notifier.notify_user(user, i18n_key="ntf-gateway.not-configured")
 
 
 async def on_field_select(
@@ -134,7 +133,7 @@ async def on_field_input(
 
     if not message.text:
         logger.warning(f"{user.log} Empty input for field '{selected_field}'")
-        await notifier.notify_user(user=user, i18n_key="ntf-gateway.field-wrong-value")
+        await notifier.notify_user(user, i18n_key="ntf-gateway.field-wrong-value")
         return
 
     try:
@@ -148,10 +147,7 @@ async def on_field_input(
         )
         await dialog_manager.switch_to(state=RemnashopGateways.SETTINGS)
     except ValueError:
-        await notifier.notify_user(
-            user=user,
-            payload=MessagePayloadDto(i18n_key="ntf-gateway.field-wrong-value"),
-        )
+        await notifier.notify_user(user, i18n_key="ntf-gateway.field-wrong-value")
 
 
 @inject

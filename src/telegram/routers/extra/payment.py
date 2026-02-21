@@ -6,6 +6,11 @@ from dishka import FromDishka
 from loguru import logger
 
 from src.application.dto import UserDto
+from src.application.use_cases.payment_gateway import (
+    ProcessPayment,
+    ProcessPaymentDto,
+)
+from src.core.enums import TransactionStatus
 
 router = Router(name=__name__)
 
@@ -25,7 +30,7 @@ async def on_successful_payment(
     message: Message,
     user: UserDto,
     bot: Bot,
-    # payment_gateway_service: FromDishka[PaymentGatewayService],
+    process_payment: FromDishka[ProcessPayment],
 ) -> None:
     payment = message.successful_payment
 
@@ -38,5 +43,9 @@ async def on_successful_payment(
             user_id=user.telegram_id,
             telegram_payment_charge_id=payment.telegram_payment_charge_id,
         )
-
-    # await payment_gateway_service.handle_payment_succeeded(payment_id=UUID(payment.invoice_payload))
+    await process_payment.system(
+        ProcessPaymentDto(
+            payment_id=UUID(payment.invoice_payload),
+            new_transaction_status=TransactionStatus.COMPLETED,
+        )
+    )

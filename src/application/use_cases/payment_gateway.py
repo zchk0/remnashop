@@ -1,13 +1,20 @@
 import uuid
 from dataclasses import dataclass
-from typing import Any, Final, Optional
+from typing import Any, Final
 from uuid import UUID
 
 from loguru import logger
 from pydantic import SecretStr
 
-from src.application.common import Interactor, Notifier, TranslatorHub
-from src.application.common.dao import PaymentGatewayDao, TransactionDao
+from src.application.common import EventPublisher, Interactor, TranslatorHub
+from src.application.common.dao import (
+    PaymentGatewayDao,
+    ReferralDao,
+    SubscriptionDao,
+    TransactionDao,
+    UserDao,
+)
+from src.application.common.notifier import Notifier
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import (
@@ -18,7 +25,6 @@ from src.application.dto import (
     UserDto,
 )
 from src.application.dto.payment_gateway import (
-    AnyGatewaySettingsDto,
     CryptomusGatewaySettingsDto,
     CryptopayGatewaySettingsDto,
     HeleketGatewaySettingsDto,
@@ -27,11 +33,16 @@ from src.application.dto.payment_gateway import (
     YookassaGatewaySettingsDto,
     YoomoneyGatewaySettingsDto,
 )
+from src.application.events import UserPurchaseEvent
+from src.application.use_cases.referral import AssignReferralRewards, AssignReferralRewardsDto
 from src.core.enums import Currency, PaymentGatewayType, PurchaseType, TransactionStatus
 from src.core.exceptions import GatewayNotConfiguredError
-from src.core.utils.i18n_helpers import i18n_format_days
-from src.infrastructure.payment_gateways import PaymentGatewayFactory
-from src.infrastructure.payment_gateways.base import BasePaymentGateway
+from src.core.utils.i18n_helpers import (
+    i18n_format_days,
+    i18n_format_device_limit,
+    i18n_format_traffic_limit,
+)
+from src.infrastructure.payment_gateways import BasePaymentGateway, PaymentGatewayFactory
 
 
 class GetPaymentGatewayInstance(Interactor[PaymentGatewayType, BasePaymentGateway]):
@@ -218,29 +229,24 @@ class CreatePaymentDto:
 
 
 class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
-    required_permission = None
+    required_permission = Permission.PUBLIC
 
     def __init__(
         self,
         uow: UnitOfWork,
         payment_gateway_dao: PaymentGatewayDao,
         transaction_dao: TransactionDao,
-        gateway_factory: PaymentGatewayFactory,
+        get_payment_gateway_instance: GetPaymentGatewayInstance,
         translator_hub: TranslatorHub,
     ) -> None:
         self.uow = uow
         self.payment_gateway_dao = payment_gateway_dao
         self.transaction_dao = transaction_dao
-        self.gateway_factory = gateway_factory
+        self.get_payment_gateway_instance = get_payment_gateway_instance
         self.translator_hub = translator_hub
 
     async def _execute(self, actor: UserDto, data: CreatePaymentDto) -> PaymentResultDto:
-        gateway = await self.payment_gateway_dao.get_by_type(data.gateway_type)
-
-        if not gateway:
-            raise ValueError(f"Payment gateway of type '{data.gateway_type}' not found")
-
-        gateway_instance = self.gateway_factory(gateway)
+        gateway_instance = await self.get_payment_gateway_instance.system(data.gateway_type)
         i18n = self.translator_hub.get_translator_by_locale(actor.language)
 
         key, kw = i18n_format_days(data.plan_snapshot.duration)
@@ -253,6 +259,7 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
 
         transaction = TransactionDto(
             payment_id=uuid.uuid4(),
+            user_telegram_id=actor.telegram_id,
             status=TransactionStatus.PENDING,
             purchase_type=data.purchase_type,
             gateway_type=gateway_instance.data.type,
@@ -285,29 +292,24 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
 
 
 class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
-    required_permission = None
+    required_permission = Permission.REMNASHOP_GATEWAYS
 
     def __init__(
         self,
         uow: UnitOfWork,
         payment_gateway_dao: PaymentGatewayDao,
         transaction_dao: TransactionDao,
-        gateway_factory: PaymentGatewayFactory,
+        get_payment_gateway_instance: GetPaymentGatewayInstance,
         translator_hub: TranslatorHub,
     ) -> None:
         self.uow = uow
         self.payment_gateway_dao = payment_gateway_dao
         self.transaction_dao = transaction_dao
-        self.gateway_factory = gateway_factory
+        self.get_payment_gateway_instance = get_payment_gateway_instance
         self.translator_hub = translator_hub
 
     async def _execute(self, actor: UserDto, gateway_type: PaymentGatewayType) -> PaymentResultDto:
-        gateway = await self.payment_gateway_dao.get_by_type(gateway_type)
-
-        if not gateway:
-            raise ValueError(f"Payment gateway of type '{gateway_type}' not found")
-
-        gateway_instance = self.gateway_factory(gateway)
+        gateway_instance = await self.get_payment_gateway_instance.system(gateway_type)
         i18n = self.translator_hub.get_translator_by_locale(actor.language)
 
         test_pricing = PriceDetailsDto.test()
@@ -321,6 +323,7 @@ class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
         async with self.uow:
             transaction = TransactionDto(
                 payment_id=payment.id,
+                user_telegram_id=actor.telegram_id,
                 status=TransactionStatus.PENDING,
                 is_test=True,
                 purchase_type=PurchaseType.NEW,
@@ -336,81 +339,124 @@ class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
         return payment
 
 
-# class ProcessPaymentWebhook(Interactor[tuple[UUID, TransactionStatus], None]):
-#     def __init__(
-#         self,
-#         uow: UnitOfWork,
-#         transaction_dao: TransactionDao,
-#         subscription_dao: SubscriptionDao,
-#         notifier: Notifier,
-#         referral_dao: ReferralDao,
-#     ) -> None:
-#         self.uow = uow
-#         self.transaction_dao = transaction_dao
-#         self.subscription_dao = subscription_dao
-#         self.referral_dao = referral_dao
-#         self.notifier = notifier
-
-#     async def _execute(self, actor: UserDto, data: tuple[UUID, TransactionStatus]) -> None:
-#         payment_id, new_status = data
-
-#         async with self.uow:
-#             transaction = await self.transaction_dao.get(payment_id)
-
-#             if not transaction or not transaction.user:
-#                 logger.critical(f"Transaction or user not found for '{payment_id}'")
-#                 return
-
-#             if transaction.is_completed:
-#                 logger.warning(f"Transaction '{payment_id}' for user '{transaction.user.telegram_id}' already completed")
-#                 return
-
-#             if new_status == TransactionStatus.CANCELED:
-#                 transaction.status = TransactionStatus.CANCELED
-#                 await self.transaction_dao.update(transaction)
-#                 await self.uow.commit()
-#                 logger.info(f"Payment canceled '{payment_id}' for user '{transaction.user.telegram_id}'")
-#                 return
-
-#             if new_status == TransactionStatus.COMPLETED:
-#                 transaction.status = TransactionStatus.COMPLETED
-#                 await self.transaction_dao.update(transaction)
-
-#                 await self._handle_success(transaction)
-#                 await self.uow.commit()
-#                 logger.info(f"Payment succeeded '{payment_id}' for user '{transaction.user.telegram_id}'")
-
-#     async self._handle_success(self, transaction: TransactionDto) -> None:
-#         if transaction.is_test:
-#             await self.notification_service.notify_user(
-#                 user=transaction.user,
-#                 i18n_key="ntf-gateway-test-payment-confirmed"
-#             )
-#             return
-
-#         subscription = await self.subscription_service.get_current(transaction.user.telegram_id)
+@dataclass(frozen=True)
+class ProcessPaymentDto:
+    payment_id: UUID
+    new_transaction_status: TransactionStatus
 
 
-#         await self.notification_service.system_notify(
-#             ntf_type=SystemNotificationType.SUBSCRIPTION,
-#             payload=MessagePayload.not_deleted(
-#                 i18n_key=self._get_i18n_key(transaction.purchase_type),
-#                 i18n_kwargs={**i18n_kwargs, **extra_i18n_kwargs},
-#                 reply_markup=get_user_keyboard(transaction.user.telegram_id),
-#             ),
-#         )
+class ProcessPayment(Interactor[ProcessPaymentDto, None]):
+    required_permission = None
 
-#         await purchase_subscription_task.kiq(transaction, subscription)
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        user_dao: UserDao,
+        transaction_dao: TransactionDao,
+        subscription_dao: SubscriptionDao,
+        referral_dao: ReferralDao,
+        event_publisher: EventPublisher,
+        notifier: Notifier,
+        assign_referral_rewards: AssignReferralRewards,
+    ) -> None:
+        self.uow = uow
+        self.user_dao = user_dao
+        self.transaction_dao = transaction_dao
+        self.subscription_dao = subscription_dao
+        self.referral_dao = referral_dao
+        self.event_publisher = event_publisher
+        self.notifier = notifier
+        self.assign_referral_rewards = assign_referral_rewards
 
-#         if not transaction.pricing.is_free:
-#             await self.referral_service.assign_referral_rewards(transaction=transaction)
+    async def _execute(self, actor: UserDto, data: ProcessPaymentDto) -> None:
+        payment_id = data.payment_id
+        new_status = data.new_transaction_status
 
-#     def _get_i18n_key(self, p_type: PurchaseType) -> str:
-#         return {
-#             PurchaseType.NEW: "ntf-event-subscription-new",
-#             PurchaseType.RENEW: "ntf-event-subscription-renew",
-#             PurchaseType.CHANGE: "ntf-event-subscription-change",
-#         }[p_type]
+        async with self.uow:
+            transaction = await self.transaction_dao.get_by_payment_id(payment_id)
+
+            if not transaction:
+                logger.critical(f"Transaction not found for '{payment_id}'")
+                return
+
+            user = await self.user_dao.get_by_telegram_id(transaction.user_telegram_id)
+
+            if not user:
+                logger.critical(f"User not found for transaction '{payment_id}'")
+                return
+
+            if transaction.is_completed:
+                logger.warning(
+                    f"Transaction '{payment_id}' for user '{user.telegram_id}' already completed"
+                )
+                return
+
+            if new_status == TransactionStatus.CANCELED:
+                await self.transaction_dao.update_status(payment_id, TransactionStatus.CANCELED)
+                await self.uow.commit()
+                logger.info(f"Payment canceled '{payment_id}' for user '{user.telegram_id}'")
+                return
+
+            elif new_status == TransactionStatus.COMPLETED:
+                await self.transaction_dao.update_status(payment_id, TransactionStatus.COMPLETED)
+                await self._handle_success(user, transaction)
+                await self.uow.commit()
+                logger.info(f"Payment succeeded '{payment_id}' for user '{user.telegram_id}'")
+
+            else:
+                logger.warning(
+                    f"Received unhandled transaction status '{new_status}' "
+                    f"for payment '{payment_id}', user '{user.telegram_id}'"
+                )
+
+    async def _handle_success(self, user: UserDto, transaction: TransactionDto) -> None:
+        if transaction.is_test:
+            await self.notifier.notify_user(user, i18n_key="ntf-gateway.test-payment-confirmed")
+            return
+
+        subscription = await self.subscription_dao.get_current(user.telegram_id)
+        old_plan = subscription.plan_snapshot if subscription else None
+
+        event = UserPurchaseEvent(
+            telegram_id=user.telegram_id,
+            name=user.name,
+            username=user.username,
+            #
+            purchase_type=transaction.purchase_type,
+            payment_id=transaction.payment_id,
+            gateway_type=transaction.gateway_type,
+            final_amount=transaction.pricing.final_amount,
+            discount_percent=transaction.pricing.discount_percent,
+            original_amount=transaction.pricing.original_amount,
+            currency=transaction.currency.symbol,
+            #
+            plan_name=transaction.plan_snapshot.name,
+            plan_type=transaction.plan_snapshot.type,
+            plan_traffic_limit=i18n_format_traffic_limit(transaction.plan_snapshot.traffic_limit),
+            plan_device_limit=i18n_format_device_limit(transaction.plan_snapshot.device_limit),
+            plan_duration=i18n_format_days(transaction.plan_snapshot.duration),
+            #
+            previous_plan_name=old_plan.name if old_plan else "N/A",
+            previous_plan_type={
+                "key": "plan-type",
+                "plan_type": old_plan.type if old_plan else "N/A",
+            },
+            previous_plan_traffic_limit=i18n_format_traffic_limit(old_plan.traffic_limit)
+            if old_plan
+            else "N/A",
+            previous_plan_device_limit=i18n_format_device_limit(old_plan.device_limit)
+            if old_plan
+            else "N/A",
+            previous_plan_duration=i18n_format_days(old_plan.duration) if old_plan else "N/A",
+        )
+
+        await self.event_publisher.publish(event)
+
+        # await purchase_subscription_task.kiq(transaction, subscription)
+
+        if not transaction.pricing.is_free:
+            await self.assign_referral_rewards.system(AssignReferralRewardsDto(user, transaction))
+
 
 GATEWAYS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     GetPaymentGatewayInstance,
@@ -420,4 +466,5 @@ GATEWAYS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     CreateDefaultPaymentGateway,
     CreatePayment,
     CreateTestPayment,
+    ProcessPayment,
 )

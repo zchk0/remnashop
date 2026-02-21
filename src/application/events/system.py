@@ -1,11 +1,20 @@
 from dataclasses import asdict, dataclass, field
+from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
 from aiogram.utils.formatting import Text
 
 from src.application.dto import BuildInfoDto, MediaDescriptorDto, MessagePayloadDto
-from src.core.enums import AccessMode, MediaType, SubscriptionStatus, SystemNotificationType
+from src.core.enums import (
+    AccessMode,
+    MediaType,
+    PaymentGatewayType,
+    PlanType,
+    PurchaseType,
+    SubscriptionStatus,
+    SystemNotificationType,
+)
 from src.core.types import NotificationType
 
 from .base import BaseEvent, SystemEvent
@@ -271,3 +280,52 @@ class NodeConnectionRestoredEvent(NodeStatusChangedEvent):
     @property
     def event_key(self) -> str:
         return "event-node.connection-restored"
+
+
+@dataclass(frozen=True, kw_only=True)
+class UserPurchaseEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=SystemNotificationType.SUBSCRIPTION,
+        init=False,
+    )
+
+    purchase_type: PurchaseType
+    payment_id: UUID
+    gateway_type: PaymentGatewayType
+    final_amount: Decimal
+    discount_percent: int
+    original_amount: Decimal
+    currency: str
+
+    plan_name: str
+    plan_type: PlanType
+    plan_traffic_limit: Any
+    plan_device_limit: Any
+    plan_duration: Any
+
+    previous_plan_name: Any = None
+    previous_plan_type: Any = None
+    previous_plan_traffic_limit: Any = None
+    previous_plan_device_limit: Any = None
+    previous_plan_duration: Any = None
+
+    def as_payload(self) -> "MessagePayloadDto":
+        from src.telegram.keyboards import get_user_keyboard  # noqa: PLC0415
+
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            i18n_kwargs={**asdict(self)},
+            reply_markup=get_user_keyboard(self.telegram_id),
+            disable_default_markup=False,
+            delete_after=None,
+        )
+
+    @property
+    def event_key(self) -> str:
+        match self.purchase_type:
+            case PurchaseType.NEW:
+                return "event-subscription.new"
+            case PurchaseType.RENEW:
+                return "event-subscription.renew"
+            case PurchaseType.CHANGE:
+                return "event-subscription.change"

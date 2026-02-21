@@ -1,3 +1,5 @@
+from typing import Final
+
 from loguru import logger
 
 from src.application.common import Interactor, Notifier, Redirect
@@ -32,3 +34,6 @@ class RedirectMenu(Interactor[int, None]):
 
         await self.notifier.notify_user(user, i18n_key="ntf-error.lost-context-restart")
         await self.redirect.to_main_menu(telegram_id)
+
+
+REDIRECT_USE_CASES: Final[tuple[type[Interactor], ...]] = (RedirectMenu,)

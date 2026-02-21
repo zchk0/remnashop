@@ -33,7 +33,7 @@ async def payments_webhook(
         gateway = await get_payment_gateway_instance.system(gateway_enum)
 
         if not gateway.data.is_active:
-            logger.warning(f"Webhook received for disabled payment gateway {gateway_enum}")
+            logger.warning(f"Webhook received for disabled payment gateway '{gateway_enum}'")
             return Response(status_code=status.HTTP_404_NOT_FOUND)
 
         payment_id, payment_status = await gateway.handle_webhook(request)
