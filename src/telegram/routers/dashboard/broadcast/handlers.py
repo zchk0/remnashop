@@ -17,13 +17,15 @@ from src.application.common import Notifier, TranslatorRunner
 from src.application.common.dao import BroadcastDao, SettingsDao
 from src.application.dto import MediaDescriptorDto, MessagePayloadDto, UserDto
 from src.application.services import BotService
-from src.application.use_cases.broadcast import (
+from src.application.use_cases.broadcast.commands.lifecycle import (
     CancelBroadcast,
-    DeleteBroadcast,
-    GetBroadcastAudienceCount,
-    GetBroadcastAudienceCountDto,
     StartBroadcast,
     StartBroadcastDto,
+)
+from src.application.use_cases.broadcast.commands.maintenance import DeleteBroadcast
+from src.application.use_cases.broadcast.queries.audience import (
+    GetBroadcastAudienceCount,
+    GetBroadcastAudienceCountDto,
 )
 from src.core.constants import USER_KEY
 from src.core.enums import BroadcastAudience, MediaType
@@ -172,6 +174,20 @@ async def on_content_input(
     if not (message.html_text or file_id):
         logger.warning(f"{user.log} Provided invalid or empty content")
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+        return
+
+    max_length = 1024 if file_id else 4096
+    if message.html_text and len(message.html_text) > max_length:
+        logger.warning(
+            f"{user.log} Message text exceeds limit: '{len(message.html_text)}' > '{max_length}'"
+        )
+        await notifier.notify_user(
+            user,
+            MessagePayloadDto(
+                i18n_key="ntf-broadcast.text-too-long",
+                i18n_kwargs={"max_limit": max_length},
+            ),
+        )
         return
 
     _update_payload(

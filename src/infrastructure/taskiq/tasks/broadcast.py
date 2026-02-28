@@ -9,18 +9,22 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.dao import BroadcastDao
 from src.application.dto import BroadcastDto, BroadcastMessageDto, UserDto
-from src.application.use_cases.broadcast import (
-    BulkUpdateBroadcastMessages,
-    ClearOldBroadcasts,
+from src.application.use_cases.broadcast.commands.lifecycle import (
     FinishBroadcast,
     FinishBroadcastDto,
-    GetBroadcastAudienceUsers,
-    GetBroadcastAudienceUsersDto,
+)
+from src.application.use_cases.broadcast.commands.messages import (
+    BulkUpdateBroadcastMessages,
     InitializeBroadcastMessages,
     InitializeBroadcastMessagesDto,
     UpdateBroadcastMessageStatus,
     UpdateBroadcastMessageStatusDto,
 )
+from src.application.use_cases.broadcast.queries.audience import (
+    GetBroadcastAudienceUsers,
+    GetBroadcastAudienceUsersDto,
+)
+from src.application.use_cases.misc.commands.maintenance import ClearOldBroadcasts
 from src.core.constants import BATCH_DELAY, BATCH_SIZE_20
 from src.core.enums import BroadcastMessageStatus, BroadcastStatus
 from src.core.utils.iterables import chunked
@@ -44,7 +48,7 @@ async def send_broadcast_task(
     users = await get_broadcast_audience_users.system(
         GetBroadcastAudienceUsersDto(broadcast.audience, plan_id)
     )
-    users = users * 5
+
     if not users:
         logger.warning(f"No users found for broadcast '{task_id}'")
         await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.COMPLETED))

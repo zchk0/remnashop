@@ -9,7 +9,7 @@ from src.application.common import TranslatorRunner
 from src.application.common.dao import PaymentGatewayDao, SettingsDao, SubscriptionDao
 from src.application.dto import PlanDto, PriceDetailsDto, UserDto
 from src.application.services import PricingService
-from src.application.use_cases.user import GetAvailablePlans
+from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
 from src.core.enums import PurchaseType
 from src.core.utils.i18n_helpers import (

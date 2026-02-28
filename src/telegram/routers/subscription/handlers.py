@@ -12,14 +12,14 @@ from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PlanDto, PlanSnapshotDto, UserDto
 from src.application.services import PricingService
-from src.application.use_cases.payment_gateway import (
+from src.application.use_cases.gateways.commands.payment import (
     CreatePayment,
     CreatePaymentDto,
     ProcessPayment,
     ProcessPaymentDto,
 )
-from src.application.use_cases.plan import MatchPlan, MatchPlanDto
-from src.application.use_cases.user import GetAvailablePlans
+from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
+from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.constants import PAYMENT_PREFIX, USER_KEY
 from src.core.enums import PaymentGatewayType, PurchaseType, TransactionStatus
 from src.telegram.states import Subscription

@@ -14,10 +14,10 @@ from src.core.utils.i18n_helpers import i18n_format_bytes_to_unit, i18n_format_s
 @inject
 async def system_getter(
     dialog_manager: DialogManager,
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    result = await remnawave.system.get_stats()
+    result = await remnawave_sdk.system.get_stats()
 
     return {
         "version": "",  # TODO: Add panel version
@@ -36,10 +36,10 @@ async def system_getter(
 @inject
 async def users_getter(
     dialog_manager: DialogManager,
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    result = await remnawave.system.get_stats()
+    result = await remnawave_sdk.system.get_stats()
 
     return {
         "users_total": result.users.total_users,
@@ -57,7 +57,7 @@ async def users_getter(
 @inject
 async def hosts_getter(
     dialog_manager: DialogManager,
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -67,7 +67,7 @@ async def hosts_getter(
         raise ValueError()
 
     current_page = await widget.get_page()
-    result = await remnawave.hosts.get_all_hosts()
+    result = await remnawave_sdk.hosts.get_all_hosts()
     hosts = []
 
     for host in result:
@@ -92,7 +92,7 @@ async def hosts_getter(
 @inject
 async def nodes_getter(
     dialog_manager: DialogManager,
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -102,7 +102,7 @@ async def nodes_getter(
         raise ValueError()
 
     current_page = await widget.get_page()
-    result = await remnawave.nodes.get_all_nodes()
+    result = await remnawave_sdk.nodes.get_all_nodes()
     nodes = []
 
     for node in result:
@@ -131,7 +131,7 @@ async def nodes_getter(
 @inject
 async def inbounds_getter(
     dialog_manager: DialogManager,
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -141,7 +141,7 @@ async def inbounds_getter(
         raise ValueError()
 
     current_page = await widget.get_page()
-    result = await remnawave.inbounds.get_all_inbounds()
+    result = await remnawave_sdk.inbounds.get_all_inbounds()
     inbounds = []
 
     for inbound in result.inbounds:  # type: ignore[attr-defined]

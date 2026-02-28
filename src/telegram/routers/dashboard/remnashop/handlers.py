@@ -7,8 +7,8 @@ from loguru import logger
 
 from src.application.common import Notifier, Redirect
 from src.application.dto import MediaDescriptorDto, MessagePayloadDto, UserDto
-from src.application.use_cases.logs import GetLogs
-from src.application.use_cases.user import RevokeRole
+from src.application.use_cases.misc.queries.logs import GetLogs
+from src.application.use_cases.user.commands.roles import RevokeRole
 from src.core.constants import LOG_DIR, USER_KEY
 from src.core.enums import MediaType
 from src.core.exceptions import LogsToFileDisabledError

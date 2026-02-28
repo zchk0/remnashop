@@ -190,3 +190,29 @@ class SubscriptionDaoImpl(SubscriptionDao):
         )
         result = await self.session.execute(stmt)
         return result.scalar() or 0
+
+    async def get_all_active_internal_squads(self) -> list[UUID]:
+        stmt = select(Subscription.plan_snapshot["internal_squads"].as_json()).where(
+            Subscription.status == SubscriptionStatus.ACTIVE,
+            Subscription.plan_snapshot["internal_squads"].is_not(None),
+        )
+
+        result = await self.session.execute(stmt)
+        raw_squads_lists = result.scalars().all()
+
+        unique_squads: set[UUID] = set()
+
+        for squad_list in raw_squads_lists:
+            if isinstance(squad_list, list):
+                for s in squad_list:
+                    try:
+                        unique_squads.add(UUID(s))
+                    except (ValueError, TypeError):
+                        continue
+
+        squads = list(unique_squads)
+
+        logger.debug(
+            f"Retrieved '{len(squads)}' unique internal squads from all active subscriptions"
+        )
+        return squads

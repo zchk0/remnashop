@@ -101,9 +101,9 @@ event-user =
     { $referrer_telegram_id ->
     [0] { empty }
     *[HAS]
-    <b>🤝 Реферер:</b>
+    <b>🤝 Пригласитель:</b>
     <blockquote>
-    • <b>ID</b>: <code>{ $referrer_telegram_id }</code>
+    • <b>ID</b>: <code>{ NUMBER($referrer_telegram_id, useGrouping: 0) }</code>
     • <b>Имя</b>: { $referrer_name } { $referrer_username -> 
         [0] { empty }
         *[HAS] (<a href="tg://user?id={ $referrer_telegram_id }">@{ $referrer_username }</a>)

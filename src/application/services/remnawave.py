@@ -5,9 +5,10 @@ from typing import cast
 from loguru import logger
 from remnapy.models.webhook import HwidUserDeviceDto, NodeDto
 
-from src.application.common import EventPublisher, Remnawave
+from src.application.common import EventPublisher
 from src.application.common.dao import SubscriptionDao, UserDao
 from src.application.common.uow import UnitOfWork
+from src.application.dto import UserDto
 from src.application.events import (
     NodeConnectionLostEvent,
     NodeConnectionRestoredEvent,
@@ -19,7 +20,10 @@ from src.application.events import (
     UserDeviceDeletedEvent,
     UserFirstConnectionEvent,
 )
-from src.application.use_cases.remnawave import SyncRemnaUser, SyncRemnaUserDto
+from src.application.use_cases.remnawave.commands.synchronization import (
+    SyncRemnaUser,
+    SyncRemnaUserDto,
+)
 from src.core.constants import DATETIME_FORMAT, IMPORTED_TAG
 from src.core.enums import SubscriptionStatus, UserNotificationType
 from src.core.types import RemnaUserDto
@@ -39,7 +43,6 @@ class RemnaWebhookService:
         uow: UnitOfWork,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave: Remnawave,
         event_bus: EventPublisher,
         #
         sync_user: SyncRemnaUser,
@@ -47,7 +50,6 @@ class RemnaWebhookService:
         self.uow = uow
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave = remnawave
         self.event_bus = event_bus
         #
         self.sync_user = sync_user
@@ -81,11 +83,13 @@ class RemnaWebhookService:
             RemnaUserEvent.LIMITED,
             RemnaUserEvent.EXPIRED,
         }:
-            await self._process_status(event, remna_user)
+            await self._process_status(user, event, remna_user)
 
         elif event == RemnaUserEvent.EXPIRED_24_HOURS_AGO:
             await self.event_bus.publish(
-                SubscriptionExpiredEvent(notification_type=UserNotificationType.EXPIRED_1_DAY_AGO)
+                SubscriptionExpiredEvent(
+                    user=user, notification_type=UserNotificationType.EXPIRED_1_DAY_AGO
+                )
             )
 
         elif event in {
@@ -98,7 +102,7 @@ class RemnaWebhookService:
                 RemnaUserEvent.EXPIRES_IN_48_HOURS: 2,
                 RemnaUserEvent.EXPIRES_IN_24_HOURS: 1,
             }
-            await self.event_bus.publish(SubscriptionExpiresEvent(day=expire_map[event]))
+            await self.event_bus.publish(SubscriptionExpiresEvent(user=user, day=expire_map[event]))
 
         elif event == RemnaUserEvent.FIRST_CONNECTED:
             await self.event_bus.publish(
@@ -256,7 +260,7 @@ class RemnaWebhookService:
             await self.uow.commit()
             logger.info(f"Successfully processed deletion for subscription '{remna_user.uuid}'")
 
-    async def _process_status(self, event: str, remna_user: RemnaUserDto) -> None:
+    async def _process_status(self, user: UserDto, event: str, remna_user: RemnaUserDto) -> None:
         new_status = SubscriptionStatus(remna_user.status)
 
         async with self.uow:
@@ -278,6 +282,7 @@ class RemnaWebhookService:
         if event == RemnaUserEvent.LIMITED:
             await self.event_bus.publish(
                 SubscriptionLimitedEvent(
+                    user=user,
                     is_trial=subscription.is_trial,
                     traffic_strategy=subscription.traffic_limit_strategy,
                     reset_time=i18n_format_expire_time(
@@ -292,7 +297,7 @@ class RemnaWebhookService:
                     f"more than 3 days passed"
                 )
                 return
-            await self.event_bus.publish(SubscriptionExpiredEvent())
+            await self.event_bus.publish(SubscriptionExpiredEvent(user=user))
 
 
 class RemnaUserEvent(StrEnum):

@@ -9,7 +9,7 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.dto import MenuButtonDto, UserDto
-from src.application.use_cases.menu_editor import (
+from src.application.use_cases.misc.commands.menu_editor import (
     ConfirmMenuButtonChanges,
     UpdateMenuButtonPayload,
     UpdateMenuButtonPayloadDto,

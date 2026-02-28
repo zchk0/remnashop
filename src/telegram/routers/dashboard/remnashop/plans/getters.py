@@ -263,12 +263,12 @@ async def allowed_users_getter(
 async def squads_getter(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
 
-    internal_response = await remnawave.internal_squads.get_internal_squads()
+    internal_response = await remnawave_sdk.internal_squads.get_internal_squads()
     internal_dict = {s.uuid: s.name for s in internal_response.internal_squads}
 
     if not plan.internal_squads:
@@ -278,7 +278,7 @@ async def squads_getter(
             internal_dict.get(squad, str(squad)) for squad in plan.internal_squads
         )
 
-    external_response = await remnawave.external_squads.get_external_squads()
+    external_response = await remnawave_sdk.external_squads.get_external_squads()
     external_dict = {s.uuid: s.name for s in external_response.external_squads}
     external_squad_data = external_dict.get(plan.external_squad) if plan.external_squad else False
 
@@ -292,12 +292,12 @@ async def squads_getter(
 async def internal_squads_getter(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
 
-    result = await remnawave.internal_squads.get_internal_squads()
+    result = await remnawave_sdk.internal_squads.get_internal_squads()
     existing_squad_uuids = {squad.uuid for squad in result.internal_squads}
 
     if plan.internal_squads:
@@ -325,12 +325,12 @@ async def internal_squads_getter(
 async def external_squads_getter(
     dialog_manager: DialogManager,
     retort: FromDishka[Retort],
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     **kwargs: Any,
 ) -> dict[str, Any]:
     plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
 
-    result = await remnawave.external_squads.get_external_squads()
+    result = await remnawave_sdk.external_squads.get_external_squads()
     existing_squad_uuids = {squad.uuid for squad in result.external_squads}
 
     if plan.external_squad and plan.external_squad not in existing_squad_uuids:

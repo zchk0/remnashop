@@ -30,6 +30,7 @@ from src.application.dto import (
 )
 from src.application.dto.message_payload import MediaDescriptorDto
 from src.application.events import ErrorEvent, SystemEvent
+from src.application.events.base import UserEvent
 from src.core.config import AppConfig
 from src.core.enums import Locale, Role
 from src.core.types import AnyKeyboard
@@ -78,6 +79,17 @@ class NotificationService(Notifier):
         roles: list[Role] = [Role.OWNER, Role.DEV, Role.ADMIN],
     ) -> None:
         await self.queue.enqueue(NotificationTaskDto(payload=payload, roles=roles))
+
+    @on_event(UserEvent)
+    async def on_user_event(self, event: UserEvent) -> None:
+        logger.info(f"Received '{event.event_type}' event")
+
+        settings: SettingsDto = await self.settings_dao.get()
+        if not settings.notifications.is_enabled(event.notification_type):
+            logger.info(f"Notification for '{event.notification_type}' is disabled, skipping")
+            return
+
+        await self.notify_user(event.user, event.as_payload())
 
     @on_event(SystemEvent)
     async def on_system_event(self, event: SystemEvent) -> None:

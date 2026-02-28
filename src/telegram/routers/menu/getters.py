@@ -8,7 +8,7 @@ from src.application.common import Remnawave, TranslatorRunner
 from src.application.common.dao import ReferralDao, SettingsDao, SubscriptionDao
 from src.application.dto import UserDto
 from src.application.services import BotService
-from src.application.use_cases.menu import GetMenuData
+from src.application.use_cases.misc.queries.menu import GetMenuData
 from src.core.config import AppConfig
 from src.core.exceptions import MenuRenderError
 from src.core.utils.i18n_helpers import (

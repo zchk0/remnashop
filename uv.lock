@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "aiogram"
-version = "3.22.0"
+version = "3.25.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -32,23 +32,23 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/92/2c/fe0845a97f6126357d20163ede8f76bc161f73122123c6548ca19d9a12c7/aiogram-3.22.0.tar.gz", hash = "sha256:c483f81e37aeea8e7f592c9bd14f6acc80d9b7a2698e296a45bf47ff60a98510", size = 1520414, upload-time = "2025-08-17T16:20:45.471Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/31/360c4ce76e60e9e7bcdda1af1ab4331d78837fbb22847a62121ad32b7672/aiogram-3.25.0.tar.gz", hash = "sha256:8a8b0c34f8c4ca8a6501b954abb0eeba26743449e35e20b70c0d810347354c3c", size = 1721010, upload-time = "2026-02-10T21:50:25.473Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/e5/9f9fae7b50ed502e33121dd62a7e9b076d00630eaafe1dd7fda64f7e8625/aiogram-3.22.0-py3-none-any.whl", hash = "sha256:1c6eceb078ff62cf0556a5466cf3e7e8119678c26cc56803b7ac5f73633934a8", size = 698216, upload-time = "2025-08-17T16:20:43.354Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/be/1090252415e192687985517162dbdcee2ec4150cda1fa52bf57ae1f1c2a8/aiogram-3.25.0-py3-none-any.whl", hash = "sha256:0243966e93fbde14e90c0dfd0b3776c637ebf7ddcca2c7ee81ecbd68d9490cce", size = 713972, upload-time = "2026-02-10T21:50:23.253Z" },
 ]
 
 [[package]]
 name = "aiogram-dialog"
-version = "2.4.0"
+version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiogram" },
     { name = "cachetools" },
     { name = "jinja2" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/b9/cfadb823578f9aff44f10928f8020dc4abda82078fba62295aae8869e894/aiogram_dialog-2.4.0.tar.gz", hash = "sha256:e8f0a811be3a58d1e48dfb9dd79108fd0e25c8ab7f8067c31c49f2f583ba4ecc", size = 80359, upload-time = "2025-07-08T22:41:41.078Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/6e/3d38f6d8207bcb13547534f31bd1d0a4f58f8b1463e1c434662e877a6d79/aiogram_dialog-2.5.0.tar.gz", hash = "sha256:b2deaec90091562aa0d6e606c54ac4abd7eefd4ec17cdb8058738b94b2c17235", size = 2058286, upload-time = "2026-02-24T23:02:52.32Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/50/d0/1c6511eb6840d06efbfba12cf6e59f688f9e314ab90af34027fa8069af75/aiogram_dialog-2.4.0-py3-none-any.whl", hash = "sha256:4e5fd8f7db66b6d252983c4025968b379069f4a2022db60bde36e5b91268b6ad", size = 112911, upload-time = "2025-07-08T22:41:47.61Z" },
+    { url = "https://files.pythonhosted.org/packages/44/10/60655e2c12b2cb26fa4d7311eb4f5ddd0e9a37330a162da78885509a3b19/aiogram_dialog-2.5.0-py3-none-any.whl", hash = "sha256:9d5aedb1603da813aab3c8d734383abee3e84c1186b07b7dc188289b3ea048db", size = 119679, upload-time = "2026-02-24T23:02:50.889Z" },
 ]
 
 [package.optional-dependencies]
@@ -1095,8 +1095,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "adaptix", specifier = "==3.0.0b11" },
-    { name = "aiogram", specifier = "~=3.22.0" },
-    { name = "aiogram-dialog", specifier = "~=2.4.0" },
+    { name = "aiogram", specifier = "~=3.25.0" },
+    { name = "aiogram-dialog", specifier = "~=2.5.0" },
     { name = "alembic", specifier = "~=1.16.5" },
     { name = "asyncpg", specifier = "~=0.30.0" },
     { name = "cryptography", specifier = ">=46.0.3" },
@@ -1118,7 +1118,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "aiogram-dialog", extras = ["tools"], specifier = "~=2.4.0" },
+    { name = "aiogram-dialog", extras = ["tools"], specifier = "~=2.5.0" },
     { name = "ftl-extract", specifier = ">=0.9.0" },
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "pytest", specifier = ">=8.4.2" },

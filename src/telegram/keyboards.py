@@ -1,9 +1,11 @@
 from typing import Final, Optional
 
+from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_dialog import StartMode
 from aiogram_dialog.widgets.kbd import CopyText, Group, ListGroup, Row, Start, Url, WebApp
+from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
@@ -55,12 +57,14 @@ connect_buttons = (
         url=Format("{connection_url}"),
         id="connect_miniapp",
         when=F["is_mini_app"] & F["connectable"],
+        style=Style(ButtonStyle.PRIMARY),
     ),
     Url(
         text=I18nFormat("btn-menu.connect"),
         url=Format("{connection_url}"),
         id="connect_sub_page",
         when=~F["is_mini_app"] & F["connectable"],
+        style=Style(ButtonStyle.PRIMARY),
     ),
 )
 
@@ -140,12 +144,14 @@ def get_channel_keyboard(channel_url: str) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="btn-requirement.channel-join",
             url=channel_url,
+            style=ButtonStyle.PRIMARY,
         ),
     )
     builder.row(
         InlineKeyboardButton(
             text="btn-requirement.channel-confirm",
             callback_data=CALLBACK_CHANNEL_CONFIRM,
+            style=ButtonStyle.SUCCESS,
         ),
     )
     return builder.as_markup()
@@ -157,6 +163,7 @@ def get_rules_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="btn-requirement.rules-accept",
             callback_data=CALLBACK_RULES_ACCEPT,
+            style=ButtonStyle.SUCCESS,
         ),
     )
     return builder.as_markup()
@@ -193,10 +200,12 @@ def get_remnashop_update_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="btn-remnashop-info.release-latest",
             url=f"{REPOSITORY}/releases/latest",
+            style=ButtonStyle.PRIMARY,
         ),
         InlineKeyboardButton(
             text="btn-remnashop-info.how-upgrade",
             url=f"{REPOSITORY}?tab=readme-ov-file#step-5--how-to-upgrade",
+            style=ButtonStyle.PRIMARY,
         ),
     )
 

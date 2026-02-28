@@ -1,3 +1,4 @@
+from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode
 from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.kbd import (
@@ -9,6 +10,7 @@ from aiogram_dialog.widgets.kbd import (
     SwitchTo,
     Url,
 )
+from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
@@ -50,6 +52,7 @@ menu = Window(
             id="trial",
             on_click=on_get_trial,
             when=F["trial_available"],
+            style=Style(ButtonStyle.SUCCESS),
         ),
     ),
     Row(

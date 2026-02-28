@@ -1,0 +1,69 @@
+from dataclasses import dataclass
+from typing import Optional
+
+from loguru import logger
+
+from src.application.common import Cryptographer, Interactor
+from src.application.common.dao import PlanDao
+from src.application.common.policy import Permission
+from src.application.common.uow import UnitOfWork
+from src.application.dto import PlanDto, UserDto
+from src.core.enums import PlanAvailability, PlanType
+from src.core.exceptions import PlanNameAlreadyExistsError, SquadsEmptyError, TrialDurationError
+
+
+@dataclass(frozen=True)
+class CommitPlanResultDto:
+    plan: Optional[PlanDto] = None
+    is_created: bool = False
+    is_updated: bool = False
+
+
+class CommitPlan(Interactor[PlanDto, CommitPlanResultDto]):
+    required_permission = Permission.REMNASHOP_PLAN_EDITOR
+
+    def __init__(self, uow: UnitOfWork, plan_dao: PlanDao, cryptographer: Cryptographer) -> None:
+        self.uow = uow
+        self.plan_dao = plan_dao
+        self.cryptographer = cryptographer
+
+    async def _execute(self, actor: UserDto, plan: PlanDto) -> CommitPlanResultDto:
+        if not plan.internal_squads:
+            logger.warning(f"{actor.log} Commit failed: squads list is empty")
+            raise SquadsEmptyError()
+
+        if plan.is_trial and len(plan.durations) > 1:
+            logger.warning(
+                f"{actor.log} Commit failed: trial plan has '{len(plan.durations)}' durations"
+            )
+            raise TrialDurationError()
+
+        if plan.type == PlanType.DEVICES:
+            plan.traffic_limit = 0
+        elif plan.type == PlanType.TRAFFIC:
+            plan.device_limit = 0
+        elif plan.type == PlanType.UNLIMITED:
+            plan.traffic_limit = 0
+            plan.device_limit = 0
+
+        if plan.availability != PlanAvailability.ALLOWED:
+            plan.allowed_user_ids = []
+
+        async with self.uow:
+            if plan.id:
+                await self.plan_dao.update(plan.as_fully_changed())
+                logger.info(f"{actor.log} Updated existing plan '{plan.name}' with ID '{plan.id}'")
+                await self.uow.commit()
+                return CommitPlanResultDto(plan, is_updated=True)
+
+            existing = await self.plan_dao.get_by_name(plan.name)
+            if existing:
+                logger.warning(f"{actor.log} Plan name '{plan.name}' already exists")
+                raise PlanNameAlreadyExistsError()
+
+            plan.public_code = self.cryptographer.generate_short_code(plan.name, length=8)
+            new_plan = await self.plan_dao.create(plan)
+            await self.uow.commit()
+
+        logger.info(f"{actor.log} Created new plan '{new_plan.name}'")
+        return CommitPlanResultDto(new_plan, is_created=True)

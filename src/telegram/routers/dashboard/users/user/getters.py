@@ -11,8 +11,8 @@ from remnapy.exceptions import NotFoundError
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PlanDao, SubscriptionDao, TransactionDao, UserDao
 from src.application.dto import PlanDurationDto, RemnaSubscriptionDto, SubscriptionDto, UserDto
-from src.application.use_cases.user import (
-    GetAvailablePlans,
+from src.application.use_cases.user.queries.plans import GetAvailablePlans
+from src.application.use_cases.user.queries.profile import (
     GetUserDevices,
     GetUserProfile,
     GetUserProfileSubscription,

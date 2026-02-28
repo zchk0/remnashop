@@ -5,7 +5,7 @@ from loguru import logger
 
 from src.application.common import EventPublisher
 from src.application.events import ErrorEvent
-from src.application.use_cases.payment_gateway import GetPaymentGatewayInstance
+from src.application.use_cases.gateways.queries.providers import GetPaymentGatewayInstance
 from src.core.config.app import AppConfig
 from src.core.constants import API_V1, PAYMENTS_WEBHOOK_PATH
 from src.core.enums import PaymentGatewayType

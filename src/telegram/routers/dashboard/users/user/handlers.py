@@ -12,25 +12,20 @@ from loguru import logger
 
 from src.application.common import Notifier, Redirect
 from src.application.common.dao import PlanDao, SubscriptionDao, TransactionDao, UserDao
-from src.application.dto import (
-    MessagePayloadDto,
-    UserDto,
+from src.application.dto import MessagePayloadDto, UserDto
+from src.application.use_cases.plan.commands.access import (
+    ToggleUserPlanAccess,
+    ToggleUserPlanAccessDto,
 )
-from src.application.use_cases.plan import ToggleUserPlanAccess, ToggleUserPlanAccessDto
-from src.application.use_cases.remnawave import (
+from src.application.use_cases.remnawave.commands.management import (
     DeleteUserDevice,
     DeleteUserDeviceDto,
     ResetUserTraffic,
 )
-from src.application.use_cases.subscription import (
+from src.application.use_cases.subscription.commands.management import (
     AddSubscriptionDuration,
     AddSubscriptionDurationDto,
-    CheckSubscriptionSyncState,
     DeleteSubscription,
-    SetUserSubscription,
-    SetUserSubscriptionDto,
-    SyncSubscriptionFromRemnashop,
-    SyncSubscriptionFromRemnawave,
     ToggleExternalSquad,
     ToggleExternalSquadDto,
     ToggleInternalSquad,
@@ -41,19 +36,29 @@ from src.application.use_cases.subscription import (
     UpdateTrafficLimit,
     UpdateTrafficLimitDto,
 )
-from src.application.use_cases.user import (
-    ChangeUserPoints,
-    ChangeUserPointsDto,
-    GetAvailablePlans,
-    GetUserDevices,
+from src.application.use_cases.subscription.commands.set_plan import (
+    SetUserSubscription,
+    SetUserSubscriptionDto,
+)
+from src.application.use_cases.subscription.commands.sync import (
+    CheckSubscriptionSyncState,
+    SyncSubscriptionFromRemnashop,
+    SyncSubscriptionFromRemnawave,
+)
+from src.application.use_cases.user.commands.blocking import ToggleUserBlockedStatus
+from src.application.use_cases.user.commands.messaging import (
     SendMessageToUser,
     SendMessageToUserDto,
+)
+from src.application.use_cases.user.commands.profile_edit import (
+    ChangeUserPoints,
+    ChangeUserPointsDto,
     SetUserPersonalDiscount,
     SetUserPersonalDiscountDto,
-    SetUserRole,
-    SetUserRoleDto,
-    ToggleUserBlockedStatus,
 )
+from src.application.use_cases.user.commands.roles import SetUserRole, SetUserRoleDto
+from src.application.use_cases.user.queries.plans import GetAvailablePlans
+from src.application.use_cases.user.queries.profile import GetUserDevices
 from src.core.constants import TARGET_TELEGRAM_ID, USER_KEY
 from src.core.enums import Role
 from src.core.utils.validators import parse_int

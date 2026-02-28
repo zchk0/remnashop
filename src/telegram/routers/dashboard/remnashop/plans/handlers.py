@@ -18,20 +18,18 @@ from remnapy.enums.users import TrafficLimitStrategy
 from src.application.common import Notifier
 from src.application.common.dao import PlanDao
 from src.application.dto import MediaDescriptorDto, MessagePayloadDto, PlanDto, UserDto
-from src.application.use_cases.plan import (
+from src.application.use_cases.plan.commands.access import (
     AddAllowedUserToPlan,
     AddAllowedUserToPlanDto,
+)
+from src.application.use_cases.plan.commands.commit import CommitPlan
+from src.application.use_cases.plan.commands.durations import (
     AddPlanDuration,
     AddPlanDurationDto,
-    CommitPlan,
-    DeletePlan,
-    ExportPlans,
-    MoveDurationUp,
-    MoveDurationUpDto,
-    MovePlanUp,
-    ParsePlansImport,
     RemovePlanDuration,
     RemovePlanDurationDto,
+)
+from src.application.use_cases.plan.commands.edit import (
     UpdatePlanDescription,
     UpdatePlanDescriptionDto,
     UpdatePlanDevice,
@@ -47,6 +45,13 @@ from src.application.use_cases.plan import (
     UpdatePlanType,
     UpdatePlanTypeDto,
 )
+from src.application.use_cases.plan.commands.order import (
+    DeletePlan,
+    MoveDurationUp,
+    MoveDurationUpDto,
+    MovePlanUp,
+)
+from src.application.use_cases.plan.exchange import ExportPlans, ParsePlansImport
 from src.core.constants import USER_KEY
 from src.core.enums import Currency, MediaType, PlanAvailability, PlanType
 from src.core.exceptions import (
@@ -679,11 +684,11 @@ async def on_squads(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
-    remnawave: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
     notifier: FromDishka[Notifier],
 ) -> None:
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
-    result = await remnawave.internal_squads.get_internal_squads()
+    result = await remnawave_sdk.internal_squads.get_internal_squads()
 
     if not result.internal_squads:
         logger.warning(f"{user.log} Cancelled transition: squads list is empty")

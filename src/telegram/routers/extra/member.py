@@ -6,7 +6,10 @@ from aiogram.types import ChatMemberUpdated
 from dishka import FromDishka
 
 from src.application.dto import UserDto
-from src.application.use_cases.user import SetBotBlockedStatus, SetBotBlockedStatusDto
+from src.application.use_cases.user.commands.blocking import (
+    SetBotBlockedStatus,
+    SetBotBlockedStatusDto,
+)
 
 # For only ChatType.PRIVATE (app/bot/filters/private.py)
 

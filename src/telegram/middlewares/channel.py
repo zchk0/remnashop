@@ -7,7 +7,7 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.dto import MessagePayloadDto, UserDto
-from src.application.use_cases.access import CheckChannelSubscription
+from src.application.use_cases.access.queries.requirements import CheckChannelSubscription
 from src.core.constants import CONTAINER_KEY, USER_KEY
 from src.core.enums import MiddlewareEventType
 from src.telegram.keyboards import CALLBACK_CHANNEL_CONFIRM, get_channel_keyboard

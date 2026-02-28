@@ -17,7 +17,7 @@ from src.application.events import (
     WebhookErrorEvent,
 )
 from src.application.services import CommandService, WebhookService
-from src.application.use_cases.payment_gateway import CreateDefaultPaymentGateway
+from src.application.use_cases.gateways.commands.payment import CreateDefaultPaymentGateway
 from src.core.config import AppConfig
 from src.core.utils.i18n_helpers import i18n_format_seconds
 from src.core.utils.time import get_uptime

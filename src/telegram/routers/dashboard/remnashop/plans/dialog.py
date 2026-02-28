@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.kbd import (
@@ -12,6 +13,7 @@ from aiogram_dialog.widgets.kbd import (
     Start,
     SwitchTo,
 )
+from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 from remnapy.enums.users import TrafficLimitStrategy
@@ -275,6 +277,7 @@ configurator = Window(
             text=I18nFormat("btn-plans.create"),
             id="create",
             on_click=on_plan_confirm,
+            style=Style(ButtonStyle.SUCCESS),
         ),
         when=~F["is_edit"],
     ),
@@ -283,11 +286,13 @@ configurator = Window(
             text=I18nFormat("btn-plans.save"),
             id="save",
             on_click=on_plan_confirm,
+            style=Style(ButtonStyle.SUCCESS),
         ),
         Button(
             text=I18nFormat("btn-plans.delete"),
             id="delete_plan",
             on_click=on_plan_delete,
+            style=Style(ButtonStyle.DANGER),
         ),
         when=F["is_edit"],
     ),

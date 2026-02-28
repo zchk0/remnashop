@@ -6,7 +6,7 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
 from src.application.dto import UserDto
-from src.application.use_cases.user import GetAdmins, GetAdminsResultDto
+from src.application.use_cases.user.commands.roles import GetAdmins, GetAdminsResultDto
 from src.core.config import AppConfig
 
 

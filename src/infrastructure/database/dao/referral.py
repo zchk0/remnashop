@@ -42,11 +42,15 @@ class ReferralDaoImpl(ReferralDao):
         )
 
     async def create_referral(self, referral: ReferralDto) -> ReferralDto:
-        referral_data = self.retort.dump(referral)
-        db_referral = Referral(**referral_data)
+        db_referral = Referral(
+            referrer_telegram_id=referral.referrer.telegram_id,
+            referred_telegram_id=referral.referred.telegram_id,
+            level=referral.level,
+        )
 
         self.session.add(db_referral)
         await self.session.flush()
+        await self.session.refresh(db_referral, attribute_names=["referrer", "referred"])
 
         logger.debug(
             f"Created referral: referrer '{referral.referrer.telegram_id}' "

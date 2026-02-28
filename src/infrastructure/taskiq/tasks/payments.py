@@ -2,14 +2,14 @@ from uuid import UUID
 
 from dishka.integrations.taskiq import FromDishka, inject
 
-from src.application.use_cases.payment_gateway import ProcessPayment, ProcessPaymentDto
-from src.application.use_cases.transaction import CancelOldTransactions
+from src.application.use_cases.gateways.commands.payment import ProcessPayment, ProcessPaymentDto
+from src.application.use_cases.misc.commands.maintenance import CancelOldTransactions
 from src.core.enums import TransactionStatus
 from src.infrastructure.taskiq.broker import broker
 
 
 @broker.task()
-@inject
+@inject(patch_module=True)
 async def handle_payment_transaction_task(
     payment_id: UUID,
     payment_status: TransactionStatus,
@@ -19,7 +19,7 @@ async def handle_payment_transaction_task(
 
 
 @broker.task(schedule=[{"cron": "*/30 * * * *"}])
-@inject
+@inject(patch_module=True)
 async def cancel_old_transactions_task(
     cancel_old_transactions: FromDishka[CancelOldTransactions],
 ) -> None:

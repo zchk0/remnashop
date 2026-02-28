@@ -1,5 +1,7 @@
+from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, Window
 from aiogram_dialog.widgets.kbd import Button, Column, Group, Row, Select, SwitchTo, Url
+from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
@@ -164,12 +166,14 @@ confirm = Window(
             text=I18nFormat("btn-subscription.pay"),
             url=Format("{url}"),
             when=F["url"],
+            style=Style(ButtonStyle.SUCCESS),
         ),
         Button(
             text=I18nFormat("btn-subscription.get"),
             id=f"{PAYMENT_PREFIX}get",
             on_click=on_get_subscription,
             when=~F["url"],
+            style=Style(ButtonStyle.SUCCESS),
         ),
     ),
     Row(

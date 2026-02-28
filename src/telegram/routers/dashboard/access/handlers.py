@@ -6,11 +6,13 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
 from src.application.dto import UserDto
-from src.application.use_cases.settings import (
+from src.application.use_cases.settings.commands.access import (
     ChangeAccessMode,
-    ToggleConditionRequirement,
     TogglePayments,
     ToggleRegistration,
+)
+from src.application.use_cases.settings.commands.requirements import (
+    ToggleConditionRequirement,
     UpdateChannelRequirement,
     UpdateRulesRequirement,
 )

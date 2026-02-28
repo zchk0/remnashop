@@ -35,3 +35,6 @@ class LatestNotifiedVersionKey(StorageKey, prefix="latest_notified_version"):
 
 
 class PaymentWaitlistKey(StorageKey, prefix="payment_waitlist"): ...
+
+
+class SyncRunningKey(StorageKey, prefix="sync_running"): ...

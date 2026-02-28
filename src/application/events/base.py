@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from src.application.dto import MessagePayloadDto
+from src.application.dto.user import UserDto
 from src.core.types import NotificationType
 from src.core.utils.time import datetime_now
 
@@ -37,4 +38,5 @@ class SystemEvent(BaseEvent): ...
 
 
 @dataclass(frozen=True, kw_only=True)
-class UserEvent(BaseEvent): ...
+class UserEvent(BaseEvent):
+    user: UserDto

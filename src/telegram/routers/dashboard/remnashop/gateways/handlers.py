@@ -9,14 +9,14 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao
 from src.application.dto import MessagePayloadDto, UserDto
-from src.application.use_cases.payment_gateway import (
-    CreateTestPayment,
+from src.application.use_cases.gateways.commands.configuration import (
     MovePaymentGatewayUp,
     TogglePaymentGatewayActive,
     UpdatePaymentGatewaySettings,
     UpdatePaymentGatewaySettingsDto,
 )
-from src.application.use_cases.settings import UpdateDefaultCurrency
+from src.application.use_cases.gateways.commands.payment import CreateTestPayment
+from src.application.use_cases.settings.commands.currency import UpdateDefaultCurrency
 from src.core.constants import USER_KEY
 from src.core.enums import Currency
 from src.core.exceptions import GatewayNotConfiguredError

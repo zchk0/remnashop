@@ -5,7 +5,8 @@ from dishka import AsyncContainer
 
 from src.application.common import Notifier
 from src.application.dto import MessagePayloadDto, UserDto
-from src.application.use_cases.access import AcceptRules, CheckRules
+from src.application.use_cases.access.commands.validation import AcceptRules
+from src.application.use_cases.access.queries.requirements import CheckRules
 from src.core.constants import CONTAINER_KEY, USER_KEY
 from src.core.enums import MiddlewareEventType
 from src.telegram.keyboards import CALLBACK_RULES_ACCEPT, get_rules_keyboard

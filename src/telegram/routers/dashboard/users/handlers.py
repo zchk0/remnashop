@@ -10,7 +10,8 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.policy import Permission, PermissionPolicy
 from src.application.dto import UserDto
-from src.application.use_cases.user import SearchUsers, SearchUsersDto, UnblockAllUsers
+from src.application.use_cases.user.commands.blocking import UnblockAllUsers
+from src.application.use_cases.user.queries.search import SearchUsers, SearchUsersDto
 from src.core.constants import USER_KEY
 from src.telegram.states import DashboardUsers
 from src.telegram.utils import is_double_click

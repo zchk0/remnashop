@@ -8,6 +8,7 @@ from .system import (
     NodeConnectionRestoredEvent,
     NodeTrafficReachedEvent,
     RemnawaveErrorEvent,
+    TrialActivatedEvent,
     UserDeviceAddedEvent,
     UserDeviceDeletedEvent,
     UserFirstConnectionEvent,
@@ -50,6 +51,7 @@ __all__ = [
     "ReferralRewardFailedEvent",
     "ReferralRewardReceivedEvent",
     #
+    "TrialActivatedEvent",
     "SubscriptionExpiredEvent",
     "SubscriptionExpiresEvent",
     "SubscriptionLimitedEvent",

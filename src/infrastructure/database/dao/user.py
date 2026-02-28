@@ -377,6 +377,19 @@ class UserDaoImpl(UserDao):
         logger.debug(f"Retrieved '{len(db_users)}' active non-blocked users")
         return self._convert_to_dto_list(db_users)
 
+    async def get_with_active_subscription(self) -> list[UserDto]:
+        stmt = (
+            select(User)
+            .join(Subscription, User.current_subscription_id == Subscription.id)
+            .where(
+                User.is_blocked.is_(False),
+                User.is_bot_blocked.is_(False),
+                Subscription.status == SubscriptionStatus.ACTIVE,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return self._convert_to_dto_list(list(result.scalars()))
+
     async def get_without_subscription(self) -> list[UserDto]:
         stmt = select(User).where(
             User.is_blocked.is_(False),

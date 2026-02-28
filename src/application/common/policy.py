@@ -59,6 +59,7 @@ class Permission(UpperStrEnum):
     USER_SUBSCRIPTION_EDITOR = auto()
     USER_SYNC = auto()
     #
+    IMPORTER = auto()
     ASSIGN_ROLE = auto()
     REVOKE_ROLE = auto()
     UNBLOCK_ALL = auto()

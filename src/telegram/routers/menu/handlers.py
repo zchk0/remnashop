@@ -11,12 +11,12 @@ from src.application.common import Notifier, Remnawave, TranslatorRunner
 from src.application.common.dao import SettingsDao, SubscriptionDao
 from src.application.dto import MediaDescriptorDto, MessagePayloadDto, PlanSnapshotDto, UserDto
 from src.application.services import BotService
-from src.application.use_cases.referral import GenerateReferralQr
-from src.application.use_cases.subscription import (
+from src.application.use_cases.referral.queries.code import GenerateReferralQr
+from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
 )
-from src.application.use_cases.user import GetAvailableTrial
+from src.application.use_cases.user.queries.plans import GetAvailableTrial
 from src.core.constants import USER_KEY
 from src.core.enums import MediaType
 from src.core.utils.i18n_helpers import i18n_format_expire_time

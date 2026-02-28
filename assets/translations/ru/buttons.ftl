@@ -159,7 +159,7 @@ btn-goto =
     .invite = 👥 Пригласить
     .subscription-renew = 🔄 Продлить подписку
     .user-profile = 👤 Перейти к пользователю
-    .referrer-profile = 🤝 Перейти к рефереру
+    .referrer-profile = 🤝 Перейти к пригласителю
     .contact-support = 📩 Перейти в поддержку
 
 btn-promocodes =

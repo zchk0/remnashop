@@ -7,7 +7,7 @@ from dishka.integrations.aiogram_dialog import inject
 
 from src.application.common import Notifier
 from src.application.dto import UserDto
-from src.application.use_cases.settings import (
+from src.application.use_cases.settings.commands.referral import (
     ToggleReferralSystem,
     UpdateReferralAccrualStrategy,
     UpdateReferralLevel,

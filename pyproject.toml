@@ -14,8 +14,8 @@ dependencies = [
     #
     "dishka~=1.7.2",
     "adaptix==3.0.0b11",
-    "aiogram~=3.22.0",
-    "aiogram-dialog~=2.4.0",
+    "aiogram~=3.25.0",
+    "aiogram-dialog~=2.5.0",
     "fluentogram~=1.2.1",
     #
     "asyncpg~=0.30.0",
@@ -38,7 +38,7 @@ repository = "https://github.com/snoups/remnashop"
 
 [dependency-groups]
 dev = [
-    "aiogram-dialog[tools]~=2.4.0",
+    "aiogram-dialog[tools]~=2.5.0",
     "mypy>=1.18.2",
     "ruff>=0.14.2",
     "pytest>=8.4.2",

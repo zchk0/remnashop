@@ -7,8 +7,8 @@ from dishka import AsyncContainer
 from loguru import logger
 
 from src.application.dto import TempUserDto
-from src.application.use_cases.access import CheckAccess, CheckAccessDto
-from src.application.use_cases.referral import ValidateReferralCode
+from src.application.use_cases.access.queries.availability import CheckAccess, CheckAccessDto
+from src.application.use_cases.referral.queries.code import ValidateReferralCode
 from src.core.constants import CONTAINER_KEY, PAYMENT_PREFIX, REFERRAL_PREFIX
 from src.core.enums import MiddlewareEventType
 
@@ -68,10 +68,9 @@ class AccessMiddleware(EventTypedMiddleware):
             return False
 
         code = parts[1]
+
         if code.startswith(REFERRAL_PREFIX):
             logger.debug(f"Detected referral event '{code}'")
-
-            await validate_referral_code.system(code)
-            return True
+            return await validate_referral_code.system(code)
 
         return False

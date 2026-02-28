@@ -33,6 +33,8 @@ def setup_routers(router: Router) -> None:
         #
         dashboard.users.dialog.router,
         dashboard.users.user.dialog.router,
+        #
+        dashboard.importer.dialog.router,
     ]
 
     router.include_routers(*routers)
