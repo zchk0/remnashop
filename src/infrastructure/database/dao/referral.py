@@ -12,6 +12,7 @@ from src.application.common.dao import ReferralDao
 from src.application.dto import ReferralDto, ReferralRewardDto, ReferralStatisticsDto
 from src.core.enums import ReferralLevel, ReferralRewardType
 from src.infrastructure.database.models import Referral, ReferralReward
+from src.infrastructure.database.models.user import User
 
 
 class ReferralDaoImpl(ReferralDao):
@@ -241,7 +242,7 @@ class ReferralDaoImpl(ReferralDao):
         top_referrer_stmt = (
             select(
                 Referral.referrer_telegram_id,
-                func.count().label("invited_count"),
+                func.count().label("referrals_count"),
             )
             .group_by(Referral.referrer_telegram_id)
             .order_by(func.count().desc())
@@ -264,10 +265,62 @@ class ReferralDaoImpl(ReferralDao):
             total_days_issued=int(reward_row["total_days_issued"] or 0),
             total_points_pending=int(reward_row["total_points_pending"] or 0),
             total_days_pending=int(reward_row["total_days_pending"] or 0),
-            top_referrer_invited_count=int(top_referrer_row["invited_count"])
+            top_referrer_referrals_count=int(top_referrer_row["referrals_count"])
             if top_referrer_row
             else 0,
             top_referrer_telegram_id=top_referrer_row["referrer_telegram_id"]
             if top_referrer_row
             else None,
         )
+
+    async def get_user_referral_stats(self, telegram_id: int) -> dict:
+        referrer_stmt = (
+            select(User.telegram_id, User.username)
+            .join(Referral, Referral.referrer_telegram_id == User.telegram_id)
+            .where(Referral.referred_telegram_id == telegram_id)
+        )
+
+        invited_stmt = select(
+            func.sum(case((Referral.level == ReferralLevel.FIRST, 1), else_=0)).label("level_1"),
+            func.sum(case((Referral.level == ReferralLevel.SECOND, 1), else_=0)).label("level_2"),
+        ).where(Referral.referrer_telegram_id == telegram_id)
+
+        rewards_stmt = select(
+            func.sum(
+                case(
+                    (
+                        and_(
+                            ReferralReward.is_issued.is_(True),
+                            ReferralReward.type == ReferralRewardType.POINTS,
+                        ),
+                        ReferralReward.amount,
+                    ),
+                    else_=0,
+                )
+            ).label("reward_points"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            ReferralReward.is_issued.is_(True),
+                            ReferralReward.type == ReferralRewardType.EXTRA_DAYS,
+                        ),
+                        ReferralReward.amount,
+                    ),
+                    else_=0,
+                )
+            ).label("reward_days"),
+        ).where(ReferralReward.user_telegram_id == telegram_id)
+
+        referrer_row = (await self.session.execute(referrer_stmt)).mappings().first()
+        invited_row = (await self.session.execute(invited_stmt)).mappings().one()
+        rewards_row = (await self.session.execute(rewards_stmt)).mappings().one()
+
+        return {
+            "referrer_telegram_id": referrer_row["telegram_id"] if referrer_row else None,
+            "referrer_username": referrer_row["username"] if referrer_row else None,
+            "referrals_level_1": int(invited_row["level_1"] or 0),
+            "referrals_level_2": int(invited_row["level_2"] or 0),
+            "reward_points": int(rewards_row["reward_points"] or 0),
+            "reward_days": int(rewards_row["reward_days"] or 0),
+        }

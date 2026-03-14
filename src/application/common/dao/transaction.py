@@ -1,7 +1,9 @@
+from datetime import datetime
 from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto
+from src.application.dto.statistics import UserPaymentStatsDto
 from src.core.enums import TransactionStatus
 
 
@@ -40,3 +42,8 @@ class TransactionDao(Protocol):
     async def get_gateway_stats(self) -> list[GatewayStatsDto]: ...
 
     async def get_plan_income(self) -> list[PlanIncomeDto]: ...
+
+    async def get_user_payment_stats(
+        self,
+        telegram_id: int,
+    ) -> tuple[Optional[datetime], list[UserPaymentStatsDto]]: ...

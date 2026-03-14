@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional, cast
 from uuid import UUID
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import TransactionDao
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto
+from src.application.dto.statistics import UserPaymentStatsDto
 from src.core.enums import TransactionStatus
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Transaction
@@ -262,4 +263,42 @@ class TransactionDaoImpl(TransactionDao):
                 total_income=float(row["total_income"] or 0),
             )
             for row in result.mappings()
+        ]
+
+    async def get_user_payment_stats(
+        self,
+        telegram_id: int,
+    ) -> tuple[Optional[datetime], list[UserPaymentStatsDto]]:
+        last_payment_stmt = (
+            select(Transaction.created_at)
+            .where(
+                Transaction.user_telegram_id == telegram_id,
+                Transaction.status == TransactionStatus.COMPLETED,
+            )
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+
+        amounts_stmt = (
+            select(
+                Transaction.currency.label("currency"),
+                func.sum(Transaction.pricing["final_amount"].as_float()).label("total_amount"),
+            )
+            .where(
+                Transaction.user_telegram_id == telegram_id,
+                Transaction.status == TransactionStatus.COMPLETED,
+                Transaction.pricing["final_amount"].as_float() > 0,
+            )
+            .group_by(Transaction.currency)
+        )
+
+        last_payment_at = await self.session.scalar(last_payment_stmt)
+        amounts_rows = (await self.session.execute(amounts_stmt)).mappings().all()
+
+        return last_payment_at, [
+            UserPaymentStatsDto(
+                currency=row["currency"].symbol,
+                total_amount=float(row["total_amount"] or 0),
+            )
+            for row in amounts_rows
         ]

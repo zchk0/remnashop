@@ -10,7 +10,9 @@ from remnapy.exceptions import NotFoundError
 
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PlanDao, SubscriptionDao, TransactionDao, UserDao
+from src.application.common.dao.referral import ReferralDao
 from src.application.dto import PlanDurationDto, RemnaSubscriptionDto, SubscriptionDto, UserDto
+from src.application.use_cases.statistics.queries.users import GetUserStatistics
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.application.use_cases.user.queries.profile import (
     GetUserDevices,
@@ -326,6 +328,62 @@ async def expire_time_getter(
     return {
         "expire_time": i18n_format_expire_time(subscription.expire_at),
         "durations": formatted_durations,
+    }
+
+
+@inject
+async def statistics_getter(
+    dialog_manager: DialogManager,
+    i18n: FromDishka[TranslatorRunner],
+    get_user_statistics: FromDishka[GetUserStatistics],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    target_telegram_id = dialog_manager.dialog_data[TARGET_TELEGRAM_ID]
+    data = await get_user_statistics.system(target_telegram_id)
+
+    payment_amounts = (
+        "\n".join(
+            i18n.get(
+                "msg-user-statistics-payment-amount",
+                currency=p.currency,
+                amount=p.total_amount,
+            )
+            for p in data.payment_amounts
+        )
+        or False
+    )
+
+    return {
+        "has_referrals": data.referrals_level_1 > 0,
+        "last_payment_at": data.last_payment_at or 0,
+        "payment_amounts": payment_amounts,
+        "registered_at": data.registered_at,
+        "referrer_telegram_id": data.referrer_telegram_id or 0,
+        "referrer_username": data.referrer_username or 0,
+        "referrals_level_1": data.referrals_level_1,
+        "referrals_level_2": data.referrals_level_2,
+        "reward_points": data.reward_points,
+        "reward_days": data.reward_days,
+    }
+
+
+@inject
+async def referrals_getter(
+    dialog_manager: DialogManager,
+    referral_dao: FromDishka[ReferralDao],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    target_telegram_id = dialog_manager.dialog_data[TARGET_TELEGRAM_ID]
+    referrals = await referral_dao.get_referrals_list(referrer_id=target_telegram_id, limit=100)
+
+    return {
+        "referrals": [
+            {
+                "telegram_id": r.referred.telegram_id,
+                "name": r.referred.name,
+            }
+            for r in referrals
+        ]
     }
 
 

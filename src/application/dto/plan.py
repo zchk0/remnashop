@@ -10,27 +10,6 @@ from src.core.enums import Currency, PlanAvailability, PlanType
 from .base import BaseDto, TimestampMixin, TrackableMixin
 
 
-@dataclass(frozen=True)
-class PlanSubStatsDto:
-    plan_id: int
-    plan_name: str
-    total_subs: int
-    active_subs: int
-    expired_subs: int
-    expiring_soon: int
-    total_unlimited: int
-    total_traffic: int
-    total_devices: int
-    popular_duration: int
-
-
-@dataclass(frozen=True)
-class PlanIncomeDto:
-    plan_id: int
-    currency: str
-    total_income: float
-
-
 @dataclass(kw_only=True)
 class PlanSnapshotDto:
     id: int

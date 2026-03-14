@@ -43,6 +43,7 @@ class RemnashopWelcomeEvent(BaseEvent):
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self)},
             reply_markup=get_remnashop_keyboard(),
+            disable_default_markup=False,
             delete_after=None,
         )
 
@@ -172,6 +173,7 @@ class BotUpdateEvent(SystemEvent):
             i18n_key=self.event_key,
             i18n_kwargs={**asdict(self)},
             reply_markup=get_remnashop_update_keyboard(),
+            disable_default_markup=False,
             delete_after=None,
         )
 

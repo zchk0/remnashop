@@ -106,6 +106,7 @@ btn-user =
     .discount = 💸 Изменить скидку
     .points = 💎 Изменить баллы
     .statistics = 📊 Статистика
+    .referrals = 👪 Рефералы
     .message = 📩 Сообщение
     .role = 👮‍♂️ Изменить роль
     .transactions = 🧾 Транзакции

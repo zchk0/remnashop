@@ -14,18 +14,6 @@ from .base import BaseDto, TimestampMixin, TrackableMixin
 from .plan import PlanSnapshotDto
 
 
-@dataclass(frozen=True)
-class SubscriptionStatsDto:
-    total: int
-    total_active: int
-    total_expired: int
-    active_trial: int
-    expiring_soon: int
-    total_unlimited: int
-    total_traffic: int
-    total_devices: int
-
-
 @dataclass(kw_only=True)
 class RemnaSubscriptionDto:
     uuid: UUID

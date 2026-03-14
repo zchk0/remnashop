@@ -90,6 +90,7 @@ class DashboardUser(StatesGroup):
     DISCOUNT = State()
     POINTS = State()
     STATISTICS = State()
+    REFERRALS = State()
     ROLE = State()
     TRANSACTIONS_LIST = State()
     TRANSACTION = State()

@@ -20,7 +20,6 @@ from magic_filter import F
 from src.core.enums import BannerName, SubscriptionStatus
 from src.telegram.keyboards import back_main_menu_button
 from src.telegram.routers.dashboard.broadcast.handlers import on_content_input, on_preview
-from src.telegram.routers.extra.test import show_dev_popup
 from src.telegram.states import DashboardUser, DashboardUsers
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 
@@ -34,8 +33,10 @@ from .getters import (
     give_subscription_getter,
     internal_squads_getter,
     points_getter,
+    referrals_getter,
     role_getter,
     squads_getter,
+    statistics_getter,
     subscription_duration_getter,
     subscription_getter,
     sync_getter,
@@ -76,6 +77,7 @@ from .handlers import (
     on_traffic_limit_select,
     on_transaction_select,
     on_transactions,
+    on_user_select,
 )
 
 user = Window(
@@ -90,10 +92,10 @@ user = Window(
         when=F["has_subscription"],
     ),
     Row(
-        Button(
+        SwitchTo(
             text=I18nFormat("btn-user.statistics"),
             id="statistics",
-            on_click=show_dev_popup,
+            state=DashboardUser.STATISTICS,
         ),
         Button(
             text=I18nFormat("btn-user.transactions"),
@@ -532,6 +534,58 @@ subscription_duration = Window(
     getter=subscription_duration_getter,
 )
 
+statistics = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-user-statistics"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-user.referrals"),
+            id="referrals",
+            state=DashboardUser.REFERRALS,
+        ),
+        when=F["has_referrals"],
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardUser.MAIN,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardUser.STATISTICS,
+    getter=statistics_getter,
+)
+
+referrals = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-user-referrals"),
+    ScrollingGroup(
+        Select(
+            text=Format("{item[telegram_id]} ({item[name]})"),
+            id="referral_select",
+            item_id_getter=lambda item: item["telegram_id"],
+            items="referrals",
+            type_factory=int,
+            on_click=on_user_select,
+        ),
+        id="scroll",
+        width=1,
+        height=7,
+        hide_on_single_page=True,
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardUser.MAIN,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardUser.REFERRALS,
+    getter=referrals_getter,
+)
+
 transactions_list = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-user-transactions"),
@@ -731,6 +785,8 @@ router = Dialog(
     sync_waiting,
     give_subscription,
     subscription_duration,
+    statistics,
+    referrals,
     transactions_list,
     transaction,
     message,

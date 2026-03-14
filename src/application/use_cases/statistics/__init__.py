@@ -6,7 +6,7 @@ from .queries.plans import GetPlanStatistics
 from .queries.referrals import GetReferralStatistics
 from .queries.subscriptions import GetSubscriptionStatistics
 from .queries.transactions import GetTransactionStatistics
-from .queries.users import GetUsersStatistics
+from .queries.users import GetUsersStatistics, GetUserStatistics
 
 STATISTICS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     GetUsersStatistics,
@@ -14,4 +14,5 @@ STATISTICS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     GetTransactionStatistics,
     GetPlanStatistics,
     GetReferralStatistics,
+    GetUserStatistics,
 )

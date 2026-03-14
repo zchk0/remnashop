@@ -261,7 +261,7 @@ msg-statistics-referrals =
         *[HAS] • <b>Топ реферрер</b>: { $top_referrer_username ->
             [0] { NUMBER($top_referrer_telegram_id, useGrouping: 0) }
             *[HAS] <a href="tg://user?id={ $top_referrer_telegram_id }">@{ $top_referrer_username }</a> 
-            } ({ $top_referrer_invited_count } приглашённых)
+            } ({ $top_referrer_referrals_count } приглашенных)
     }
     </blockquote>
 
@@ -397,6 +397,42 @@ msg-user-main =
     • Нет текущей подписки.
     </blockquote>
     }
+
+msg-user-statistics =
+    <b>📊 Статистика пользователя</b>
+
+    <blockquote>
+    • <b>Дата регистрации</b>: { $registered_at }
+    • <b>Последний платеж</b>: { $last_payment_at ->
+        [0] { unknown }
+        *[HAS] { $last_payment_at }
+    }
+    </blockquote>
+
+    <blockquote>
+    { $payment_amounts ->
+    [0] { empty }
+    *[HAS] { $payment_amounts }
+    }
+    </blockquote>
+
+    <blockquote>
+    • <b>Приглашен</b>: { $referrer_telegram_id ->
+        [0] { unknown }
+        *[HAS] { $referrer_username -> 
+            [0] { NUMBER($referrer_telegram_id, useGrouping: 0) }
+            *[HAS] <a href="tg://user?id={ $referrer_telegram_id }">@{ $referrer_username }</a>
+            }
+    }
+    • <b>Приглашенных (ур. 1)</b>: { $referrals_level_1 }
+    • <b>Приглашенных (ур. 2)</b>: { $referrals_level_2 }
+    • <b>Получено поинтов</b>: { $reward_points }
+    • <b>Получено дней</b>: { $reward_days }
+    </blockquote>
+
+msg-user-statistics-payment-amount = • <b>Оплачено ({ $currency })</b>: { $amount }
+
+msg-user-referrals = <b>👪 Рефералы пользователя</b>
 
 msg-user-sync = 
     <b>🌀 Синхронизировать пользователя</b>

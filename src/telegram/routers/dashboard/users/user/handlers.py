@@ -77,6 +77,17 @@ async def start_user_window(
     )
 
 
+async def on_user_select(
+    callback: CallbackQuery,
+    widget: Select,
+    dialog_manager: DialogManager,
+    selected_user: int,
+) -> None:
+    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    logger.info(f"{user.log} User id '{selected_user}' selected")
+    await start_user_window(manager=dialog_manager, target_telegram_id=selected_user)
+
+
 @inject
 async def on_block_toggle(
     callback: CallbackQuery,

@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 
 from src.application.common import Interactor
-from src.application.common.dao import SubscriptionDao, TransactionDao, UserDao
-from src.application.dto import UserDto
+from src.application.common.dao import ReferralDao, SubscriptionDao, TransactionDao, UserDao
+from src.application.dto import UserDto, UserStatisticsDto
 from src.core.utils.converters import percent
 
 
 @dataclass(frozen=True)
-class UserStatisticsDto:
+class UsersStatisticsDto:
     total_users: int
     new_users_daily: int
     new_users_weekly: int
@@ -21,7 +21,7 @@ class UserStatisticsDto:
     trial_conversion: float
 
 
-class GetUsersStatistics(Interactor[None, UserStatisticsDto]):
+class GetUsersStatistics(Interactor[None, UsersStatisticsDto]):
     required_permission = None
 
     def __init__(
@@ -34,7 +34,7 @@ class GetUsersStatistics(Interactor[None, UserStatisticsDto]):
         self.transaction_dao = transaction_dao
         self.subscription_dao = subscription_dao
 
-    async def _execute(self, actor: UserDto, data: None) -> UserStatisticsDto:
+    async def _execute(self, actor: UserDto, data: None) -> UsersStatisticsDto:
         total_users = await self.user_dao.count()
         blocked_users = await self.user_dao.count_blocked()
         bot_blocked_users = await self.user_dao.count_bot_blocked()
@@ -48,7 +48,7 @@ class GetUsersStatistics(Interactor[None, UserStatisticsDto]):
         total_trials = await self.subscription_dao.count_total_trials()
         converted_from_trial = await self.subscription_dao.count_converted_from_trial()
 
-        return UserStatisticsDto(
+        return UsersStatisticsDto(
             total_users=total_users,
             new_users_daily=new_daily,
             new_users_weekly=new_weekly,
@@ -60,4 +60,37 @@ class GetUsersStatistics(Interactor[None, UserStatisticsDto]):
             bot_blocked_users=bot_blocked_users,
             user_conversion=percent(paying_users, total_users),
             trial_conversion=percent(converted_from_trial, total_trials),
+        )
+
+
+class GetUserStatistics(Interactor[int, UserStatisticsDto]):
+    required_permission = None
+
+    def __init__(
+        self,
+        user_dao: UserDao,
+        transaction_dao: TransactionDao,
+        referral_dao: ReferralDao,
+    ) -> None:
+        self.user_dao = user_dao
+        self.transaction_dao = transaction_dao
+        self.referral_dao = referral_dao
+
+    async def _execute(self, actor: UserDto, telegram_id: int) -> UserStatisticsDto:
+        last_payment_at, payment_amounts = await self.transaction_dao.get_user_payment_stats(
+            telegram_id
+        )
+        user = await self.user_dao.get_by_telegram_id(telegram_id)
+        referral_stats = await self.referral_dao.get_user_referral_stats(telegram_id)
+
+        return UserStatisticsDto(
+            last_payment_at=last_payment_at,
+            payment_amounts=payment_amounts,
+            registered_at=user.created_at,  # type: ignore[arg-type, union-attr]
+            referrer_telegram_id=referral_stats["referrer_telegram_id"],
+            referrer_username=referral_stats["referrer_username"],
+            referrals_level_1=referral_stats["referrals_level_1"],
+            referrals_level_2=referral_stats["referrals_level_2"],
+            reward_points=referral_stats["reward_points"],
+            reward_days=referral_stats["reward_days"],
         )
