@@ -266,18 +266,18 @@ class UserDaoImpl(UserDao):
         logger.debug(f"Retrieved '{count}' blocked users")
         return count
 
-    async def has_any_subscription(self, telegram_id: int) -> bool:
+    async def has_any_subscription(self, telegram_id: int, *, include_trial: bool = True) -> bool:
         stmt = (
             select(func.count())
             .select_from(Subscription)
             .where(Subscription.user_telegram_id == telegram_id)
         )
+
+        if not include_trial:
+            stmt = stmt.where(Subscription.is_trial.is_(False))
+
         result = await self.session.execute(stmt)
         count = result.scalar() or 0
-
-        logger.debug(
-            f"Checked subscription status for user '{telegram_id}', found '{count}' active"
-        )
         return count > 0
 
     async def is_invited_user(self, telegram_id: int) -> bool:

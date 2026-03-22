@@ -21,7 +21,10 @@ class GetAvailablePlans(Interactor[UserDto, list[PlanDto]]):
 
         filtered_plans: list[PlanDto] = []
 
-        has_any_subscription = await self.user_dao.has_any_subscription(data.telegram_id)
+        has_any_subscription = await self.user_dao.has_any_subscription(
+            data.telegram_id,
+            include_trial=False,
+        )
         is_invited_user = await self.user_dao.is_invited_user(data.telegram_id)
 
         for plan in all_active_plans:
@@ -29,7 +32,7 @@ class GetAvailablePlans(Interactor[UserDto, list[PlanDto]]):
                 case PlanAvailability.ALL:
                     filtered_plans.append(plan)
 
-                case PlanAvailability.NEW if has_any_subscription:
+                case PlanAvailability.NEW if not has_any_subscription:
                     logger.info(f"{data.log} Eligible for new user plan '{plan.name}'")
                     filtered_plans.append(plan)
 
@@ -66,7 +69,10 @@ class GetAvailableTrial(Interactor[UserDto, Optional[PlanDto]]):
             logger.info(f"{data.log} No active trial plans found")
             return None
 
-        has_subscription = await self.user_dao.has_any_subscription(data.telegram_id)
+        has_subscription = await self.user_dao.has_any_subscription(
+            data.telegram_id,
+            include_trial=False,
+        )
         is_invited = await self.user_dao.is_invited_user(data.telegram_id)
 
         priority_map = {
@@ -136,7 +142,10 @@ class GetAvailablePlanByCode(Interactor[str, Optional[PlanDto]]):
         return plan
 
     async def _check_availability(self, user: UserDto, plan: PlanDto) -> bool:
-        has_sub = await self.user_dao.has_any_subscription(user.telegram_id)
+        has_subscription = await self.user_dao.has_any_subscription(
+            user.telegram_id,
+            include_trial=False,
+        )
         is_invited_user = await self.user_dao.is_invited_user(user.telegram_id)
 
         match plan.availability:
@@ -145,9 +154,9 @@ class GetAvailablePlanByCode(Interactor[str, Optional[PlanDto]]):
             case PlanAvailability.ALL:
                 return True
             case PlanAvailability.NEW:
-                return not has_sub
+                return not has_subscription
             case PlanAvailability.EXISTING:
-                return has_sub
+                return has_subscription
             case PlanAvailability.INVITED:
                 return is_invited_user
             case PlanAvailability.ALLOWED:
