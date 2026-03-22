@@ -52,6 +52,7 @@ class CryptomusGateway(BasePaymentGateway):
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(str(amount), str(uuid.uuid4()))
         headers = {"sign": self._generate_signature(json.dumps(payload))}
+        logger.debug(f"Creating payment payload: {payload}")
 
         try:
             response = await self._client.post("v1/payment", json=payload, headers=headers)

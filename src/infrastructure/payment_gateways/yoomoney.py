@@ -44,6 +44,7 @@ class YoomoneyGateway(BasePaymentGateway):
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payment_id = uuid.uuid4()
         payload = await self._create_payment_payload(str(amount), str(payment_id))
+        logger.debug(f"Creating payment payload: {payload}")
 
         try:
             response = await self._client.post(

@@ -46,8 +46,8 @@ class MulenPayGateway(BasePaymentGateway):
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         order_uuid = str(uuid.uuid4())
-        amount_str = f"{amount:.2f}"
-        payload = self._create_payment_payload(amount_str, details, order_uuid)
+        payload = self._create_payment_payload(str(amount), details, order_uuid)
+        logger.debug(f"Creating payment payload: {payload}")
 
         try:
             response = await self._client.post("v2/payments", json=payload)

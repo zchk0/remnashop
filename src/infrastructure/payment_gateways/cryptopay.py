@@ -41,6 +41,7 @@ class CryptoPayGateway(BasePaymentGateway):
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(str(amount), details)
+        logger.debug(f"Creating payment payload: {payload}")
 
         try:
             response = await self._client.post("createInvoice", json=payload)

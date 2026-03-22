@@ -44,6 +44,7 @@ class PlategaGateway(BasePaymentGateway):
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(amount, details)
+        logger.debug(f"Creating payment payload: {payload}")
 
         try:
             response = await self._client.post("transaction/process", json=payload)
@@ -97,6 +98,7 @@ class PlategaGateway(BasePaymentGateway):
 
     async def _create_payment_payload(self, amount: Decimal, details: str) -> dict[str, Any]:
         return {
+            "command": {},
             "paymentMethod": self.data.settings.payment_method,  # type: ignore[union-attr]
             "paymentDetails": {
                 "amount": float(amount),

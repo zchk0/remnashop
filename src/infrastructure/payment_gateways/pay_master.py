@@ -43,6 +43,7 @@ class PayMasterGateway(BasePaymentGateway):
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(str(amount), details)
         headers = {"Idempotency-Key": str(uuid.uuid4())}
+        logger.debug(f"Creating payment payload: {payload}")
 
         try:
             response = await self._client.post("invoices", json=payload, headers=headers)

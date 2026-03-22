@@ -16,6 +16,8 @@ class RemnawaveProvider(Provider):
         headers = {}
         headers["Authorization"] = f"Bearer {config.remnawave.token.get_secret_value()}"
         headers["X-Api-Key"] = config.remnawave.caddy_token.get_secret_value()
+        headers["CF-Access-Client-Id"] = config.remnawave.cf_client_id.get_secret_value()
+        headers["CF-Access-Client-Secret"] = config.remnawave.cf_client_secret.get_secret_value()
 
         if not config.remnawave.is_external:
             headers["x-forwarded-proto"] = "https"
