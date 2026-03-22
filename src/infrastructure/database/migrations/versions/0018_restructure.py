@@ -166,7 +166,7 @@ def upgrade() -> None:
     op.execute("UPDATE plans SET device_limit = 0 WHERE device_limit = -1")
     op.execute("UPDATE subscriptions SET traffic_limit = 0 WHERE traffic_limit = -1")
     op.execute("UPDATE subscriptions SET device_limit = 0 WHERE device_limit = -1")
-    op.execute("UPDATE plan_durations SET duration = 0 WHERE duration = -1")
+    op.execute("UPDATE plan_durations SET days = 0 WHERE days = -1")
 
     # 6. subscriptions — plan → plan_snapshot, add indexes
     op.alter_column("subscriptions", "plan", new_column_name="plan_snapshot")
@@ -704,7 +704,7 @@ def downgrade() -> None:
     op.execute("UPDATE plans SET device_limit = -1 WHERE device_limit = 0")
     op.execute("UPDATE subscriptions SET traffic_limit = -1 WHERE traffic_limit = 0")
     op.execute("UPDATE subscriptions SET device_limit = -1 WHERE device_limit = 0")
-    op.execute("UPDATE plan_durations SET duration = -1 WHERE duration = 0")
+    op.execute("UPDATE plan_durations SET days = -1 WHERE days = 0")
 
     # purchase_type → purchasetype
     op.execute("ALTER TYPE purchase_type RENAME TO purchasetype")

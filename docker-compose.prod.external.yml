@@ -42,7 +42,7 @@ services:
 
     ports:
       - 127.0.0.1:6767:${DATABASE_PORT:-5432}
-    
+
     volumes:
       - remnashop-db-data:/var/lib/postgresql/data
 
@@ -51,7 +51,7 @@ services:
       interval: 3s
       timeout: 10s
       retries: 3
-    
+
 
   remnashop-redis:
     image: valkey/valkey:9-alpine
@@ -60,7 +60,7 @@ services:
     <<: [*common, *logging, *env]
 
     command: >
-      --requirepass ${REDIS_PASSWORD}"
+      --requirepass ${REDIS_PASSWORD}
 
     volumes:
       - remnashop-redis-data:/data
@@ -73,7 +73,6 @@ services:
 
 
   remnashop:
-    image: ghcr.io/snoups/remnashop:latest
     container_name: "remnashop"
     hostname: remnashop
     <<: [*build, *common, *logging, *env]
@@ -83,7 +82,7 @@ services:
 
     ports:
       - 127.0.0.1:5000:${APP_PORT:-5000}
-    
+
     depends_on:
         remnashop-db:
           condition: service_healthy
@@ -97,7 +96,7 @@ services:
     <<: [*build, *common, *logging, *env]
 
     command: >
-        taskiq worker src.infrastructure.taskiq.worker:worker 
+        taskiq worker src.infrastructure.taskiq.worker:worker
         --ack-type when_received --tasks-pattern src/infrastructure/taskiq/tasks/*.py -fsd
 
     depends_on:
@@ -125,8 +124,8 @@ services:
 
 networks:
   remnawave-network:
-    name: remnawave-network 
-    driver: bridge 
+    name: remnawave-network
+    driver: bridge
     external: false
 
 volumes:
@@ -134,7 +133,7 @@ volumes:
     name: remnashop-db-data
     driver: local
     external: false
-    
+
   remnashop-redis-data:
     name: remnashop-redis-data
     driver: local
