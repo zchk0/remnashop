@@ -2,8 +2,8 @@ from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode
 from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.kbd import (
-    CopyText,
     Button,
+    CopyText,
     ListGroup,
     Row,
     Start,
@@ -25,16 +25,22 @@ from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.window import Window
 
-from .getters import device_confirm_delete_getter, devices_getter, invite_about_getter, invite_getter, menu_getter
+from .getters import (
+    device_confirm_delete_getter,
+    devices_getter,
+    invite_about_getter,
+    invite_getter,
+    menu_getter,
+)
 from .handlers import (
-    on_device_delete_confirm,
-    on_device_delete_request,
     on_device_delete_all_confirm,
     on_device_delete_all_request,
+    on_device_delete_confirm,
+    on_device_delete_request,
     on_get_trial,
     on_invite,
-    on_reissue_subscription_request,
     on_reissue_subscription_confirm,
+    on_reissue_subscription_request,
     on_show_qr,
     on_withdraw_points,
     show_reason,
