@@ -34,13 +34,11 @@ from .getters import (
 )
 from .handlers import (
     on_device_delete_all_confirm,
-    on_device_delete_all_request,
     on_device_delete_confirm,
     on_device_delete_request,
     on_get_trial,
     on_invite,
     on_reissue_subscription_confirm,
-    on_reissue_subscription_request,
     on_show_qr,
     on_withdraw_points,
     show_reason,
@@ -143,19 +141,19 @@ devices = Window(
         when=F["has_devices"],
     ),
     Row(
-        Button(
+        Start(
             text=I18nFormat("btn-devices.delete-all"),
             id="delete_all",
-            on_click=on_device_delete_all_request,
+            state=MainMenu.DEVICE_CONFIRM_DELETE_ALL,
             when=F["has_devices"],
             style=Style(ButtonStyle.DANGER),
         ),
     ),
     Row(
-        Button(
+        Start(
             text=I18nFormat("btn-devices.reissue"),
             id="reissue",
-            on_click=on_reissue_subscription_request,
+            state=MainMenu.DEVICE_CONFIRM_REISSUE,
             style=Style(ButtonStyle.PRIMARY),
         ),
     ),

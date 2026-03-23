@@ -7,11 +7,17 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import Notifier, Remnawave, TranslatorRunner
+from src.application.common import Notifier, TranslatorRunner
 from src.application.common.dao import SettingsDao, SubscriptionDao
 from src.application.dto import MediaDescriptorDto, MessagePayloadDto, PlanSnapshotDto, UserDto
 from src.application.services import BotService
 from src.application.use_cases.referral.queries.code import GenerateReferralQr
+from src.application.use_cases.remnawave.commands.management import (
+    DeleteUserAllDevices,
+    DeleteUserDevice,
+    DeleteUserDeviceDto,
+    ReissueSubscription,
+)
 from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
@@ -102,9 +108,8 @@ async def on_device_delete_confirm(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
-    subscription_dao: FromDishka[SubscriptionDao],
-    remnawave: FromDishka[Remnawave],
-    i18n: FromDishka[TranslatorRunner],
+    delete_user_device: FromDishka[DeleteUserDevice],
+    notifier: FromDishka[Notifier],
 ) -> None:
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     selected_short_hwid = dialog_manager.dialog_data.get("selected_short_hwid")
@@ -117,30 +122,11 @@ async def on_device_delete_confirm(
     if not full_hwid:
         raise ValueError(f"Full HWID not found for '{selected_short_hwid}'")
 
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
-    if not (current_subscription and current_subscription.device_limit):
-        raise ValueError("User has no active subscription or device limit unlimited")
-
-    await remnawave.delete_device(
-        user_uuid=current_subscription.user_remna_id,
-        hwid_uuid=full_hwid,
+    await delete_user_device(
+        user, DeleteUserDeviceDto(telegram_id=user.telegram_id, hwid=full_hwid)
     )
-    logger.info(f"{user.log} Deleted device '{full_hwid}'")
-    await callback.answer(
-        text=i18n.get("ntf-devices.deleted"),
-        show_alert=True,
-    )
+    await notifier.notify_user(user=user, i18n_key="ntf-devices.deleted")
     await dialog_manager.switch_to(state=MainMenu.DEVICES)
-
-
-@inject
-async def on_device_delete_all_request(
-    callback: CallbackQuery,
-    widget: Button,
-    dialog_manager: DialogManager,
-) -> None:
-    dialog_manager.dialog_data["selected_device_label"] = ""
-    await dialog_manager.switch_to(state=MainMenu.DEVICE_CONFIRM_DELETE_ALL)
 
 
 @inject
@@ -148,39 +134,13 @@ async def on_device_delete_all_confirm(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
-    subscription_dao: FromDishka[SubscriptionDao],
-    remnawave: FromDishka[Remnawave],
-    i18n: FromDishka[TranslatorRunner],
+    delete_user_all_devices: FromDishka[DeleteUserAllDevices],
+    notifier: FromDishka[Notifier],
 ) -> None:
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
-    hwid_map = dialog_manager.dialog_data.get("hwid_map", [])
-
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
-    if not (current_subscription and current_subscription.device_limit):
-        raise ValueError("User has no active subscription or device limit unlimited")
-
-    for device in hwid_map:
-        await remnawave.delete_device(
-            user_uuid=current_subscription.user_remna_id,
-            hwid_uuid=device["hwid"],
-        )
-
-    logger.info(f"{user.log} Deleted all devices ({len(hwid_map)})")
-
-    await callback.answer(
-        text=i18n.get("ntf-devices.all-deleted"),
-        show_alert=True,
-    )
+    await delete_user_all_devices(user)
+    await notifier.notify_user(user=user, i18n_key="ntf-devices.all-delete")
     await dialog_manager.switch_to(state=MainMenu.DEVICES)
-
-
-@inject
-async def on_reissue_subscription_request(
-    callback: CallbackQuery,
-    widget: Button,
-    dialog_manager: DialogManager,
-) -> None:
-    await dialog_manager.switch_to(state=MainMenu.DEVICE_CONFIRM_REISSUE)
 
 
 @inject
@@ -188,23 +148,12 @@ async def on_reissue_subscription_confirm(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
-    subscription_dao: FromDishka[SubscriptionDao],
-    remnawave: FromDishka[Remnawave],
-    i18n: FromDishka[TranslatorRunner],
+    reissue_subscription: FromDishka[ReissueSubscription],
+    notifier: FromDishka[Notifier],
 ) -> None:
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
-
-    if not current_subscription:
-        raise ValueError(f"No active subscription for user '{user.telegram_id}'")
-
-    await remnawave.revoke_subscription(current_subscription.user_remna_id)
-    logger.info(f"{user.log} Reissued subscription")
-
-    await callback.answer(
-        text=i18n.get("ntf-devices.reissued"),
-        show_alert=True,
-    )
+    await reissue_subscription(user)
+    await notifier.notify_user(user=user, i18n_key="ntf-devices.reissued")
     await dialog_manager.switch_to(state=MainMenu.DEVICES)
 
 
