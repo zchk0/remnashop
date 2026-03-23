@@ -113,7 +113,7 @@ services:
 
     command: >
         taskiq scheduler src.infrastructure.taskiq.scheduler:scheduler
-        --tasks-pattern src/infrastructure/taskiq/tasks -fsd
+        --tasks-pattern src/infrastructure/taskiq/tasks/*.py -fsd
 
     depends_on:
         remnashop-redis:

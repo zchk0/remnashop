@@ -40,6 +40,8 @@ class Remnawave(Protocol):
 
     async def reset_traffic(self, uuid: UUID) -> Optional[UserResponseDto]: ...
 
+    async def revoke_subscription(self, uuid: UUID) -> None: ...
+
     def apply_sync(
         self,
         target: T,

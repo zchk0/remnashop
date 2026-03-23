@@ -7,11 +7,17 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import Notifier, Remnawave, TranslatorRunner
+from src.application.common import Notifier, TranslatorRunner
 from src.application.common.dao import SettingsDao, SubscriptionDao
 from src.application.dto import MediaDescriptorDto, MessagePayloadDto, PlanSnapshotDto, UserDto
 from src.application.services import BotService
 from src.application.use_cases.referral.queries.code import GenerateReferralQr
+from src.application.use_cases.remnawave.commands.management import (
+    DeleteUserAllDevices,
+    DeleteUserDevice,
+    DeleteUserDeviceDto,
+    ReissueSubscription,
+)
 from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
@@ -80,40 +86,75 @@ async def on_get_trial(
 
 
 @inject
-async def on_device_delete(
+async def on_device_delete_request(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
-    subscription_dao: FromDishka[SubscriptionDao],
-    remnawave: FromDishka[Remnawave],
 ) -> None:
     selected_short_hwid = dialog_manager.item_id  # type: ignore[attr-defined]
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
-    hwid_map = dialog_manager.dialog_data.get("hwid_map")
+    hwid_map = dialog_manager.dialog_data.get("hwid_map", [])
+    device = next((d for d in hwid_map if d["short_hwid"] == selected_short_hwid), None)
 
-    if not hwid_map:
-        raise ValueError(f"Selected '{selected_short_hwid}' HWID, but 'hwid_map' is missing")
+    if not device:
+        raise ValueError(f"Device not found for hwid '{selected_short_hwid}'")
+
+    dialog_manager.dialog_data["selected_short_hwid"] = selected_short_hwid
+    dialog_manager.dialog_data["selected_device_label"] = device["label"]
+    await dialog_manager.switch_to(state=MainMenu.DEVICE_CONFIRM_DELETE)
+
+
+@inject
+async def on_device_delete_confirm(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    delete_user_device: FromDishka[DeleteUserDevice],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    selected_short_hwid = dialog_manager.dialog_data.get("selected_short_hwid")
+    hwid_map = dialog_manager.dialog_data.get("hwid_map", [])
+
+    if not selected_short_hwid or not hwid_map:
+        raise ValueError("Missing selected device data")
 
     full_hwid = next((d["hwid"] for d in hwid_map if d["short_hwid"] == selected_short_hwid), None)
-
     if not full_hwid:
         raise ValueError(f"Full HWID not found for '{selected_short_hwid}'")
 
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
-
-    if not (current_subscription and current_subscription.device_limit):
-        raise ValueError("User has no active subscription or device limit unlimited")
-
-    devices = await remnawave.delete_device(
-        user_uuid=current_subscription.user_remna_id,
-        hwid=full_hwid,
+    await delete_user_device(
+        user, DeleteUserDeviceDto(telegram_id=user.telegram_id, hwid=full_hwid)
     )
-    logger.info(f"{user.log} Deleted device '{full_hwid}'")
+    await notifier.notify_user(user=user, i18n_key="ntf-devices.deleted")
+    await dialog_manager.switch_to(state=MainMenu.DEVICES)
 
-    if devices:
-        return
 
-    await dialog_manager.switch_to(state=MainMenu.MAIN)
+@inject
+async def on_device_delete_all_confirm(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    delete_user_all_devices: FromDishka[DeleteUserAllDevices],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    await delete_user_all_devices(user)
+    await notifier.notify_user(user=user, i18n_key="ntf-devices.all-delete")
+    await dialog_manager.switch_to(state=MainMenu.DEVICES)
+
+
+@inject
+async def on_reissue_subscription_confirm(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    reissue_subscription: FromDishka[ReissueSubscription],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    await reissue_subscription(user)
+    await notifier.notify_user(user=user, i18n_key="ntf-devices.reissued")
+    await dialog_manager.switch_to(state=MainMenu.DEVICES)
 
 
 @inject

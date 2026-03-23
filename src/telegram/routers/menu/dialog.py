@@ -25,11 +25,20 @@ from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.window import Window
 
-from .getters import devices_getter, invite_about_getter, invite_getter, menu_getter
+from .getters import (
+    device_confirm_delete_getter,
+    devices_getter,
+    invite_about_getter,
+    invite_getter,
+    menu_getter,
+)
 from .handlers import (
-    on_device_delete,
+    on_device_delete_all_confirm,
+    on_device_delete_confirm,
+    on_device_delete_request,
     on_get_trial,
     on_invite,
+    on_reissue_subscription_confirm,
     on_show_qr,
     on_withdraw_points,
     show_reason,
@@ -115,24 +124,38 @@ devices = Window(
         Button(
             text=I18nFormat("btn-common.devices-empty"),
             id="devices_empty",
-            when=F["devices_empty"],
+            when=~F["has_devices"],
         ),
     ),
     ListGroup(
         Row(
-            CopyText(
-                text=Format("{item[platform]} - {item[device_model]}"),
-                copy_text=Format("{item[platform]} - {item[device_model]}"),
-            ),
             Button(
-                text=Format("❌"),
-                id="delete",
-                on_click=on_device_delete,
+                text=Format("{item[label]}"),
+                id="device_item",
+                on_click=on_device_delete_request,
             ),
         ),
         id="devices_list",
         item_id_getter=lambda item: item["short_hwid"],
         items="devices",
+        when=F["has_devices"],
+    ),
+    Row(
+        Start(
+            text=I18nFormat("btn-devices.delete-all"),
+            id="delete_all",
+            state=MainMenu.DEVICE_CONFIRM_DELETE_ALL,
+            when=F["has_devices"],
+            style=Style(ButtonStyle.DANGER),
+        ),
+    ),
+    Row(
+        Start(
+            text=I18nFormat("btn-devices.reissue"),
+            id="reissue",
+            state=MainMenu.DEVICE_CONFIRM_REISSUE,
+            style=Style(ButtonStyle.PRIMARY),
+        ),
     ),
     Row(
         SwitchTo(
@@ -144,6 +167,48 @@ devices = Window(
     IgnoreUpdate(),
     state=MainMenu.DEVICES,
     getter=devices_getter,
+)
+
+device_confirm_delete = Window(
+    Banner(BannerName.MENU),
+    I18nFormat("msg-menu-devices-confirm-delete"),
+    Row(
+        Button(
+            text=I18nFormat("btn-devices.confirm-delete"),
+            id="confirm_delete",
+            on_click=on_device_delete_confirm,
+            style=Style(ButtonStyle.DANGER),
+        ),
+        SwitchTo(
+            text=I18nFormat("btn-common.cancel"),
+            id="cancel",
+            state=MainMenu.DEVICES,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=MainMenu.DEVICE_CONFIRM_DELETE,
+    getter=device_confirm_delete_getter,
+)
+
+device_confirm_delete_all = Window(
+    Banner(BannerName.MENU),
+    I18nFormat("msg-menu-devices-confirm-delete-all"),
+    Row(
+        Button(
+            text=I18nFormat("btn-devices.confirm-delete"),
+            id="confirm_delete_all",
+            on_click=on_device_delete_all_confirm,
+            style=Style(ButtonStyle.DANGER),
+        ),
+        SwitchTo(
+            text=I18nFormat("btn-common.cancel"),
+            id="cancel",
+            state=MainMenu.DEVICES,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=MainMenu.DEVICE_CONFIRM_DELETE_ALL,
+    getter=device_confirm_delete_getter,
 )
 
 invite = Window(
@@ -220,9 +285,33 @@ invite_about = Window(
 )
 
 
+device_confirm_reissue = Window(
+    Banner(BannerName.MENU),
+    I18nFormat("msg-menu-devices-confirm-reissue"),
+    Row(
+        Button(
+            text=I18nFormat("btn-devices.confirm-reissue"),
+            id="confirm_reissue",
+            on_click=on_reissue_subscription_confirm,
+            style=Style(ButtonStyle.DANGER),
+        ),
+        SwitchTo(
+            text=I18nFormat("btn-devices.cancel-reissue"),
+            id="cancel_reissue",
+            state=MainMenu.DEVICES,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=MainMenu.DEVICE_CONFIRM_REISSUE,
+    getter=device_confirm_delete_getter,
+)
+
 router = Dialog(
     menu,
     devices,
+    device_confirm_delete,
+    device_confirm_delete_all,
+    device_confirm_reissue,
     invite,
     invite_about,
 )

@@ -5,8 +5,10 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import Remnawave, TranslatorRunner
-from src.application.common.dao import ReferralDao, SettingsDao, SubscriptionDao
+from src.application.common import TranslatorRunner
+from src.application.common.dao import ReferralDao, SettingsDao
+from src.application.common.dao.subscription import SubscriptionDao
+from src.application.common.remnawave import Remnawave
 from src.application.dto import UserDto
 from src.application.services import BotService
 from src.application.use_cases.misc.queries.menu import GetMenuData
@@ -98,6 +100,22 @@ async def menu_getter(
         raise MenuRenderError(str(e)) from e
 
 
+def get_platform_icon(platform: str | None) -> str:
+    platform_icons = {
+        "ios": "🍎",
+        "android": "🤖",
+        "windows": "🖥️",
+        "macos": "💻",
+        "linux": "🐧",
+    }
+
+    default_icon = "📟"
+
+    if not platform:
+        return default_icon
+    return platform_icons.get(platform.lower(), default_icon)
+
+
 @inject
 async def devices_getter(
     dialog_manager: DialogManager,
@@ -120,6 +138,8 @@ async def devices_getter(
             "platform": device.platform,
             "device_model": device.device_model,
             "user_agent": device.user_agent,
+            "label": f"{get_platform_icon(device.platform)} "
+            f"{device.platform} ({device.device_model})",
         }
         for device in devices
     ]
@@ -131,7 +151,18 @@ async def devices_getter(
         "max_count": i18n_format_device_limit(current_subscription.device_limit),
         "devices": formatted_devices,
         "devices_empty": len(devices) == 0,
+        "has_devices": len(devices) > 0,
     }
+
+
+@inject
+async def device_confirm_delete_getter(
+    dialog_manager: DialogManager,
+    user: UserDto,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    selected_label = dialog_manager.dialog_data.get("selected_device_label", "")
+    return {"selected_device_label": selected_label}
 
 
 @inject

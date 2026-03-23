@@ -108,19 +108,19 @@ services:
         remnashop-db:
           condition: service_healthy
 
-  # remnashop-taskiq-scheduler:
-  #   container_name: "remnashop-taskiq-scheduler"
-  #   hostname: remnashop-taskiq-scheduler
-  #   <<: [*build, *common, *logging, *env]
+  remnashop-taskiq-scheduler:
+    container_name: "remnashop-taskiq-scheduler"
+    hostname: remnashop-taskiq-scheduler
+    <<: [*build, *common, *logging, *env]
 
-  #   command: taskiq scheduler src.infrastructure.taskiq.scheduler:scheduler
-  #     --tasks-pattern src/infrastructure/taskiq/tasks -fsd
+    command: taskiq scheduler src.infrastructure.taskiq.scheduler:scheduler
+      --tasks-pattern src/infrastructure/taskiq/tasks/*.py -fsd
 
-  #   depends_on:
-  #       remnashop-redis:
-  #         condition: service_healthy
-  #       remnashop-db:
-  #         condition: service_healthy
+    depends_on:
+        remnashop-redis:
+          condition: service_healthy
+        remnashop-db:
+          condition: service_healthy
 
 
 networks:
