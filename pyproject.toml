@@ -10,7 +10,7 @@ dependencies = [
     "greenlet>=3.2.4",
     "uvicorn>=0.38.0",
     "fastapi>=0.120.2",
-    "remnapy>=2.3.3",
+    "remnapy==2.6.3",
     #
     "dishka~=1.7.2",
     "adaptix==3.0.0b11",
