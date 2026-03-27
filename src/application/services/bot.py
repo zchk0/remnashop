@@ -4,7 +4,8 @@ from urllib.parse import quote
 from aiogram import Bot
 
 from src.core.config import AppConfig
-from src.core.constants import DEEPLINK_PREFIX, PLAN_PREFIX, REFERRAL_PREFIX, T_ME
+from src.core.constants import T_ME
+from src.core.enums import Deeplink
 
 
 class BotService:
@@ -53,11 +54,11 @@ class BotService:
 
     async def get_referral_url(self, referral_code: str) -> str:
         base_url = await self._get_bot_redirect_url()
-        return f"{base_url}{DEEPLINK_PREFIX}{REFERRAL_PREFIX}{referral_code}"
+        return Deeplink.REFERRAL.build_url(base_url, referral_code)
 
     async def get_plan_url(self, public_code: str) -> str:
         base_url = await self._get_bot_redirect_url()
-        return f"{base_url}{DEEPLINK_PREFIX}{PLAN_PREFIX}{public_code}"
+        return Deeplink.PLAN.build_url(base_url, public_code)
 
     def get_support_url(self, text: Optional[str] = None) -> str:
         base_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"

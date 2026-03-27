@@ -1,5 +1,5 @@
 from enum import Enum, IntEnum, StrEnum, auto
-from typing import Self, Union
+from typing import Optional, Self, Union
 
 from aiogram.types import BotCommand, ContentType
 
@@ -8,6 +8,27 @@ class UpperStrEnum(StrEnum):
     @staticmethod
     def _generate_next_value_(name: str, start: int, count: int, last_values: list) -> str:
         return name
+
+
+class Deeplink(StrEnum):
+    PREFIX = "?start="
+    #
+    REFERRAL = "ref"
+    PLAN = "plan"
+    INVITE = "invite"
+
+    def build_url(self, base_url: str, data: Optional[str]) -> str:
+        if not data:
+            return f"{base_url}{self.with_prefix}"
+        return f"{base_url}{self.with_prefix}_{data}"
+
+    @property
+    def with_prefix(self) -> str:
+        return f"{self.PREFIX}{self.value}"
+
+    @property
+    def with_underscore(self) -> str:
+        return f"{self.value}_"
 
 
 class ButtonType(UpperStrEnum):

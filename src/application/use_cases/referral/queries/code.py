@@ -11,7 +11,8 @@ from qrcode import ERROR_CORRECT_H, QRCode  # type: ignore[attr-defined]
 from src.application.common import Interactor
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
-from src.core.constants import ASSETS_DIR, REFERRAL_PREFIX
+from src.core.constants import ASSETS_DIR
+from src.core.enums import Deeplink
 
 
 @dataclass(frozen=True)
@@ -53,9 +54,9 @@ class GetReferralCodeFromEvent(Interactor[TelegramObject, Optional[str]]):
             return None
 
         code = parts[1]
-        if code.startswith(REFERRAL_PREFIX):
+        if code.startswith(Deeplink.REFERRAL.with_underscore):
             logger.debug(f"Detected referral event '{code}'")
-            code = code[len(REFERRAL_PREFIX) :]
+            code = code[len(Deeplink.REFERRAL.with_underscore) :]
             aiogram_user = event.from_user
 
             if not aiogram_user:
