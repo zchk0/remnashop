@@ -73,7 +73,8 @@ class PricingService:
                 amount = amount.to_integral_value(rounding=ROUND_DOWN)
                 min_amount = Decimal(1)
             case _:
-                amount = amount.quantize(Decimal("0.01")).normalize()
+                amount = amount.quantize(Decimal("0.01"))
+                amount = Decimal(f"{amount.normalize():f}")
                 min_amount = Decimal("0.01")
 
         if amount < min_amount:

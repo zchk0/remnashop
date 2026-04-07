@@ -29,6 +29,7 @@ async def payments_webhook(
         logger.exception(f"Invalid gateway type received: '{gateway_type}'")
         return Response(status_code=status.HTTP_404_NOT_FOUND)
 
+    gateway = None
     try:
         gateway = await get_payment_gateway_instance.system(gateway_enum)
 

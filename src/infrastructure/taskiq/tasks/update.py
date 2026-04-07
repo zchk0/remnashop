@@ -56,9 +56,13 @@ async def check_bot_update(
         return
 
     key = retort.dump(LatestNotifiedVersionKey(version="*"))
-    last_cached_version = await redis.get(key)
+    last_notified_version = await redis.get(key)
 
-    if last_cached_version and last_cached_version == remote_version:
+    logger.debug(
+        f"Update check: key='{key}', cached={last_notified_version!r}, remote={remote_version!r}"
+    )
+
+    if last_notified_version == remote_version:
         logger.debug(f"Version '{remote_version}' already notified")
         return
 

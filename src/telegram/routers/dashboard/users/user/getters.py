@@ -413,7 +413,7 @@ async def transactions_getter(
         for transaction in transactions
     ]
 
-    return {"transactions": list(reversed(formatted_transactions))}
+    return {"transactions": formatted_transactions}
 
 
 @inject

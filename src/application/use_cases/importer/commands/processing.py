@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from aiogram import Bot
 from aiogram.types import Document
 from loguru import logger
 
 from src.application.common import Interactor
+from src.application.common.policy import Permission
 from src.application.dto import UserDto
 from src.application.use_cases.importer.dto import ExportedUserDto
 from src.application.use_cases.importer.queries.filters import SplitExportedUsers
@@ -20,6 +22,8 @@ class ProcessImportFileResultDto:
 
 
 class ProcessImportFile(Interactor[Document, ProcessImportFileResultDto]):
+    required_permission: Optional[Permission] = Permission.IMPORTER
+
     def __init__(
         self,
         export_users_from_xui: ExportUsersFromXui,
