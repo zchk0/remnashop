@@ -29,7 +29,7 @@ from src.application.dto import (
     TempUserDto,
     UserDto,
 )
-from src.application.events import ErrorEvent, SystemEvent
+from src.application.events import ErrorEvent, RemnawaveVersionWarningEvent, SystemEvent
 from src.application.events.base import UserEvent
 from src.application.events.system import RemnashopWelcomeEvent
 from src.core.config import AppConfig
@@ -80,6 +80,17 @@ class NotificationService(Notifier):
         roles: list[Role] = [Role.OWNER, Role.DEV, Role.ADMIN],
     ) -> None:
         await self.queue.enqueue(NotificationTaskDto(payload=payload, roles=roles))
+
+    @on_event(RemnawaveVersionWarningEvent)
+    async def on_remnawave_version_warning_event(self, event: RemnawaveVersionWarningEvent) -> None:
+        logger.info(f"Received '{event.event_type}' event")
+
+        settings: SettingsDto = await self.settings_dao.get()
+        if not settings.notifications.is_enabled(event.notification_type):
+            logger.info(f"Notification for '{event.notification_type}' is disabled, skipping")
+            return
+
+        await self.notify_admins(event.as_payload(), roles=[Role.OWNER, Role.DEV])
 
     @on_event(RemnashopWelcomeEvent)
     async def on_remnashop_welcome_event(self, event: RemnashopWelcomeEvent) -> None:

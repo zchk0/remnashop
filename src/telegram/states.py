@@ -91,6 +91,8 @@ class DashboardUser(StatesGroup):
     EXTERNAL_SQUADS = State()
     DEVICES_LIST = State()
     DISCOUNT = State()
+    PERSONAL_DISCOUNT = State()
+    PURCHASE_DISCOUNT = State()
     POINTS = State()
     STATISTICS = State()
     REFERRALS = State()

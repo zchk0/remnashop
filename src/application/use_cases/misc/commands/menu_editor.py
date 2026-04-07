@@ -26,8 +26,8 @@ class UpdateMenuButtonText(Interactor[UpdateMenuButtonTextDto, MenuButtonDto]):
         button = data.button
         new_text = data.input_text.strip()
 
-        if len(new_text) > 16:
-            raise ValueError(f"Menu button text '{new_text}' exceeds 16 characters")
+        if len(new_text) > 32:
+            raise ValueError(f"Menu button text '{new_text}' exceeds 32 characters")
 
         old_text = button.text
         button.text = new_text

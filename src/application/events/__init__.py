@@ -8,6 +8,7 @@ from .system import (
     NodeConnectionRestoredEvent,
     NodeTrafficReachedEvent,
     RemnawaveErrorEvent,
+    RemnawaveVersionWarningEvent,
     TrialActivatedEvent,
     UserDeviceAddedEvent,
     UserDeviceDeletedEvent,
@@ -32,6 +33,7 @@ __all__ = [
     "ErrorEvent",
     "WebhookErrorEvent",
     "RemnawaveErrorEvent",
+    "RemnawaveVersionWarningEvent",
     #
     "BotShutdownEvent",
     "BotStartupEvent",

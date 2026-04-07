@@ -27,7 +27,7 @@ async def system_getter(
         "ram_used": i18n_format_bytes_to_unit(result.memory.active),
         "ram_total": i18n_format_bytes_to_unit(result.memory.total),
         "ram_used_percent": percent(
-            part=result.memory.active,
+            part=result.memory.active or 0,
             whole=result.memory.total,
         ),
         "uptime": i18n_format_seconds(result.uptime),
@@ -145,7 +145,7 @@ async def inbounds_getter(
     result = await remnawave_sdk.inbounds.get_all_inbounds()
     inbounds = []
 
-    for inbound in result.inbounds:  # type: ignore[attr-defined]
+    for inbound in result.inbounds:
         inbounds.append(
             i18n.get(
                 "msg-remnawave-inbound-details",

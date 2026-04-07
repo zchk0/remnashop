@@ -60,6 +60,8 @@ async def user_getter(
         "personal_discount": profile.target_user.personal_discount,
         "purchase_discount": profile.target_user.purchase_discount,
         "is_blocked": profile.target_user.is_blocked,
+        "is_bot_blocked": profile.target_user.is_bot_blocked,
+        "is_trial_available": profile.target_user.is_trial_available,
         "is_not_self": profile.target_user.telegram_id != user.telegram_id,
         "can_edit": profile.can_edit,
         "status": None,
@@ -413,7 +415,7 @@ async def transactions_getter(
         for transaction in transactions
     ]
 
-    return {"transactions": list(reversed(formatted_transactions))}
+    return {"transactions": formatted_transactions}
 
 
 @inject

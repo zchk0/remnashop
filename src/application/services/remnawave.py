@@ -296,7 +296,10 @@ class RemnaWebhookService:
                     is_trial=current_subscription.is_trial,
                     traffic_strategy=current_subscription.traffic_limit_strategy,
                     reset_time=i18n_format_expire_time(
-                        get_traffic_reset_delta(current_subscription.traffic_limit_strategy)
+                        get_traffic_reset_delta(
+                            current_subscription.traffic_limit_strategy,
+                            current_subscription.created_at,
+                        )
                     ),
                 )
             )

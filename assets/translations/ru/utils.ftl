@@ -53,9 +53,13 @@ frg-user =
     <blockquote>
     • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
     • <b>Имя</b>: { $name }
-    { $personal_discount ->
-    [0] { empty }
-    *[HAS] • <b>Ваша скидка</b>: { $personal_discount }%
+    { $show_personal_discount ->
+    [1] • <b>Персональная скидка</b>: { $personal_discount }%
+    *[0] { empty }
+    }
+    { $show_purchase_discount ->
+    [1] • <b>Скидка на покупку</b>: { $purchase_discount }%
+    *[0] { empty }
     }
     </blockquote>
 
@@ -77,6 +81,10 @@ frg-user-details =
     }
     • <b>Роль</b>: { role }
     • <b>Язык</b>: { language }
+    • <b>Бот заблокирован</b>: { $is_bot_blocked ->
+        [1] Да
+        *[0] Нет
+    }
     { $show_points ->
     [1] • <b>Баллы</b>: { $points }
     *[0] { empty }
@@ -361,6 +369,7 @@ traffic-strategy = { $strategy_type ->
     [DAY] Каждый день
     [WEEK] Каждую неделю
     [MONTH] Каждый месяц
+    [MONTH_ROLLING] Каждый месяц (по дате создания)
     *[OTHER] { $strategy_type }
     }
 

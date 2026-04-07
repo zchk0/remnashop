@@ -18,8 +18,19 @@ event-error =
     { $error }
     </blockquote>
 
+    .remnawave-version =
+    #RemnawaveVersionWarningEvent
+
+    <b>⚠️ Событие: Возможная несовместимость с Remnawave!</b>
+
+    <blockquote>
+    Версия панели <b>{ $panel_version }</b> выше протестированной версии <b>{ $max_version }</b>. Некоторые функции бота могут работать некорректно.
+    </blockquote>
+
+    { frg-build-info }
+    
     .remnawave =
-    #ErrorEvent
+    #RemnawaveErrorEvent
 
     <b>🔅 Событие: Ошибка при подключении к Remnawave!</b>
 
