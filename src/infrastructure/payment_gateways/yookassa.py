@@ -107,8 +107,8 @@ class YookassaGateway(BasePaymentGateway):
     async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
         logger.debug("Received YooKassa webhook request")
 
-        # if not self._verify_webhook(request):
-        #     raise PermissionError("Webhook verification failed")
+        if not self._verify_webhook(request):
+            raise PermissionError("Webhook verification failed")
 
         webhook_data = await self._get_webhook_data(request)
         payment_object: dict = webhook_data.get("object", {})

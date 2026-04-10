@@ -5,7 +5,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram_dialog import BgManagerFactory
-from aiohttp_socks import ProxyConnector
 from dishka import Provider, Scope, from_context, provide
 from loguru import logger
 
@@ -23,10 +22,8 @@ class BotProvider(Provider):
 
         session = None
         if config.bot.proxy_url:
-            proxy = config.bot.proxy_url.get_secret_value()
             logger.info("Using SOCKS5 proxy for Telegram")
-            connector = ProxyConnector.from_url(proxy)
-            session = AiohttpSession(connector=connector)
+            session = AiohttpSession(proxy=config.bot.proxy_url.get_secret_value())
 
         async with Bot(
             token=config.bot.token.get_secret_value(),

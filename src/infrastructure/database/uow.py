@@ -23,6 +23,7 @@ class UnitOfWorkImpl(UnitOfWork):
     ) -> None:
         if exc_type:
             await self.rollback()
+        await self.session.close()
 
     async def commit(self) -> None:
         await self.session.commit()
