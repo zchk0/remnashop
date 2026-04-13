@@ -73,7 +73,7 @@ class CryptomusGateway(BasePaymentGateway):
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 
-    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
+    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus] | None:
         logger.debug(f"Received {self.__class__.__name__} webhook request")
         webhook_data = await self._get_webhook_data(request)
 
@@ -93,6 +93,24 @@ class CryptomusGateway(BasePaymentGateway):
                 transaction_status = TransactionStatus.COMPLETED
             case "cancel":
                 transaction_status = TransactionStatus.CANCELED
+            case "fail" | "system_fail" | "wrong_amount":
+                transaction_status = TransactionStatus.FAILED
+            case "refund_paid":
+                transaction_status = TransactionStatus.REFUNDED
+            case (
+                "confirm_check"
+                | "process"
+                | "check"
+                | "wrong_amount_waiting"
+                | "refund_process"
+                | "refund_fail"
+                | "locked"
+            ):
+                logger.info(
+                    f"Ignoring non-final {self.__class__.__name__} webhook status '{status}' "
+                    f"for payment '{payment_id}'"
+                )
+                return None
             case _:
                 raise ValueError(f"Unsupported status: {status}")
 

@@ -41,7 +41,13 @@ async def payments_webhook(
             logger.warning(f"Webhook received for unconfigured payment gateway '{gateway_enum}'")
             return Response(status_code=status.HTTP_404_NOT_FOUND)
 
-        payment_id, payment_status = await gateway.handle_webhook(request)
+        webhook_result = await gateway.handle_webhook(request)
+
+        if webhook_result is None:
+            logger.info(f"Webhook for '{gateway_enum}' did not produce a transaction update")
+            return await gateway.build_webhook_response(request)
+
+        payment_id, payment_status = webhook_result
         await handle_payment_transaction_task.kiq(payment_id, payment_status)  # type: ignore[call-overload]
 
     except Exception as e:

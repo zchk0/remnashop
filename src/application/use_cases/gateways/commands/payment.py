@@ -274,16 +274,23 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                 logger.critical(f"User not found for transaction '{payment_id}'")
                 return
 
-            if transaction.is_completed:
+            if transaction.is_completed and new_status != TransactionStatus.REFUNDED:
                 logger.warning(
                     f"Transaction '{payment_id}' for user '{user.telegram_id}' already completed"
                 )
                 return
 
-            if new_status == TransactionStatus.CANCELED:
-                await self.transaction_dao.update_status(payment_id, TransactionStatus.CANCELED)
+            if new_status in {
+                TransactionStatus.CANCELED,
+                TransactionStatus.FAILED,
+                TransactionStatus.REFUNDED,
+            }:
+                await self.transaction_dao.update_status(payment_id, new_status)
                 await self.uow.commit()
-                logger.info(f"Payment canceled '{payment_id}' for user '{user.telegram_id}'")
+                logger.info(
+                    f"Payment status changed to '{new_status}' for '{payment_id}', "
+                    f"user '{user.telegram_id}'"
+                )
                 return
 
             elif new_status == TransactionStatus.COMPLETED:
