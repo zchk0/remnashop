@@ -51,8 +51,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/snoups/remnashop:latest
-            ghcr.io/snoups/remnashop:${{ github.ref_name }}
+            ${{ steps.vars.outputs.image_repo }}:latest
+            ${{ steps.vars.outputs.image_repo }}:${{ github.ref_name }}
           build-args: |
             BUILD_TIME=${{ steps.vars.outputs.build_time }}
             BUILD_BRANCH=main
@@ -74,7 +74,7 @@ jobs:
 
             ---
 
-            - [Compare changes (${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})](https://github.com/snoups/remnashop/compare/${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})
+            - [Compare changes (${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})](https://github.com/zchk0/remnashop/compare/${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})
 
             ---
 
@@ -82,12 +82,12 @@ jobs:
 
             ### Latest:
             ```
-            ghcr.io/snoups/remnashop:latest
+            ghcr.io/${{ github.repository }}:latest
             ```
 
             ### Versioned:
             ```
-            ghcr.io/snoups/remnashop:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ```
           draft: false
           prerelease: false
