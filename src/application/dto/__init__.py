@@ -1,6 +1,7 @@
 from .base import BaseDto, TimestampMixin, TrackableMixin
 from .broadcast import BroadcastDto, BroadcastMessageDto
 from .build import BuildInfoDto
+from .device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
 from .message_payload import MediaDescriptorDto, MessagePayloadDto
 from .notification_task import NotificationTaskDto
 from .payment_gateway import (
@@ -35,9 +36,12 @@ from .transaction import PriceDetailsDto, TransactionDto
 from .user import TempUserDto, UserDto
 
 __all__ = [
+    "AuthTokenDto",
     "BaseDto",
+    "LinkedDeviceDto",
     "TimestampMixin",
     "TrackableMixin",
+    "TvPairingCodeDto",
     "BroadcastDto",
     "BroadcastMessageDto",
     "BuildInfoDto",
