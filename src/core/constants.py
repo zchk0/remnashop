@@ -11,6 +11,9 @@ ASSETS_DIR: Final[Path] = BASE_DIR / "assets"
 LOG_DIR: Final[Path] = BASE_DIR / "logs"
 
 DOMAIN_REGEX: Pattern[str] = re.compile(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$")
+TELEGRAM_WEBHOOK_DOMAIN_REGEX: Pattern[str] = re.compile(
+    r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?::(?:80|88|443|8443))?$"
+)
 TAG_REGEX: Pattern[str] = re.compile(r"^[A-Z0-9_]{1,16}$")
 URL_PATTERN: Pattern[str] = re.compile(r"^https://\S+$")
 USERNAME_PATTERN: Pattern[str] = re.compile(r"^@[a-zA-Z0-9_]{5,32}$")

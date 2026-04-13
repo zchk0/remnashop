@@ -25,10 +25,11 @@ class WebhookService:
         self.cryptographer = cryptographer
 
     async def setup_webhook(self, allowed_updates: list[str]) -> WebhookInfo:
-        safe_url = self.config.bot.safe_webhook_url(domain=self.config.domain)
+        webhook_domain = self.config.bot_webhook_domain
+        safe_url = self.config.bot.safe_webhook_url(domain=webhook_domain)
 
         webhook_request = SetWebhook(
-            url=self.config.bot.webhook_url(domain=self.config.domain).get_secret_value(),
+            url=self.config.bot.webhook_url(domain=webhook_domain).get_secret_value(),
             allowed_updates=allowed_updates,
             drop_pending_updates=self.config.bot.drop_pending_updates,
             secret_token=self.config.bot.secret_token.get_secret_value(),
