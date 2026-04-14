@@ -66,6 +66,5 @@ BATCH_SIZE_20: Final[int] = 20
 BATCH_DELAY: Final[int] = 1
 
 # ToBeVPN device & pairing constants
-MAX_LINKED_DEVICES: Final[int] = 5
 TV_PAIRING_TTL_SECONDS: Final[int] = 300
 DEVICES_WEBHOOK_PATH: Final[str] = "/devices"

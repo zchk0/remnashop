@@ -17,14 +17,14 @@ from loguru import logger
 from pydantic import BaseModel, EmailStr
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
-from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto
+from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
 
 from src.application.common import Remnawave
 from src.application.common.dao import AuthTokenDao, LinkedDeviceDao, PlanDao, TvPairingDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanDto
 from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
-from src.core.constants import MAX_LINKED_DEVICES, TV_PAIRING_TTL_SECONDS
+from src.core.constants import TV_PAIRING_TTL_SECONDS
 from src.core.enums import PlanAvailability
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 
@@ -84,6 +84,22 @@ def _build_trial_config_data(plan: PlanDto) -> dict:
 def _build_device_username(device_id: str) -> str:
     digest = hashlib.sha256(device_id.encode()).hexdigest()[:32]
     return f"app_{digest}"
+
+
+async def _get_panel_user_by_telegram_id(
+    telegram_id: int,
+    remnawave: Remnawave,
+) -> Optional[UserResponseDto]:
+    panel_users = await remnawave.get_user_by_telegram_id(telegram_id)
+    return panel_users[0] if panel_users else None
+
+
+def _get_device_limit(panel_user: UserResponseDto) -> int:
+    return panel_user.hwid_device_limit or 0
+
+
+def _is_device_limit_reached(linked_count: int, device_limit: int) -> bool:
+    return device_limit > 0 and linked_count >= device_limit
 
 
 # ── Config endpoint ────────────────────────────────────────────
@@ -197,8 +213,18 @@ async def get_device_traffic(
 async def register_device(
     request: DeviceRegisterRequest,
     device_dao: FromDishka[LinkedDeviceDao],
+    remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
+    panel_user = await _get_panel_user_by_telegram_id(request.telegram_id, remnawave)
+    if panel_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="telegram_id not authenticated",
+        )
+
+    device_limit = _get_device_limit(panel_user)
+
     existing = await device_dao.get_by_device_id(request.device_id)
     already_linked = existing is not None and existing.telegram_id == request.telegram_id
 
@@ -207,10 +233,10 @@ async def register_device(
             request.telegram_id,
             exclude_device_id=request.device_id,
         )
-        if linked_count >= MAX_LINKED_DEVICES:
+        if _is_device_limit_reached(linked_count, device_limit):
             return {
                 "success": False,
-                "message": f"Device limit reached. Maximum is {MAX_LINKED_DEVICES}.",
+                "message": f"Device limit reached. Maximum is {device_limit}.",
             }
 
     await device_dao.upsert(
@@ -244,12 +270,20 @@ async def unlink_device(
 async def get_devices(
     telegram_id: int = Query(...),
     device_dao: FromDishka[LinkedDeviceDao] = None,  # type: ignore[assignment]
+    remnawave: FromDishka[Remnawave] = None,  # type: ignore[assignment]
 ) -> dict:
+    panel_user = await _get_panel_user_by_telegram_id(telegram_id, remnawave)
+    if panel_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="telegram_id not authenticated",
+        )
+
     devices = await device_dao.get_by_telegram_id(telegram_id)
     return {
         "success": True,
         "data": {
-            "max_devices": MAX_LINKED_DEVICES,
+            "max_devices": _get_device_limit(panel_user),
             "devices": [
                 {
                     "device_id": d.device_id,
@@ -293,14 +327,12 @@ async def tv_pair_confirm(
     uow: FromDishka[UnitOfWork],
 ) -> dict:
     # Verify mobile user is authenticated (exists in devices or on panel)
-    devices = await device_dao.get_by_telegram_id(request.telegram_id)
-    if not devices:
-        panel_users = await remnawave.get_user_by_telegram_id(request.telegram_id)
-        if not panel_users:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="telegram_id not authenticated",
-            )
+    panel_user = await _get_panel_user_by_telegram_id(request.telegram_id, remnawave)
+    if panel_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="telegram_id not authenticated",
+        )
 
     # Verify code exists, is pending, and not expired
     pairing = await pairing_dao.get_by_code(request.code)
@@ -316,11 +348,12 @@ async def tv_pair_confirm(
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="Pairing code expired")
 
     # Check device limit
+    device_limit = _get_device_limit(panel_user)
     linked_count = await device_dao.count_by_telegram_id(request.telegram_id)
-    if linked_count >= MAX_LINKED_DEVICES:
+    if _is_device_limit_reached(linked_count, device_limit):
         return {
             "success": False,
-            "message": f"Device limit reached. Maximum is {MAX_LINKED_DEVICES}.",
+            "message": f"Device limit reached. Maximum is {device_limit}.",
         }
 
     await pairing_dao.complete(request.code, request.telegram_id)
@@ -467,6 +500,7 @@ async def ensure_user(
                 "panel_user_uuid": str(user.uuid),
                 "traffic_limit_bytes": user.traffic_limit_bytes or 0,
                 "traffic_used_bytes": traffic_used,
+                "max_devices": user.hwid_device_limit or 0,
             },
         }
     except NotFoundError:
@@ -508,6 +542,7 @@ async def ensure_user(
                 "traffic_limit_bytes": traffic_limit_bytes,
                 "traffic_used_bytes": 0,
                 "trial_plan_id": trial_plan.id,
+                "max_devices": user.hwid_device_limit or 0,
             },
         }
     except ConflictError:
@@ -524,6 +559,7 @@ async def ensure_user(
                     "panel_user_uuid": str(user.uuid),
                     "traffic_limit_bytes": user.traffic_limit_bytes or 0,
                     "traffic_used_bytes": traffic_used,
+                    "max_devices": user.hwid_device_limit or 0,
                 },
             }
         except Exception as e:
