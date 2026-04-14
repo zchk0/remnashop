@@ -103,6 +103,98 @@ async def plans_getter(
     }
 
 
+async def _get_purchase_type_for_plan(
+    user: UserDto,
+    plan: PlanDto,
+    subscription_dao: SubscriptionDao,
+    match_plan: MatchPlan,
+) -> PurchaseType:
+    current_subscription = await subscription_dao.get_current(user.telegram_id)
+
+    if current_subscription:
+        matched_plan = await match_plan.system(
+            MatchPlanDto(plan_snapshot=current_subscription.plan_snapshot, plans=[plan])
+        )
+        if matched_plan and not current_subscription.is_unlimited:
+            return PurchaseType.RENEW
+        return PurchaseType.CHANGE
+
+    return PurchaseType.NEW
+
+
+async def _load_plan_from_start_data(
+    dialog_manager: DialogManager,
+    user: UserDto,
+    retort: Retort,
+    plan_dao: PlanDao,
+    subscription_dao: SubscriptionDao,
+    match_plan: MatchPlan,
+) -> PlanDto | None:
+    start_data = cast(dict[str, Any], dialog_manager.start_data or {})
+    raw_plan_id = start_data.get("plan_id")
+    raw_duration = start_data.get("selected_duration")
+
+    if raw_plan_id is None or raw_duration is None:
+        return None
+
+    try:
+        plan_id = int(raw_plan_id)
+        selected_duration = int(raw_duration)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"{user.log} Invalid purchase start data: "
+            f"plan_id='{raw_plan_id}', selected_duration='{raw_duration}'"
+        )
+        return None
+
+    plan = await plan_dao.get_by_id(plan_id)
+
+    if not plan:
+        logger.warning(f"{user.log} Purchase start plan '{plan_id}' not found")
+        return None
+
+    duration = plan.get_duration(selected_duration)
+
+    if not duration:
+        logger.warning(
+            f"{user.log} Purchase start duration '{selected_duration}' "
+            f"not found for plan '{plan_id}'"
+        )
+        return None
+
+    raw_purchase_type = start_data.get("purchase_type")
+
+    if isinstance(raw_purchase_type, PurchaseType):
+        purchase_type = raw_purchase_type
+    elif isinstance(raw_purchase_type, str):
+        try:
+            purchase_type = PurchaseType(raw_purchase_type)
+        except ValueError:
+            logger.warning(f"{user.log} Invalid purchase type in start data: '{raw_purchase_type}'")
+            purchase_type = await _get_purchase_type_for_plan(
+                user=user,
+                plan=plan,
+                subscription_dao=subscription_dao,
+                match_plan=match_plan,
+            )
+    else:
+        purchase_type = await _get_purchase_type_for_plan(
+            user=user,
+            plan=plan,
+            subscription_dao=subscription_dao,
+            match_plan=match_plan,
+        )
+
+    dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(plan)
+    dialog_manager.dialog_data["selected_duration"] = duration.days
+    dialog_manager.dialog_data["purchase_type"] = purchase_type
+    dialog_manager.dialog_data["only_single_plan"] = bool(start_data.get("only_single_plan", True))
+    dialog_manager.dialog_data["only_single_duration"] = bool(
+        start_data.get("only_single_duration", True)
+    )
+    return plan
+
+
 @inject
 async def duration_getter(
     dialog_manager: DialogManager,
@@ -163,18 +255,32 @@ async def payment_method_getter(
     user: UserDto,
     retort: FromDishka[Retort],
     i18n: FromDishka[TranslatorRunner],
+    plan_dao: FromDishka[PlanDao],
+    subscription_dao: FromDishka[SubscriptionDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
+    match_plan: FromDishka[MatchPlan],
     pricing_service: FromDishka[PricingService],
     **kwargs: Any,
 ) -> dict[str, Any]:
     raw_plan = dialog_manager.dialog_data.get(PlanDto.__name__)
 
     if not raw_plan:
-        logger.error("PlanDto not found in dialog data")
-        await dialog_manager.start(state=Subscription.MAIN)
-        return {}
+        plan = await _load_plan_from_start_data(
+            dialog_manager=dialog_manager,
+            user=user,
+            retort=retort,
+            plan_dao=plan_dao,
+            subscription_dao=subscription_dao,
+            match_plan=match_plan,
+        )
 
-    plan = retort.load(raw_plan, PlanDto)
+        if not plan:
+            logger.error("PlanDto not found in dialog data")
+            await dialog_manager.start(state=Subscription.MAIN)
+            return {}
+    else:
+        plan = retort.load(raw_plan, PlanDto)
+
     gateways = await payment_gateway_dao.get_active()
     selected_duration = dialog_manager.dialog_data["selected_duration"]
     only_single_duration = dialog_manager.dialog_data.get("only_single_duration", False)
@@ -185,7 +291,15 @@ async def payment_method_getter(
 
     payment_methods = []
     for gateway in gateways:
-        raw_price = duration.get_price(gateway.currency)
+        try:
+            raw_price = duration.get_price(gateway.currency)
+        except StopIteration:
+            logger.debug(
+                f"{user.log} Skipping gateway '{gateway.type}' for plan '{plan.id}' "
+                f"duration '{duration.days}': no price for '{gateway.currency}'"
+            )
+            continue
+
         price = pricing_service.calculate(user, raw_price, gateway.currency)
         payment_methods.append(
             {
@@ -196,6 +310,14 @@ async def payment_method_getter(
                 "currency": gateway.currency.symbol,
             }
         )
+
+    if not payment_methods:
+        logger.warning(
+            f"{user.log} No payment methods available for plan '{plan.id}' "
+            f"duration '{duration.days}'"
+        )
+        await dialog_manager.start(state=Subscription.MAIN)
+        return {}
 
     key, kw = i18n_format_days(duration.days)
 
