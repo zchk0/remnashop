@@ -5,6 +5,7 @@ These endpoints are consumed by the Android/TV client apps and keep
 sensitive credentials (Remnawave API token) server-side.
 """
 
+import hashlib
 import secrets
 from datetime import datetime, timezone
 from typing import Optional
@@ -80,9 +81,12 @@ def _build_trial_config_data(plan: PlanDto) -> dict:
     }
 
 
+def _build_device_username(device_id: str) -> str:
+    digest = hashlib.sha256(device_id.encode()).hexdigest()[:32]
+    return f"app_{digest}"
+
+
 # ── Config endpoint ────────────────────────────────────────────
-
-
 @router.get("/config")
 @inject
 async def get_config(plan_dao: FromDishka[PlanDao]) -> dict:
@@ -97,8 +101,6 @@ async def get_config(plan_dao: FromDishka[PlanDao]) -> dict:
 
 
 # ── Request / response models ────────────────────────────────────
-
-
 class AuthRequest(BaseModel):
     device_id: str
     auth_token: str
@@ -128,8 +130,6 @@ class TvPairConfirmRequest(BaseModel):
 
 
 # ── Auth token endpoints ─────────────────────────────────────────
-
-
 @router.post("/auth/request")
 @inject
 async def request_auth(
@@ -181,8 +181,6 @@ async def check_auth_status(
 
 
 # ── Device management endpoints ──────────────────────────────────
-
-
 @router.get("/device/traffic")
 @inject
 async def get_device_traffic(
@@ -268,8 +266,6 @@ async def get_devices(
 
 
 # ── TV pairing endpoints ─────────────────────────────────────────
-
-
 @router.post("/tv/pair/create")
 @inject
 async def tv_pair_create(
@@ -379,8 +375,6 @@ async def tv_pair_status(
 
 
 # ── Panel proxy endpoints (for mobile/TV — keeps token server-side) ──
-
-
 @router.get("/panel/user-by-telegram/{telegram_id}")
 @inject
 async def proxy_user_by_telegram(
@@ -441,8 +435,6 @@ async def proxy_sub_info(
 
 
 # ── Device user management (keeps panel logic server-side) ────────
-
-
 class EnsureUserRequest(BaseModel):
     device_id: str
 
@@ -460,7 +452,7 @@ async def ensure_user(
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
     """Find or create an anonymous panel user for a device."""
-    username = f"app_{request.device_id}"
+    username = _build_device_username(request.device_id)
 
     # Try to find existing user
     try:
