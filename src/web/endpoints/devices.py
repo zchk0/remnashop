@@ -6,7 +6,7 @@ sensitive credentials (Remnawave API token) server-side.
 """
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from dishka import FromDishka
@@ -19,32 +19,80 @@ from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto
 
 from src.application.common import Remnawave
-from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao, TvPairingDao
+from src.application.common.dao import AuthTokenDao, LinkedDeviceDao, PlanDao, TvPairingDao
 from src.application.common.uow import UnitOfWork
+from src.application.dto import PlanDto
 from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
-from src.core.constants import (
-    FREE_SQUAD_UUID,
-    FREE_TRIAL_DAYS,
-    FREE_TRIAL_TRAFFIC_BYTES,
-    MAX_LINKED_DEVICES,
-    TV_PAIRING_TTL_SECONDS,
-)
+from src.core.constants import MAX_LINKED_DEVICES, TV_PAIRING_TTL_SECONDS
+from src.core.enums import PlanAvailability
+from src.core.utils.converters import days_to_datetime, gb_to_bytes
 
 router = APIRouter(prefix="/api")
+
+
+ANONYMOUS_TRIAL_PRIORITY: dict[PlanAvailability, int] = {
+    PlanAvailability.NEW: 2,
+    PlanAvailability.ALL: 1,
+}
+
+
+def _get_plan_duration_days(plan: PlanDto) -> Optional[int]:
+    if not plan.durations:
+        return None
+
+    duration = sorted(plan.durations, key=lambda d: d.order_index)[0]
+    return duration.days
+
+
+async def _get_anonymous_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
+    active_trials = await plan_dao.get_active_trial_plans()
+
+    eligible_plans = [
+        (ANONYMOUS_TRIAL_PRIORITY[plan.availability], plan.order_index, plan)
+        for plan in active_trials
+        if plan.availability in ANONYMOUS_TRIAL_PRIORITY and plan.durations
+    ]
+
+    if not eligible_plans:
+        logger.info("No active trial plan available for ToBeVPN anonymous user")
+        return None
+
+    eligible_plans.sort(key=lambda item: (-item[0], item[1]))
+    plan = eligible_plans[0][2]
+    logger.info(
+        f"Selected ToBeVPN trial plan '{plan.id}' with availability '{plan.availability}'"
+    )
+    return plan
+
+
+def _build_trial_config_data(plan: PlanDto) -> dict:
+    duration_days = _get_plan_duration_days(plan)
+    internal_squad_uuids = [str(uuid) for uuid in plan.internal_squads]
+
+    return {
+        "trial_plan_id": plan.id,
+        "trial_plan_name": plan.name,
+        "free_squad_uuid": internal_squad_uuids[0] if internal_squad_uuids else None,
+        "free_squad_uuids": internal_squad_uuids,
+        "external_squad_uuid": str(plan.external_squad) if plan.external_squad else None,
+        "free_trial_traffic_bytes": gb_to_bytes(plan.traffic_limit),
+        "free_trial_days": duration_days,
+    }
 
 
 # ── Config endpoint ────────────────────────────────────────────
 
 
 @router.get("/config")
-async def get_config() -> dict:
+@inject
+async def get_config(plan_dao: FromDishka[PlanDao]) -> dict:
+    trial_plan = await _get_anonymous_trial_plan(plan_dao)
+    if not trial_plan:
+        return {"success": False, "message": "Trial plan is not configured", "data": None}
+
     return {
         "success": True,
-        "data": {
-            "free_squad_uuid": FREE_SQUAD_UUID,
-            "free_trial_traffic_bytes": FREE_TRIAL_TRAFFIC_BYTES,
-            "free_trial_days": FREE_TRIAL_DAYS,
-        },
+        "data": _build_trial_config_data(trial_plan),
     }
 
 
@@ -408,6 +456,7 @@ class SaveEmailRequest(BaseModel):
 @inject
 async def ensure_user(
     request: EnsureUserRequest,
+    plan_dao: FromDishka[PlanDao],
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
     """Find or create an anonymous panel user for a device."""
@@ -433,18 +482,30 @@ async def ensure_user(
     except Exception as e:
         logger.warning(f"ensure_user lookup failed: {e}")
 
-    # Create new anonymous user with free trial params
-    expire_at = datetime.now(timezone.utc) + timedelta(days=FREE_TRIAL_DAYS)
+    trial_plan = await _get_anonymous_trial_plan(plan_dao)
+    if not trial_plan:
+        return {"success": False, "message": "Trial plan is not configured"}
+
+    duration_days = _get_plan_duration_days(trial_plan)
+    if duration_days is None:
+        logger.warning(f"ToBeVPN trial plan '{trial_plan.id}' has no durations")
+        return {"success": False, "message": "Trial plan is not configured"}
+
+    traffic_limit_bytes = gb_to_bytes(trial_plan.traffic_limit)
+
+    # Create new anonymous user with the same trial plan fields as the bot flow.
     try:
         user = await remnawave_sdk.users.create_user(
             CreateUserRequestDto(
                 username=username,
-                traffic_limit_bytes=FREE_TRIAL_TRAFFIC_BYTES,
-                traffic_limit_strategy="NO_RESET",
-                expire_at=expire_at,
-                hwid_device_limit=1,
-                active_internal_squads=[FREE_SQUAD_UUID],
-                description="ToBeVPN free trial",
+                traffic_limit_bytes=traffic_limit_bytes,
+                traffic_limit_strategy=trial_plan.traffic_limit_strategy,
+                expire_at=days_to_datetime(duration_days),
+                hwid_device_limit=trial_plan.device_limit,
+                active_internal_squads=trial_plan.internal_squads,
+                external_squad_uuid=trial_plan.external_squad,
+                tag=trial_plan.tag,
+                description=trial_plan.description or f"ToBeVPN trial: {trial_plan.name}",
             )
         )
         return {
@@ -452,8 +513,9 @@ async def ensure_user(
             "data": {
                 "short_uuid": str(user.short_uuid),
                 "panel_user_uuid": str(user.uuid),
-                "traffic_limit_bytes": FREE_TRIAL_TRAFFIC_BYTES,
+                "traffic_limit_bytes": traffic_limit_bytes,
                 "traffic_used_bytes": 0,
+                "trial_plan_id": trial_plan.id,
             },
         }
     except ConflictError:

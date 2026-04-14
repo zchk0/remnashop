@@ -69,8 +69,3 @@ BATCH_DELAY: Final[int] = 1
 MAX_LINKED_DEVICES: Final[int] = 5
 TV_PAIRING_TTL_SECONDS: Final[int] = 300
 DEVICES_WEBHOOK_PATH: Final[str] = "/devices"
-
-# ToBeVPN config values served to mobile/TV clients via /api/config
-FREE_SQUAD_UUID: Final[str] = "2dc437b9-7067-4989-a485-96f3beedf50b"
-FREE_TRIAL_TRAFFIC_BYTES: Final[int] = 1_073_741_824  # 1 GB
-FREE_TRIAL_DAYS: Final[int] = 3
