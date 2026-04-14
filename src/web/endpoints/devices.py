@@ -8,11 +8,11 @@ sensitive credentials (Remnawave API token) server-side.
 import hashlib
 import secrets
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from loguru import logger
 from pydantic import BaseModel, EmailStr
 from remnapy import RemnawaveSDK
@@ -24,11 +24,43 @@ from src.application.common.dao import AuthTokenDao, LinkedDeviceDao, PlanDao, T
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanDto
 from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
+from src.core.config import AppConfig
 from src.core.constants import TV_PAIRING_TTL_SECONDS
 from src.core.enums import PlanAvailability
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 
-router = APIRouter(prefix="/api")
+
+@inject
+async def verify_tobevpn_api_token(
+    config: FromDishka[AppConfig],
+    authorization: Annotated[str, Header(alias="Authorization")] = "",
+) -> None:
+    if not config.tobevpn.is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ToBeVPN integration is not configured",
+        )
+
+    expected_token = config.tobevpn.api_token.get_secret_value()
+    auth_scheme, _, provided_token = authorization.partition(" ")
+
+    if auth_scheme.lower() != "bearer" or not provided_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing ToBeVPN API token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not secrets.compare_digest(provided_token, expected_token):
+        logger.warning("Invalid ToBeVPN API token provided")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid ToBeVPN API token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+router = APIRouter(prefix="/api", dependencies=[Depends(verify_tobevpn_api_token)])
 
 
 ANONYMOUS_TRIAL_PRIORITY: dict[PlanAvailability, int] = {
