@@ -6,15 +6,17 @@ sensitive credentials (Remnawave API token) server-side.
 """
 
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, HTTPException, Query, status
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from remnapy import RemnawaveSDK
+from remnapy.exceptions import ConflictError, NotFoundError
+from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto
 
 from src.application.common import Remnawave
 from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao, TvPairingDao
@@ -388,3 +390,113 @@ async def proxy_sub_info(
                 "subscriptionUrl": None,
             }
         }
+
+
+# ── Device user management (keeps panel logic server-side) ────────
+
+
+class EnsureUserRequest(BaseModel):
+    device_id: str
+
+
+class SaveEmailRequest(BaseModel):
+    panel_user_uuid: str
+    email: EmailStr
+
+
+@router.post("/device/ensure-user")
+@inject
+async def ensure_user(
+    request: EnsureUserRequest,
+    remnawave_sdk: FromDishka[RemnawaveSDK],
+) -> dict:
+    """Find or create an anonymous panel user for a device."""
+    username = f"app_{request.device_id}"
+
+    # Try to find existing user
+    try:
+        user = await remnawave_sdk.users.get_user_by_username(username)
+        traffic_used = 0
+        if user.used_traffic_bytes is not None:
+            traffic_used = user.used_traffic_bytes
+        return {
+            "success": True,
+            "data": {
+                "short_uuid": str(user.short_uuid),
+                "panel_user_uuid": str(user.uuid),
+                "traffic_limit_bytes": user.traffic_limit_bytes or 0,
+                "traffic_used_bytes": traffic_used,
+            },
+        }
+    except NotFoundError:
+        pass
+    except Exception as e:
+        logger.warning(f"ensure_user lookup failed: {e}")
+
+    # Create new anonymous user with free trial params
+    expire_at = datetime.now(timezone.utc) + timedelta(days=FREE_TRIAL_DAYS)
+    try:
+        user = await remnawave_sdk.users.create_user(
+            CreateUserRequestDto(
+                username=username,
+                traffic_limit_bytes=FREE_TRIAL_TRAFFIC_BYTES,
+                traffic_limit_strategy="NO_RESET",
+                expire_at=expire_at,
+                hwid_device_limit=1,
+                active_internal_squads=[FREE_SQUAD_UUID],
+                description="ToBeVPN free trial",
+            )
+        )
+        return {
+            "success": True,
+            "data": {
+                "short_uuid": str(user.short_uuid),
+                "panel_user_uuid": str(user.uuid),
+                "traffic_limit_bytes": FREE_TRIAL_TRAFFIC_BYTES,
+                "traffic_used_bytes": 0,
+            },
+        }
+    except ConflictError:
+        # Race condition — user was created between lookup and create
+        try:
+            user = await remnawave_sdk.users.get_user_by_username(username)
+            traffic_used = 0
+            if user.used_traffic_bytes is not None:
+                traffic_used = user.used_traffic_bytes
+            return {
+                "success": True,
+                "data": {
+                    "short_uuid": str(user.short_uuid),
+                    "panel_user_uuid": str(user.uuid),
+                    "traffic_limit_bytes": user.traffic_limit_bytes or 0,
+                    "traffic_used_bytes": traffic_used,
+                },
+            }
+        except Exception as e:
+            logger.error(f"ensure_user re-lookup after conflict failed: {e}")
+            return {"success": False, "message": "Failed to create user"}
+    except Exception as e:
+        logger.error(f"ensure_user create failed: {e}")
+        return {"success": False, "message": "Failed to create user"}
+
+
+@router.post("/device/save-email")
+@inject
+async def save_email(
+    request: SaveEmailRequest,
+    remnawave_sdk: FromDishka[RemnawaveSDK],
+) -> dict:
+    """Update email on a panel user."""
+    try:
+        await remnawave_sdk.users.update_user(
+            UpdateUserRequestDto(
+                uuid=request.panel_user_uuid,
+                email=request.email,
+            )
+        )
+        return {"success": True, "data": None}
+    except NotFoundError:
+        return {"success": False, "message": "User not found"}
+    except Exception as e:
+        logger.error(f"save_email failed: {e}")
+        return {"success": False, "message": "Failed to save email"}
