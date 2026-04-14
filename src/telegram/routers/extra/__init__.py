@@ -1,7 +1,8 @@
-from . import commands, goto, inline, member, notification, payment, test
+from . import commands, device_auth, goto, inline, member, notification, payment, test
 
 __all__ = [
     "commands",
+    "device_auth",
     "goto",
     "inline",
     "member",

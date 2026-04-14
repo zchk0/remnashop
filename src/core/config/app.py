@@ -22,6 +22,7 @@ from .database import DatabaseConfig
 from .log import LogConfig
 from .redis import RedisConfig
 from .remnawave import RemnawaveConfig
+from .tobevpn import ToBeVpnConfig
 from .validators import validate_not_change_me
 
 
@@ -43,6 +44,7 @@ class AppConfig(BaseConfig, env_prefix="APP_"):
 
     bot: BotConfig = Field(default_factory=BotConfig)
     remnawave: RemnawaveConfig = Field(default_factory=RemnawaveConfig)
+    tobevpn: ToBeVpnConfig = Field(default_factory=ToBeVpnConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     build: BuildConfig = Field(default_factory=BuildConfig)

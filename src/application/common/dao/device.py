@@ -1,0 +1,49 @@
+from typing import Optional, Protocol, runtime_checkable
+
+from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
+
+
+@runtime_checkable
+class LinkedDeviceDao(Protocol):
+    async def upsert(self, device: LinkedDeviceDto) -> LinkedDeviceDto: ...
+
+    async def get_by_device_id(self, device_id: str) -> Optional[LinkedDeviceDto]: ...
+
+    async def get_by_telegram_id(self, telegram_id: int) -> list[LinkedDeviceDto]: ...
+
+    async def count_by_telegram_id(
+        self, telegram_id: int, exclude_device_id: Optional[str] = None
+    ) -> int: ...
+
+    async def unlink(self, device_id: str, telegram_id: int) -> bool: ...
+
+    async def add_anon_traffic(self, device_id: str, traffic_bytes: int) -> None: ...
+
+
+@runtime_checkable
+class AuthTokenDao(Protocol):
+    async def create(self, auth_token: AuthTokenDto) -> AuthTokenDto: ...
+
+    async def get_by_token(self, token: str) -> Optional[AuthTokenDto]: ...
+
+    async def complete(
+        self,
+        token: str,
+        telegram_id: int,
+        short_uuid: Optional[str] = None,
+    ) -> bool: ...
+
+    async def cleanup_expired(self, max_age_seconds: int = 86400) -> int: ...
+
+
+@runtime_checkable
+class TvPairingDao(Protocol):
+    async def create(self, pairing: TvPairingCodeDto) -> TvPairingCodeDto: ...
+
+    async def get_by_code(self, code: str) -> Optional[TvPairingCodeDto]: ...
+
+    async def complete(self, code: str, telegram_id: int) -> bool: ...
+
+    async def cleanup_expired(
+        self, ttl_seconds: int = 300, completed_grace_seconds: int = 600
+    ) -> int: ...

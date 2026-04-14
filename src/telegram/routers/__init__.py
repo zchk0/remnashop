@@ -11,6 +11,7 @@ def setup_routers(router: Router) -> None:
         extra.test.router,
         extra.commands.router,
         extra.member.router,
+        extra.device_auth.router,
         extra.goto.router,
         extra.inline.router,
         #
