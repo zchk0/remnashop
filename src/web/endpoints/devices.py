@@ -20,13 +20,30 @@ from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
 
 from src.application.common import Remnawave
-from src.application.common.dao import AuthTokenDao, LinkedDeviceDao, PlanDao, TvPairingDao
+from src.application.common.dao import (
+    AuthTokenDao,
+    LinkedDeviceDao,
+    PaymentGatewayDao,
+    PlanDao,
+    SubscriptionDao,
+    TvPairingDao,
+    UserDao,
+)
 from src.application.common.uow import UnitOfWork
-from src.application.dto import PlanDto
+from src.application.dto import (
+    PaymentGatewayDto,
+    PlanDto,
+    PlanDurationDto,
+    SubscriptionDto,
+    UserDto,
+)
 from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
+from src.application.services import PricingService
+from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
+from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
 from src.core.constants import TV_PAIRING_TTL_SECONDS
-from src.core.enums import PlanAvailability
+from src.core.enums import PlanAvailability, PurchaseType
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 
 
@@ -116,6 +133,92 @@ def _build_trial_config_data(plan: PlanDto) -> dict:
 def _build_device_username(device_id: str) -> str:
     digest = hashlib.sha256(device_id.encode()).hexdigest()[:32]
     return f"app_{digest}"
+
+
+def _get_plan_purchase_type(
+    plan: PlanDto,
+    current_subscription: Optional[SubscriptionDto],
+    renewable_plan_id: Optional[int],
+) -> PurchaseType:
+    if not current_subscription:
+        return PurchaseType.NEW
+
+    if renewable_plan_id == plan.id:
+        return PurchaseType.RENEW
+
+    return PurchaseType.CHANGE
+
+
+def _build_duration_data(
+    duration: PlanDurationDto,
+    user: UserDto,
+    gateways: list[PaymentGatewayDto],
+    pricing_service: PricingService,
+) -> dict:
+    prices_by_currency = {price.currency: price for price in duration.prices}
+    payment_methods = []
+
+    for gateway in gateways:
+        price = prices_by_currency.get(gateway.currency)
+        if price is None:
+            continue
+
+        pricing = pricing_service.calculate(user, price.price, gateway.currency)
+        payment_methods.append(
+            {
+                "gateway_type": gateway.type.value,
+                "currency": gateway.currency.value,
+                "original_amount": str(pricing.original_amount),
+                "final_amount": str(pricing.final_amount),
+                "discount_percent": pricing.discount_percent,
+            }
+        )
+
+    return {
+        "id": duration.id,
+        "days": duration.days,
+        "order_index": duration.order_index,
+        "prices": [
+            {
+                "currency": price.currency.value,
+                "amount": str(price.price),
+            }
+            for price in duration.prices
+        ],
+        "payment_methods": payment_methods,
+    }
+
+
+def _build_purchase_plan_data(
+    plan: PlanDto,
+    user: UserDto,
+    current_subscription: Optional[SubscriptionDto],
+    renewable_plan_id: Optional[int],
+    gateways: list[PaymentGatewayDto],
+    pricing_service: PricingService,
+) -> dict:
+    purchase_type = _get_plan_purchase_type(plan, current_subscription, renewable_plan_id)
+
+    return {
+        "id": plan.id,
+        "public_code": plan.public_code,
+        "name": plan.name,
+        "description": plan.description,
+        "type": plan.type.value,
+        "availability": plan.availability.value,
+        "purchase_type": purchase_type.value,
+        "traffic_limit": plan.traffic_limit,
+        "traffic_limit_strategy": plan.traffic_limit_strategy.value,
+        "device_limit": plan.device_limit,
+        "tag": plan.tag,
+        "order_index": plan.order_index,
+        "internal_squad_uuids": [str(squad_uuid) for squad_uuid in plan.internal_squads],
+        "external_squad_uuid": str(plan.external_squad) if plan.external_squad else None,
+        "durations": [
+            _build_duration_data(duration, user, gateways, pricing_service)
+            for duration in sorted(plan.durations, key=lambda item: item.order_index)
+        ],
+    }
 
 
 async def _get_panel_user_by_telegram_id(
@@ -331,7 +434,54 @@ async def get_devices(
     }
 
 
-# ── TV pairing endpoints ─────────────────────────────────────────
+# Purchase plans endpoint
+@router.get("/purchase/plans")
+@inject
+async def get_available_purchase_plans(
+    user_dao: FromDishka[UserDao],
+    subscription_dao: FromDishka[SubscriptionDao],
+    payment_gateway_dao: FromDishka[PaymentGatewayDao],
+    get_available_plans: FromDishka[GetAvailablePlans],
+    match_plan: FromDishka[MatchPlan],
+    pricing_service: FromDishka[PricingService],
+    telegram_id: int = Query(...),
+) -> dict:
+    user = await user_dao.get_by_telegram_id(telegram_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    plans = await get_available_plans.system(user)
+    current_subscription = await subscription_dao.get_current(telegram_id)
+    gateways = await payment_gateway_dao.get_active()
+    renewable_plan_id = None
+
+    if current_subscription and not current_subscription.is_unlimited and plans:
+        renewable_plan = await match_plan.system(
+            MatchPlanDto(plan_snapshot=current_subscription.plan_snapshot, plans=plans)
+        )
+        renewable_plan_id = renewable_plan.id if renewable_plan else None
+
+    return {
+        "success": True,
+        "data": {
+            "telegram_id": telegram_id,
+            "effective_discount_percent": pricing_service.get_effective_discount(user),
+            "plans": [
+                _build_purchase_plan_data(
+                    plan=plan,
+                    user=user,
+                    current_subscription=current_subscription,
+                    renewable_plan_id=renewable_plan_id,
+                    gateways=gateways,
+                    pricing_service=pricing_service,
+                )
+                for plan in sorted(plans, key=lambda item: item.order_index)
+            ],
+        },
+    }
+
+
+# TV pairing endpoints
 @router.post("/tv/pair/create")
 @inject
 async def tv_pair_create(
