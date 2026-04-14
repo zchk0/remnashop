@@ -33,7 +33,7 @@ router = Router(name=__name__)
 def _is_auth_token(args: str) -> bool:
     """Return True if the deep-link payload looks like an auth token (not a known deep-link)."""
     known_prefixes = (
-        "buy_",
+        Deeplink.BUY.with_underscore,
         Deeplink.REFERRAL.value,
         Deeplink.PLAN.value,
         Deeplink.INVITE.value,
@@ -69,6 +69,7 @@ async def _save_anon_traffic_and_delete(
     ~F.text.contains(Deeplink.PLAN),
     ~F.text.contains(Deeplink.INVITE),
     ~F.text.contains(Deeplink.REFERRAL),
+    ~F.text.contains(Deeplink.BUY.with_underscore),
 )
 async def on_device_auth(
     message: Message,

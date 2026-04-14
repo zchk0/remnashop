@@ -38,12 +38,12 @@ from src.application.dto import (
     UserDto,
 )
 from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
-from src.application.services import PricingService
+from src.application.services import BotService, PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
 from src.core.constants import TV_PAIRING_TTL_SECONDS
-from src.core.enums import PlanAvailability, PurchaseType
+from src.core.enums import Deeplink, PlanAvailability, PurchaseType
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 
 
@@ -149,14 +149,20 @@ def _get_plan_purchase_type(
     return PurchaseType.CHANGE
 
 
-def _build_duration_data(
+async def _build_duration_data(
+    plan_id: Optional[int],
     duration: PlanDurationDto,
     user: UserDto,
     gateways: list[PaymentGatewayDto],
     pricing_service: PricingService,
+    bot_service: BotService,
 ) -> dict:
+    if plan_id is None:
+        raise ValueError("Plan id is required to build ToBeVPN purchase link")
+
     prices_by_currency = {price.currency: price for price in duration.prices}
     payment_methods = []
+    bot_start_param = f"{Deeplink.BUY.with_underscore}{plan_id}_{duration.days}"
 
     for gateway in gateways:
         price = prices_by_currency.get(gateway.currency)
@@ -178,6 +184,8 @@ def _build_duration_data(
         "id": duration.id,
         "days": duration.days,
         "order_index": duration.order_index,
+        "bot_start_param": bot_start_param,
+        "bot_payment_url": await bot_service.get_purchase_url(plan_id, duration.days),
         "prices": [
             {
                 "currency": price.currency.value,
@@ -189,13 +197,14 @@ def _build_duration_data(
     }
 
 
-def _build_purchase_plan_data(
+async def _build_purchase_plan_data(
     plan: PlanDto,
     user: UserDto,
     current_subscription: Optional[SubscriptionDto],
     renewable_plan_id: Optional[int],
     gateways: list[PaymentGatewayDto],
     pricing_service: PricingService,
+    bot_service: BotService,
 ) -> dict:
     purchase_type = _get_plan_purchase_type(plan, current_subscription, renewable_plan_id)
 
@@ -215,7 +224,14 @@ def _build_purchase_plan_data(
         "internal_squad_uuids": [str(squad_uuid) for squad_uuid in plan.internal_squads],
         "external_squad_uuid": str(plan.external_squad) if plan.external_squad else None,
         "durations": [
-            _build_duration_data(duration, user, gateways, pricing_service)
+            await _build_duration_data(
+                plan_id=plan.id,
+                duration=duration,
+                user=user,
+                gateways=gateways,
+                pricing_service=pricing_service,
+                bot_service=bot_service,
+            )
             for duration in sorted(plan.durations, key=lambda item: item.order_index)
         ],
     }
@@ -444,6 +460,7 @@ async def get_available_purchase_plans(
     get_available_plans: FromDishka[GetAvailablePlans],
     match_plan: FromDishka[MatchPlan],
     pricing_service: FromDishka[PricingService],
+    bot_service: FromDishka[BotService],
     telegram_id: int = Query(...),
 ) -> dict:
     user = await user_dao.get_by_telegram_id(telegram_id)
@@ -467,13 +484,14 @@ async def get_available_purchase_plans(
             "telegram_id": telegram_id,
             "effective_discount_percent": pricing_service.get_effective_discount(user),
             "plans": [
-                _build_purchase_plan_data(
+                await _build_purchase_plan_data(
                     plan=plan,
                     user=user,
                     current_subscription=current_subscription,
                     renewable_plan_id=renewable_plan_id,
                     gateways=gateways,
                     pricing_service=pricing_service,
+                    bot_service=bot_service,
                 )
                 for plan in sorted(plans, key=lambda item: item.order_index)
             ],
