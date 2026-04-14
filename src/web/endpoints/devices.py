@@ -600,7 +600,7 @@ async def proxy_user_by_telegram(
         users = await remnawave.get_user_by_telegram_id(telegram_id)
         if not users:
             return {"response": []}
-        return {"response": [u.model_dump(mode="json") for u in users]}
+        return {"response": [u.model_dump(mode="json", by_alias=False) for u in users]}
     except Exception as e:
         logger.warning(f"proxy_user_by_telegram failed: {e}")
         return {"response": []}
@@ -613,7 +613,7 @@ async def proxy_nodes(
 ) -> dict:
     try:
         response = await remnawave_sdk.nodes.get_all_nodes()
-        return {"response": [n.model_dump(mode="json") for n in response.root]}
+        return {"response": [n.model_dump(mode="json", by_alias=False) for n in response.root]}
     except Exception as e:
         logger.warning(f"proxy_nodes failed: {e}")
         return {"response": []}
@@ -630,21 +630,21 @@ async def proxy_sub_info(
         if info is None:
             return {
                 "response": {
-                    "isFound": False,
+                    "is_found": False,
                     "user": None,
                     "links": None,
-                    "subscriptionUrl": None,
+                    "subscription_url": None,
                 }
             }
-        return {"response": info.model_dump(mode="json")}
+        return {"response": info.model_dump(mode="json", by_alias=False)}
     except Exception as e:
         logger.warning(f"proxy_sub_info failed: {e}")
         return {
             "response": {
-                "isFound": False,
+                "is_found": False,
                 "user": None,
                 "links": None,
-                "subscriptionUrl": None,
+                "subscription_url": None,
             }
         }
 
