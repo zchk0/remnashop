@@ -26,6 +26,10 @@ from src.application.use_cases.subscription.commands.purchase import (
 )
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
 from src.core.enums import Deeplink
+from src.core.utils.device_description import (
+    append_device_id_to_description,
+    extract_device_id_from_description,
+)
 
 router = Router(name=__name__)
 
@@ -41,22 +45,61 @@ def _is_auth_token(args: str) -> bool:
     return bool(args) and not any(args.startswith(p) for p in known_prefixes)
 
 
-async def _save_anon_traffic_and_delete(
+async def _update_panel_user_device_comment(
+    remnawave: Remnawave,
+    panel_user_uuid: UUID,
+    panel_user_description: str | None,
+    device_id: str,
+) -> None:
+    new_description = append_device_id_to_description(panel_user_description, device_id)
+    if new_description == (panel_user_description or "").strip():
+        return
+
+    await remnawave.update_user_description(panel_user_uuid, new_description)
+    logger.info(f"Saved device_id for panel user '{panel_user_uuid}'")
+
+
+async def _transfer_anon_subscription_and_delete(
     anon_uuid: str,
     device_id: str,
+    panel_user_uuid: UUID,
+    panel_user_description: str | None,
     device_dao: LinkedDeviceDao,
     remnawave: Remnawave,
     uow: UnitOfWork,
 ) -> None:
+    anon_user = None
+
     try:
         anon_user = await remnawave.get_user_by_uuid(UUID(anon_uuid))
+    except Exception as e:
+        logger.warning(f"Failed to fetch anon user '{anon_uuid}': {e}")
+
+    comment_device_id = extract_device_id_from_description(
+        anon_user.description if anon_user else None
+    ) or device_id
+
+    try:
+        await _update_panel_user_device_comment(
+            remnawave=remnawave,
+            panel_user_uuid=panel_user_uuid,
+            panel_user_description=panel_user_description,
+            device_id=comment_device_id,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to save device_id for panel user '{panel_user_uuid}': {e}")
+
+    try:
         if anon_user and anon_user.user_traffic:
             anon_traffic = int(anon_user.user_traffic.lifetime_used_traffic_bytes or 0)
             if anon_traffic > 0:
                 await device_dao.add_anon_traffic(device_id, anon_traffic)
                 await uow.commit()
-                logger.info(f"Saved {anon_traffic} anon bytes for device '{device_id}'")
+                logger.info(f"Added {anon_traffic} anon bytes for device '{device_id}'")
+    except Exception as e:
+        logger.warning(f"Failed to save anon traffic for device '{device_id}': {e}")
 
+    try:
         await remnawave.delete_user(UUID(anon_uuid))
         logger.info(f"Deleted anon panel user '{anon_uuid}'")
     except Exception as e:
@@ -107,14 +150,6 @@ async def on_device_auth(
 
     if existing_user:
         panel_user = existing_user
-        if anon_uuid and str(anon_uuid) != str(existing_user.uuid):
-            await _save_anon_traffic_and_delete(
-                anon_uuid=anon_uuid,
-                device_id=token_record.device_id,
-                device_dao=device_dao,
-                remnawave=remnawave,
-                uow=uow,
-            )
     else:
         if not user.is_trial_available:
             await message.answer("Trial is not available for this Telegram account.")
@@ -141,21 +176,34 @@ async def on_device_auth(
         existing_users = await remnawave.get_user_by_telegram_id(telegram_id)
         panel_user = existing_users[0] if existing_users else None
 
-        if panel_user and anon_uuid and str(anon_uuid) != str(panel_user.uuid):
-            await _save_anon_traffic_and_delete(
-                anon_uuid=anon_uuid,
-                device_id=token_record.device_id,
-                device_dao=device_dao,
-                remnawave=remnawave,
-                uow=uow,
-            )
-
     if not panel_user:
         await message.answer(
             "Could not complete account linking.\nPlease try again in a few seconds."
         )
         logger.warning(f"Failed auth for telegram '{telegram_id}': panel user not resolved")
         return
+
+    if anon_uuid:
+        if str(anon_uuid) == str(panel_user.uuid):
+            try:
+                await _update_panel_user_device_comment(
+                    remnawave=remnawave,
+                    panel_user_uuid=panel_user.uuid,
+                    panel_user_description=panel_user.description,
+                    device_id=token_record.device_id,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save device_id for panel user '{panel_user.uuid}': {e}")
+        else:
+            await _transfer_anon_subscription_and_delete(
+                anon_uuid=anon_uuid,
+                device_id=token_record.device_id,
+                panel_user_uuid=panel_user.uuid,
+                panel_user_description=panel_user.description,
+                device_dao=device_dao,
+                remnawave=remnawave,
+                uow=uow,
+            )
 
     short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
     panel_uuid = str(panel_user.uuid) if panel_user.uuid else None

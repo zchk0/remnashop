@@ -45,6 +45,10 @@ from src.core.config import AppConfig
 from src.core.constants import TV_PAIRING_TTL_SECONDS
 from src.core.enums import Deeplink, PlanAvailability, PurchaseType
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
+from src.core.utils.device_description import (
+    append_device_id_to_description,
+    append_saved_anon_traffic_to_description,
+)
 
 
 @inject
@@ -133,6 +137,32 @@ def _build_trial_config_data(plan: PlanDto) -> dict:
 def _build_device_username(device_id: str) -> str:
     digest = hashlib.sha256(device_id.encode()).hexdigest()[:32]
     return f"app_{digest}"
+
+
+def _build_anonymous_description(
+    plan: PlanDto,
+    device_id: str,
+    saved_anon_traffic: int = 0,
+) -> str:
+    description = plan.description or f"ToBeVPN trial: {plan.name}"
+    description = append_device_id_to_description(description, device_id)
+    return append_saved_anon_traffic_to_description(description, saved_anon_traffic)
+
+
+async def _ensure_panel_user_device_comment(
+    remnawave_sdk: RemnawaveSDK,
+    user: UserResponseDto,
+    device_id: str,
+    saved_anon_traffic: int = 0,
+) -> None:
+    description = append_device_id_to_description(user.description, device_id)
+    description = append_saved_anon_traffic_to_description(description, saved_anon_traffic)
+    if description == (user.description or "").strip():
+        return
+
+    await remnawave_sdk.users.update_user(
+        UpdateUserRequestDto(uuid=user.uuid, description=description)
+    )
 
 
 def _get_plan_purchase_type(
@@ -243,6 +273,52 @@ async def _get_panel_user_by_telegram_id(
 ) -> Optional[UserResponseDto]:
     panel_users = await remnawave.get_user_by_telegram_id(telegram_id)
     return panel_users[0] if panel_users else None
+
+
+async def _get_anonymous_panel_user_by_device_id(
+    device_id: str,
+    remnawave_sdk: RemnawaveSDK,
+) -> Optional[UserResponseDto]:
+    try:
+        return await remnawave_sdk.users.get_user_by_username(_build_device_username(device_id))
+    except NotFoundError:
+        return None
+
+
+def _get_saved_anon_traffic(device: Optional[LinkedDeviceDto]) -> int:
+    return int(device.anon_traffic_bytes or 0) if device else 0
+
+
+def _is_linked_device_bound(device: Optional[LinkedDeviceDto]) -> bool:
+    return bool(device and (device.telegram_id is not None or device.panel_user_uuid))
+
+
+def _build_panel_user_data(
+    user: UserResponseDto,
+    *,
+    extra_traffic_used_bytes: int = 0,
+    traffic_limit_bytes: Optional[int] = None,
+    trial_plan_id: Optional[int] = None,
+    is_anonymous: bool = False,
+) -> dict:
+    data = {
+        "short_uuid": str(user.short_uuid),
+        "panel_user_uuid": str(user.uuid),
+        "traffic_limit_bytes": traffic_limit_bytes
+        if traffic_limit_bytes is not None
+        else user.traffic_limit_bytes or 0,
+        "traffic_used_bytes": int(user.used_traffic_bytes or 0)
+        + extra_traffic_used_bytes,
+        "anon_traffic_bytes": extra_traffic_used_bytes,
+        "max_devices": user.hwid_device_limit or 0,
+        "is_anonymous": is_anonymous,
+        "telegram_id": user.telegram_id,
+    }
+
+    if trial_plan_id is not None:
+        data["trial_plan_id"] = trial_plan_id
+
+    return data
 
 
 def _get_device_limit(panel_user: UserResponseDto) -> int:
@@ -682,29 +758,60 @@ class SaveEmailRequest(BaseModel):
 async def ensure_user(
     request: EnsureUserRequest,
     plan_dao: FromDishka[PlanDao],
+    device_dao: FromDishka[LinkedDeviceDao],
+    remnawave: FromDishka[Remnawave],
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
     """Find or create an anonymous panel user for a device."""
     username = _build_device_username(request.device_id)
+    linked_device = await device_dao.get_by_device_id(request.device_id)
+    saved_anon_traffic = _get_saved_anon_traffic(linked_device)
+
+    if _is_linked_device_bound(linked_device):
+        linked_user = None
+        if linked_device and linked_device.panel_user_uuid:
+            linked_user = await remnawave.get_user_by_uuid(linked_device.panel_user_uuid)
+        if not linked_user and linked_device and linked_device.telegram_id is not None:
+            linked_user = await _get_panel_user_by_telegram_id(
+                linked_device.telegram_id,
+                remnawave,
+            )
+        if not linked_user:
+            return {
+                "success": False,
+                "message": "Device is linked but panel user was not found",
+            }
+
+        return {
+            "success": True,
+            "data": _build_panel_user_data(
+                linked_user,
+                extra_traffic_used_bytes=saved_anon_traffic,
+                is_anonymous=False,
+            ),
+        }
 
     # Try to find existing user
     try:
-        user = await remnawave_sdk.users.get_user_by_username(username)
-        traffic_used = 0
-        if user.used_traffic_bytes is not None:
-            traffic_used = user.used_traffic_bytes
-        return {
-            "success": True,
-            "data": {
-                "short_uuid": str(user.short_uuid),
-                "panel_user_uuid": str(user.uuid),
-                "traffic_limit_bytes": user.traffic_limit_bytes or 0,
-                "traffic_used_bytes": traffic_used,
-                "max_devices": user.hwid_device_limit or 0,
-            },
-        }
-    except NotFoundError:
-        pass
+        user = await _get_anonymous_panel_user_by_device_id(request.device_id, remnawave_sdk)
+        if user:
+            try:
+                await _ensure_panel_user_device_comment(
+                    remnawave_sdk,
+                    user,
+                    request.device_id,
+                    saved_anon_traffic,
+                )
+            except Exception as e:
+                logger.warning(f"ensure_user failed to save device_id comment: {e}")
+            return {
+                "success": True,
+                "data": _build_panel_user_data(
+                    user,
+                    extra_traffic_used_bytes=saved_anon_traffic,
+                    is_anonymous=True,
+                ),
+            }
     except Exception as e:
         logger.warning(f"ensure_user lookup failed: {e}")
 
@@ -731,36 +838,43 @@ async def ensure_user(
                 active_internal_squads=trial_plan.internal_squads,
                 external_squad_uuid=trial_plan.external_squad,
                 tag=trial_plan.tag,
-                description=trial_plan.description or f"ToBeVPN trial: {trial_plan.name}",
+                description=_build_anonymous_description(
+                    trial_plan,
+                    request.device_id,
+                    saved_anon_traffic,
+                ),
             )
         )
         return {
             "success": True,
-            "data": {
-                "short_uuid": str(user.short_uuid),
-                "panel_user_uuid": str(user.uuid),
-                "traffic_limit_bytes": traffic_limit_bytes,
-                "traffic_used_bytes": 0,
-                "trial_plan_id": trial_plan.id,
-                "max_devices": user.hwid_device_limit or 0,
-            },
+            "data": _build_panel_user_data(
+                user,
+                extra_traffic_used_bytes=saved_anon_traffic,
+                traffic_limit_bytes=traffic_limit_bytes,
+                trial_plan_id=trial_plan.id,
+                is_anonymous=True,
+            ),
         }
     except ConflictError:
         # Race condition — user was created between lookup and create
         try:
             user = await remnawave_sdk.users.get_user_by_username(username)
-            traffic_used = 0
-            if user.used_traffic_bytes is not None:
-                traffic_used = user.used_traffic_bytes
+            try:
+                await _ensure_panel_user_device_comment(
+                    remnawave_sdk,
+                    user,
+                    request.device_id,
+                    saved_anon_traffic,
+                )
+            except Exception as e:
+                logger.warning(f"ensure_user failed to save device_id comment: {e}")
             return {
                 "success": True,
-                "data": {
-                    "short_uuid": str(user.short_uuid),
-                    "panel_user_uuid": str(user.uuid),
-                    "traffic_limit_bytes": user.traffic_limit_bytes or 0,
-                    "traffic_used_bytes": traffic_used,
-                    "max_devices": user.hwid_device_limit or 0,
-                },
+                "data": _build_panel_user_data(
+                    user,
+                    extra_traffic_used_bytes=saved_anon_traffic,
+                    is_anonymous=True,
+                ),
             }
         except Exception as e:
             logger.error(f"ensure_user re-lookup after conflict failed: {e}")

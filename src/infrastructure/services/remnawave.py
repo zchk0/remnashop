@@ -114,6 +114,17 @@ class RemnawaveImpl(Remnawave):
 
         return remna_user
 
+    async def update_user_description(self, uuid: UUID, description: str) -> UserResponseDto:
+        try:
+            remna_user = await self.sdk.users.update_user(
+                UpdateUserRequestDto(uuid=uuid, description=description)
+            )
+            logger.info(f"Description for RemnaUser '{uuid}' updated successfully")
+            return remna_user
+        except NotFoundError:
+            logger.warning(f"RemnaUser '{uuid}' not found")
+            raise
+
     async def delete_user(self, uuid: UUID) -> bool:
         try:
             response = await self.sdk.users.delete_user(uuid)

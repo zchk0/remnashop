@@ -110,7 +110,10 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
         stmt = (
             update(LinkedDevice)
             .where(LinkedDevice.device_id == device_id)
-            .values(anon_traffic_bytes=LinkedDevice.anon_traffic_bytes + traffic_bytes)
+            .values(
+                anon_traffic_bytes=func.coalesce(LinkedDevice.anon_traffic_bytes, 0)
+                + traffic_bytes
+            )
         )
         await self.session.execute(stmt)
         logger.debug(f"Added {traffic_bytes} anon traffic bytes to device '{device_id}'")
