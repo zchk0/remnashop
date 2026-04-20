@@ -11,7 +11,7 @@ from src.application.common import Interactor
 from src.application.common.policy import Permission
 from src.application.dto import UserDto
 from src.application.use_cases.importer.dto import ExportedUserDto
-from src.core.constants import IMPORTED_TAG, REMNASHOP_PREFIX
+from src.core.constants import IMPORTED_TAG, REMNASHOP_PREFIX, UNLIMITED_EXPIRE_YEAR
 from src.core.enums import SubscriptionStatus
 
 
@@ -69,7 +69,7 @@ class ExportUsersFromXui(Interactor[Path, list[ExportedUserDto]]):
         expire_at = (
             datetime.fromtimestamp(user.get("expiryTime", 0) / 1000, tz=timezone.utc)
             if user.get("expiryTime")
-            else datetime(2099, 1, 1, tzinfo=timezone.utc)
+            else datetime(UNLIMITED_EXPIRE_YEAR, 1, 1, tzinfo=timezone.utc)
         )
 
         return ExportedUserDto(

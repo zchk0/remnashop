@@ -5,21 +5,14 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import Integer, delete, func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
-from src.core.constants import TTL_1H, TTL_6H
+from src.core.constants import RECENT_ACTIVITY_MAX_COUNT
 from src.core.enums import Role, SubscriptionStatus
-from src.infrastructure.database.models import Referral, Subscription, Transaction, User
-from src.infrastructure.redis.cache import invalidate_cache, provide_cache
-from src.infrastructure.redis.keys import (
-    USER_COUNT_PREFIX,
-    USER_LIST_PREFIX,
-    RoleKey,
-    UserCacheKey,
-)
+from src.infrastructure.database.models import Referral, Subscription, User
 
 
 class UserDaoImpl(UserDao):
@@ -238,7 +231,7 @@ class UserDaoImpl(UserDao):
         if excluded_ids:
             stmt = stmt.where(User.telegram_id.not_in(excluded_ids))
 
-        stmt = stmt.order_by(User.updated_at.desc().nulls_last()).limit(10)
+        stmt = stmt.order_by(User.updated_at.desc().nulls_last()).limit(RECENT_ACTIVITY_MAX_COUNT)
         result = await self.session.execute(stmt)
         db_users = result.scalars().all()
 
@@ -265,6 +258,21 @@ class UserDaoImpl(UserDao):
         count = result.scalar() or 0
         logger.debug(f"Retrieved '{count}' blocked users")
         return count
+
+    async def block_by_telegram_ids(self, telegram_ids: list[int]) -> int:
+        if not telegram_ids:
+            return 0
+        stmt = (
+            update(User)
+            .where(User.telegram_id.in_(telegram_ids))
+            .where(User.is_blocked.is_(False))
+            .values(is_blocked=True)
+            .returning(User.telegram_id)
+        )
+        result = await self.session.execute(stmt)
+        blocked = len(result.scalars().all())
+        logger.debug(f"Bulk-blocked '{blocked}' users from external blacklist")
+        return blocked
 
     async def has_any_subscription(self, telegram_id: int, *, include_trial: bool = True) -> bool:
         stmt = (

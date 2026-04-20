@@ -1,11 +1,11 @@
 from aiogram_dialog import Dialog, Window
-from aiogram_dialog.widgets.kbd import Column, Row, Select, Start, StubScroll, SwitchTo
 from magic_filter import F
 
 from src.core.enums import BannerName
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardStatistics
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Column, Row, Select, Start, StubScroll, SwitchTo
 
 from .getters import referrals_getter, subscriptions_getter, transactions_getter, users_getter
 from .handlers import on_gateway_select, on_plan_select

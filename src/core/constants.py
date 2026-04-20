@@ -57,8 +57,10 @@ TTL_12H: Final[int] = TIME_1H * 12
 TTL_1D: Final[int] = TIME_1D
 TTL_7D: Final[int] = TIME_1D * 7
 
-RECENT_REGISTERED_MAX_COUNT: Final[int] = 25
-RECENT_ACTIVITY_MAX_COUNT: Final[int] = 25
+RECENT_REGISTERED_MAX_COUNT: Final[int] = 50
+RECENT_ACTIVITY_MAX_COUNT: Final[int] = 50
+
+UNLIMITED_EXPIRE_YEAR: Final[int] = 2099
 
 BATCH_SIZE_10: Final[int] = 10
 BATCH_SIZE_20: Final[int] = 20

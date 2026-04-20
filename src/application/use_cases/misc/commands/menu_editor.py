@@ -10,9 +10,10 @@ from src.application.common.dao import SettingsDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import MenuButtonDto, UserDto
-from src.core.constants import T_ME, TEXT_MAX_LENGTH, TEXT_MEDIA_MAX_LENGTH, URL_PATTERN
+from src.core.constants import T_ME, TEXT_MAX_LENGTH, TEXT_MEDIA_MAX_LENGTH
 from src.core.enums import ButtonType, MediaType
 from src.core.exceptions import MenuEditorInvalidPayloadError
+from src.core.utils.validators import is_valid_url
 
 
 @dataclass(frozen=True)
@@ -87,7 +88,7 @@ class ConfirmMenuButtonChanges(Interactor[MenuButtonDto, None]):
 
     async def _execute(self, actor: UserDto, button: MenuButtonDto) -> None:
         if button.type in (ButtonType.URL, ButtonType.WEB_APP):
-            if button.payload and not URL_PATTERN.match(button.payload):
+            if button.payload and not is_valid_url(button.payload):
                 raise MenuEditorInvalidPayloadError(
                     f"Invalid URL format for payload '{button.payload}'"
                 )
@@ -100,9 +101,7 @@ class ConfirmMenuButtonChanges(Interactor[MenuButtonDto, None]):
         if button.type == ButtonType.TEXT and button.payload:
             max_length = TEXT_MAX_LENGTH if button.media_file_id else TEXT_MEDIA_MAX_LENGTH
             if len(button.payload) > max_length:
-                raise MenuEditorInvalidPayloadError(
-                    f"Text message exceeds {max_length} characters"
-                )
+                raise MenuEditorInvalidPayloadError(f"Text message exceeds {max_length} characters")
 
         settings = await self.settings_dao.get()
 

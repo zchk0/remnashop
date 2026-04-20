@@ -44,6 +44,7 @@ class Permission(UpperStrEnum):
     VIEW_AUDIT = auto()
     VIEW_MENU_EDITOR = auto()
     VIEW_BACKUP = auto()
+    VIEW_BLACKLIST = auto()
     #
     SETTINGS_REFERRAL = auto()
     SETTINGS_NOTIFICATIONS = auto()
@@ -65,6 +66,7 @@ class Permission(UpperStrEnum):
     ASSIGN_ROLE = auto()
     REVOKE_ROLE = auto()
     UNBLOCK_ALL = auto()
+    BLACKLIST = auto()
 
 
 ROLE_PERMISSIONS: Final[dict[Role, set[Permission]]] = {

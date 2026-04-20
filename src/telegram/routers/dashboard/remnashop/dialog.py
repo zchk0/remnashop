@@ -1,5 +1,4 @@
 from aiogram_dialog import Dialog, StartMode, Window
-from aiogram_dialog.widgets.kbd import Button, ListGroup, Row, Start, SwitchTo
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
@@ -19,6 +18,7 @@ from src.telegram.states import (
 )
 from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, ListGroup, Row, Start, SwitchTo
 
 from .getters import admins_getter, remnashop_getter
 from .handlers import on_logs_request, on_role_revoke, on_user_select

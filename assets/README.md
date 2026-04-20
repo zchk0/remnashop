@@ -167,6 +167,60 @@ custom-plan-name2 = 2️⃣ Premium plan
 ```
 
 
+# `Custom Emoji`
+
+Telegram supports custom emoji in buttons. To use them, the bot must have a paid username (Fragment) or the bot owner must have an active Telegram Premium subscription.
+
+## How to get an emoji ID
+
+1. Send the desired custom emoji to [@getidsbot](https://t.me/getidsbot) or `@RawDataBot`.
+2. The bot will return message details including the `custom_emoji_id`.
+
+## Syntax
+
+Two formats are supported directly in `.ftl` key values.
+
+### Full format
+
+```ftl
+btn-example = <tg-emoji emoji-id="5406756500108501710">🎁</tg-emoji> Button text
+```
+
+### Short format
+
+```ftl
+btn-example = <e id="5406756500108501710">🎁</e> Button text
+```
+
+The fallback text inside the tag (a plain emoji) is shown on clients that don't support custom emoji. It is recommended to always provide it.
+
+## Usage in buttons
+
+Both formats are automatically recognized by the `Emoji*` widgets (`EmojiButton`, `EmojiSwitchTo`, `EmojiBack`, etc.) when rendering keyboards. The custom emoji is extracted from the key text and passed as `icon_custom_emoji_id` on the Telegram button — it is a separate field, not part of the label.
+
+Example in `buttons.ftl`:
+
+```ftl
+btn-menu =
+    .connect = <tg-emoji emoji-id="5447410659077661506">🚀</tg-emoji> Connect
+    .devices = <e id="5271604874419647061">📱</e> Devices
+```
+
+## Usage in messages
+
+Custom emoji can be used in message text via the `I18nFormat` widget. The short format `<e id="...">` is automatically expanded to the full `<tg-emoji>` tag before the text is sent.
+
+```ftl
+msg-broadcast-main = <tg-emoji emoji-id="5424818078833715060">📢</tg-emoji> <b>Broadcast</b>
+msg-statistics-main = <e id="5231200819986047254">📊</e> <b>Statistics</b>
+```
+
+## Emoji priority
+
+If a button already has `icon_custom_emoji_id` set via the widget's `Style` (aiogram-dialog `Style(icon_custom_emoji_id="...")`), it takes priority over the emoji from the key text.
+
+---
+
 # `QR Code Logo`
 
 You can customize the appearance of the generated invitation QR code by adding your logo to the center of the code.

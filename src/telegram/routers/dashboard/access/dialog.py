@@ -1,12 +1,12 @@
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Column, Group, Row, Select, Start, SwitchTo
 from magic_filter import F
 
 from src.core.enums import AccessMode, BannerName
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardAccess
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Column, Group, Row, Select, Start, SwitchTo
 
 from .getters import access_getter, channel_getter, conditions_getter, rules_getter
 from .handlers import (

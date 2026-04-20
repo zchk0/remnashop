@@ -4,7 +4,6 @@ from aiogram.enums import ButtonStyle
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_dialog import StartMode
-from aiogram_dialog.widgets.kbd import Button, CopyText, Group, ListGroup, Row, Start, Url, WebApp
 from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
@@ -13,6 +12,7 @@ from src.core.constants import DOCS, GOTO_PREFIX, PAYMENT_PREFIX, REPOSITORY, T_
 from src.core.enums import ButtonType, PurchaseType
 from src.telegram.states import DashboardUser, MainMenu, Notification, Subscription
 from src.telegram.widgets import I18nFormat
+from src.telegram.widgets.kbd import Button, CopyText, Group, ListGroup, Row, Start, Url, WebApp
 
 CALLBACK_CHANNEL_CONFIRM: Final[str] = "channel_confirm"
 CALLBACK_RULES_ACCEPT: Final[str] = "rules_accept"
@@ -229,6 +229,13 @@ def get_remnashop_keyboard() -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="btn-remnashop-info.github", url=REPOSITORY),
         InlineKeyboardButton(text="btn-remnashop-info.telegram", url=f"{T_ME}remna_shop"),
+    )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="btn-remnashop-info.docs",
+            url=DOCS,
+        )
     )
 
     builder.row(

@@ -115,6 +115,9 @@ class NotificationService(Notifier):
     async def on_system_event(self, event: SystemEvent) -> None:
         logger.info(f"Received '{event.event_type}' event")
 
+        if isinstance(event, NotificationErrorEvent):
+            return
+
         settings: SettingsDto = await self.settings_dao.get()
         if not settings.notifications.is_enabled(event.notification_type):
             logger.info(f"Notification for '{event.notification_type}' is disabled, skipping")
@@ -137,9 +140,19 @@ class NotificationService(Notifier):
             )
         )
 
+        from src.core.logger import log_buffer  # noqa: PLC0415
+
+        log_context = log_buffer.get_context()
+        file_content = (
+            "=== LOG CONTEXT (last 100 lines) ===\n\n"
+            f"{log_context}\n\n"
+            "=== EXCEPTION ===\n\n"
+            f"{traceback_str}"
+        )
+
         media = MediaDescriptorDto(
             kind="bytes",
-            value=base64.b64encode(traceback_str.encode("utf-8")).decode(),
+            value=base64.b64encode(file_content.encode("utf-8")).decode(),
             filename=f"error_{event.event_id}.txt",
         )
 

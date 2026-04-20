@@ -5,6 +5,7 @@ from uuid import UUID
 
 from remnapy.enums import TrafficLimitStrategy
 
+from src.core.constants import UNLIMITED_EXPIRE_YEAR
 from src.core.enums import PlanType, SubscriptionStatus
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import bytes_to_gb
@@ -75,7 +76,7 @@ class SubscriptionDto(BaseDto, TrackableMixin, TimestampMixin):
 
     @property
     def is_unlimited(self) -> bool:
-        return self.expire_at.year == 2099
+        return self.expire_at.year == UNLIMITED_EXPIRE_YEAR
 
     @property
     def current_status(self) -> SubscriptionStatus:

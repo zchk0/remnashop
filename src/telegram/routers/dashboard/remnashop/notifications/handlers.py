@@ -15,6 +15,7 @@ from src.application.use_cases.settings.commands.notifications import (
 )
 from src.core.constants import USER_KEY
 from src.core.enums import SystemNotificationType, UserNotificationType
+from src.core.utils.validators import parse_int
 from src.telegram.states import RemnashopNotifications
 
 
@@ -89,13 +90,13 @@ async def on_route_chat_id_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     notification_type = dialog_manager.dialog_data["notification_type"]
 
-    if message.text is None or not message.text.lstrip("-").isdigit():
+    chat_id = parse_int(message.text)
+    if chat_id is None:
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
     settings = await settings_dao.get()
     current_route = settings.notifications.get_route(notification_type)
-    chat_id = int(message.text)
     thread_id = current_route.thread_id if current_route else None
 
     await update_system_notification_route(
@@ -122,14 +123,14 @@ async def on_route_thread_id_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     notification_type = dialog_manager.dialog_data["notification_type"]
 
-    if message.text is None or not message.text.isdigit():
+    thread_id = parse_int(message.text)
+    if thread_id is None:
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
     settings = await settings_dao.get()
     current_route = settings.notifications.get_route(notification_type)
     chat_id = current_route.chat_id if current_route else None
-    thread_id = int(message.text)
 
     await update_system_notification_route(
         user,

@@ -1,12 +1,12 @@
 from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Row, Start, SwitchTo
 from aiogram_dialog.widgets.style import Style
 
 from src.core.enums import BannerName
 from src.telegram.states import DashboardRemnashop, RemnashopBackup
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Row, Start, SwitchTo
 
 from .getters import backup_getter
 from .handlers import (

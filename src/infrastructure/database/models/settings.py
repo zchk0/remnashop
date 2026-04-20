@@ -21,3 +21,4 @@ class Settings(BaseSql, TimestampMixin):
     referral: Mapped[dict[str, Any]]
     menu: Mapped[dict[str, Any]]
     backup: Mapped[dict[str, Any]]
+    blacklist: Mapped[dict[str, Any]]

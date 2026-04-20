@@ -78,6 +78,9 @@ class DashboardUsers(StatesGroup):
     RECENT_REGISTERED = State()
     RECENT_ACTIVITY = State()
     BLACKLIST = State()
+    BLACKLIST_USERS = State()
+    BLACKLIST_BLOCK = State()
+    BLACKLIST_SOURCES = State()
 
 
 class DashboardUser(StatesGroup):

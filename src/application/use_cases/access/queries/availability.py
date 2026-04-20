@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from loguru import logger
 
@@ -35,7 +36,7 @@ class CheckAccess(Interactor[CheckAccessDto, bool]):
         self.notifier = notifier
 
     async def _execute(self, actor: UserDto, data: CheckAccessDto) -> bool:
-        user = await self.user_dao.get_by_telegram_id(data.telegram_id)
+        user: Optional[UserDto] = await self.user_dao.get_by_telegram_id(data.telegram_id)
         settings = await self.settings_dao.get()
 
         if user:

@@ -129,7 +129,7 @@ ntf-broadcast =
     .already-deleted = ❌ <i>Рассылка уже удалена или находится в процессе удаления.</i>
 
     .deleted-success =
-        ✅ Рассылка <code>{ $task_id }</code> успешно удалена.
+        ℹ️ Результат удаления рассылки <code>{ $task_id }</code>.
 
         <blockquote>
         • <b>Всего сообщений</b>: { $total_count }
@@ -164,3 +164,20 @@ ntf-backup =
     .assets-started = ⏳ <i>Создаю бэкап ассетов...</i>
     .db-started = ⏳ <i>Создаю бэкап базы данных...</i>
     .error = ❌ <i>Ошибка при создании бэкапа</i>
+
+ntf-blacklist =
+    .list-empty = ❌ <i>Список заблокированных пуст.</i>
+    .no-ids-found = ❌ <i>По ссылке не найдено ни одного ID.</i>
+    .source-removed = ✅ <i>Список удален.</i>
+    .blocked-ids-empty = ❌ <i>Список заблокированных ID пуст.</i>
+    .blocked-ids-cleared = ✅ <i>Очищено { $count } ID.</i>
+    
+    .block-result =
+    ℹ️ Результат блокировки.
+
+    <blockquote>
+    • <b>Всего ID</b>: { $total }
+    • <b>Заблокировано пользователей</b>: { $blocked_users }
+    • <b>Заблокировано ID</b>: { $blocked_ids }
+    • <b>Уже заблокированные</b>: { $already_blocked }
+    </blockquote>

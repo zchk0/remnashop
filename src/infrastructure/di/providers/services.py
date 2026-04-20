@@ -32,7 +32,6 @@ class ServicesProvider(Provider):
     cryptographer = provide(source=CryptographerImpl, provides=Cryptographer)
     redirect = provide(source=RedirectImpl, provides=Redirect)
     pricing = provide(source=PricingService)
-
     event_bus = provide(EventBusImpl)
     publisher = alias(source=EventBusImpl, provides=EventPublisher)
     subscriber = alias(source=EventBusImpl, provides=EventSubscriber)

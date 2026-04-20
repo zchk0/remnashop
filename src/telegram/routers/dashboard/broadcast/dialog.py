@@ -2,7 +2,13 @@ from uuid import UUID
 
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import (
+from magic_filter import F
+
+from src.core.enums import BannerName, BroadcastAudience, BroadcastStatus
+from src.telegram.keyboards import main_menu_button
+from src.telegram.states import Dashboard, DashboardBroadcast
+from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import (
     Button,
     Column,
     ListGroup,
@@ -12,12 +18,6 @@ from aiogram_dialog.widgets.kbd import (
     Start,
     SwitchTo,
 )
-from magic_filter import F
-
-from src.core.enums import BannerName, BroadcastAudience, BroadcastStatus
-from src.telegram.keyboards import main_menu_button
-from src.telegram.states import Dashboard, DashboardBroadcast
-from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 
 from .getters import buttons_getter, list_getter, plans_getter, send_getter, view_getter
 from .handlers import (

@@ -51,7 +51,7 @@ btn-remnashop-info =
     .github = ⭐ GitHub
     .telegram = 👪 Telegram
     .donate = 💰 Поддержать разработчика
-    .guide = ❓ Инструкция
+    .docs = 📖 Документация
 
 btn-requirement =
     .rules-accept = ✅ Принять правила
@@ -59,20 +59,20 @@ btn-requirement =
     .channel-confirm = ✅ Подтвердить
 
 btn-menu =
-    .trial = 🎁 ПОПРОБОВАТЬ БЕСПЛАТНО
-    .connect = 🚀 Подключиться
-    .devices = 📱 Устройства
-    .subscription = 💳 Подписка
-    .invite = 👥 Пригласить
-    .support = 🆘 Поддержка
-    .dashboard = 🛠 Панель управления
+    .trial = <e id="5406756500108501710">🎁</e> ПОПРОБОВАТЬ БЕСПЛАТНО
+    .connect = <e id="5447410659077661506">🚀</e> Подключиться
+    .devices = <e id="5271604874419647061">📱</e> Устройства
+    .subscription = <e id="5406683434124859552">💳</e> Подписка
+    .invite = <e id="5424818078833715060">👥</e> Пригласить
+    .support = <e id="5395695537687123235">🆘</e> Поддержка
+    .dashboard = <e id="5341715473882955310">🛠</e> Панель управления
 
     .connect-not-available =
-    ⚠️ { $status -> 
+    <e id="5420323339723881652">⚠️</e> { $status ->
     [LIMITED] ПРЕВЫШЕН ЛИМИТ ТРАФИКА
     [EXPIRED] СРОК ДЕЙСТВИЯ ИСТЕК
     *[OTHER] ВАША ПОДПИСКА НЕ РАБОТАЕТ
-    } ⚠️
+    } <e id="5420323339723881652">⚠️</e>
 
 btn-invite =
     .about = ❓ Подробнее о награде
@@ -128,6 +128,13 @@ btn-users =
     .recent-activity = 📝 Последние взаимодействующие
     .blacklist = 🚫 Черный список
     .unblock-all = 🔓 Разблокировать всех
+    .blacklist-view = 🗒️ Список заблокированных
+    .blacklist-block = ⛔ Заблокировать по ID
+    .blacklist-sources = 🔗 Автообновляемые списки
+    .blacklist-sources-sync = 🔄 Синхронизировать
+    .blacklist-block-clear = 🗑 Очистить список ID
+
+    .blacklist-source = 🔗 { $source }
 
 btn-user =
     .discount = 💸 Скидка
@@ -146,9 +153,8 @@ btn-user =
     .subscription-expire-time = ⏳ Время истечения
     .subscription-squads = 🔗 Сквады
     .subscription-traffic-reset = 🔄 Сбросить трафик
-    .subscription-devices = 🧾 Список устройств
+    .subscription-devices = 🗒️ Список устройств
     .subscription-url = 📋 Скопировать ссылку
-    .subscription-set = ✅ Установить подписку
     .subscription-delete = ❌ Удалить
     .subscription-reissue = ♻️ Перевыпустить
     .message-preview = 👀 Предпросмотр
@@ -190,7 +196,7 @@ btn-user =
     }
 
 btn-broadcast =
-    .list = 📄 Список всех рассылок
+    .list = 🗒️ Список всех рассылок
     .all = 👥 Всем
     .plan = 📦 По плану
     .subscribed = ✅ С подпиской
@@ -202,7 +208,6 @@ btn-broadcast =
     .preview = 👀 Предпросмотр
     .confirm = ✅ Запустить рассылку
     .refresh = 🔄 Обновить данные
-    .viewing = 👀 Просмотр
     .cancel = ⛔ Остановить рассылку
     .delete = ❌ Удалить отправленное
 
@@ -235,7 +240,7 @@ btn-goto =
     .contact-support = 📩 Перейти в поддержку
 
 btn-promocodes =
-    .list = 📃 Список промокодов
+    .list = 🗒️ Список промокодов
     .search = 🔍 Поиск промокода
     .create = 🆕 Создать
     .delete = 🗑️ Удалить
@@ -377,7 +382,6 @@ btn-notifications =
     }
 
 btn-plans =
-    .statistics = 📊 Статистика
     .save = ✅ Сохранить
     .create = ✅ Создать план
     .delete = ❌ Удалить
@@ -395,7 +399,6 @@ btn-plans =
     .squads = 🔗 Сквады
     .internal-squads = ⏺️ Внутренние сквады
     .external-squads = ⏹️ Внешний сквад
-    .allowed-user = { $id }
     .duration-add = 🆕 Добавить длительность
     .price-choice = 💸 { $price } { $currency }
     .export = 📤 Экспорт
@@ -456,7 +459,6 @@ btn-remnawave =
 
 btn-importer =
     .from-xui = 💩 Импорт из панели 3X-UI
-    .from-xui-shop = 🛒 Бот 3xui-shop
     .sync-from-panel = 🌀 Синхронизация: панель → бот
     .sync-from-bot = 🤖 Синхронизация: бот → панель
     .sync-start = ▶️ Синхронизировать

@@ -1,16 +1,6 @@
 from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import (
-    Button,
-    CopyText,
-    ListGroup,
-    Row,
-    Start,
-    SwitchInlineQueryChosenChatButton,
-    SwitchTo,
-    Url,
-)
 from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
@@ -23,6 +13,16 @@ from src.telegram.routers.dashboard.handlers import on_smart_search
 from src.telegram.states import Dashboard, MainMenu, Subscription
 from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import (
+    Button,
+    CopyText,
+    ListGroup,
+    Row,
+    Start,
+    SwitchInlineQueryChosenChatButton,
+    SwitchTo,
+    Url,
+)
 from src.telegram.window import Window
 
 from .getters import (
@@ -125,7 +125,7 @@ menu = Window(
 )
 
 devices = Window(
-    Banner(BannerName.MENU),
+    Banner(BannerName.DEVICES),
     I18nFormat("msg-menu-devices"),
     Row(
         Button(

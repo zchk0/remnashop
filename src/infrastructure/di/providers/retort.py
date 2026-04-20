@@ -13,6 +13,7 @@ from adaptix import (
 )
 from adaptix._internal.provider.loc_stack_filtering import OriginSubclassLSC
 from adaptix.conversion import ConversionRetort, coercer, link_function
+from aiogram.enums import ButtonStyle
 from dishka import Provider, Scope, provide
 from pydantic import SecretStr, TypeAdapter
 
@@ -20,6 +21,7 @@ from src.application.common import Cryptographer
 from src.application.dto import (
     AccessSettingsDto,
     BackupSettingsDto,
+    BlacklistSettingsDto,
     MenuButtonDto,
     MenuSettingsDto,
     MessagePayloadDto,
@@ -43,8 +45,6 @@ from src.application.dto.payment_gateway import (
     YooKassaGatewaySettingsDto,
     YooMoneyGatewaySettingsDto,
 )
-from aiogram.enums import ButtonStyle
-
 from src.core.enums import MediaType, PaymentGatewayType, ReferralLevel, Role
 from src.core.types import AnyKeyboard
 from src.infrastructure.database.models import PaymentGateway
@@ -138,6 +138,7 @@ class RetortProvider(Provider):
                 ),
                 coercer(dict, ReferralSettingsDto, retort.get_loader(ReferralSettingsDto)),
                 coercer(dict, BackupSettingsDto, retort.get_loader(BackupSettingsDto)),
+                coercer(dict, BlacklistSettingsDto, retort.get_loader(BlacklistSettingsDto)),
                 coercer(dict, MenuSettingsDto, retort.get_loader(MenuSettingsDto)),
                 coercer(dict, MenuButtonDto, retort.get_loader(MenuButtonDto)),
                 #

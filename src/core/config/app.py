@@ -5,9 +5,10 @@ from typing import Self
 from pydantic import Field, SecretStr, field_validator
 from pydantic_core.core_schema import FieldValidationInfo
 
-from src.core.constants import API_V1, ASSETS_DIR, DOMAIN_REGEX, PAYMENTS_WEBHOOK_PATH
+from src.core.constants import API_V1, ASSETS_DIR, PAYMENTS_WEBHOOK_PATH
 from src.core.enums import Locale, PaymentGatewayType
 from src.core.types import LocaleList, StringList
+from src.core.utils.validators import is_valid_domain
 
 from .base import BaseConfig
 from .bot import BotConfig
@@ -60,7 +61,7 @@ class AppConfig(BaseConfig, env_prefix="APP_"):
     def validate_domain(cls, field: SecretStr, info: FieldValidationInfo) -> SecretStr:
         validate_not_change_me(field, info)
 
-        if not re.match(DOMAIN_REGEX, field.get_secret_value()):
+        if not is_valid_domain(field.get_secret_value()):
             raise ValueError("APP_DOMAIN has invalid format")
 
         return field

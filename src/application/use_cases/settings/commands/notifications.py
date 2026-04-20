@@ -9,6 +9,7 @@ from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import SettingsDto, UserDto
 from src.core.types import NotificationType
+from src.core.utils.converters import normalize_channel_id
 
 
 class ToggleNotification(Interactor[NotificationType, Optional[SettingsDto]]):
@@ -55,9 +56,7 @@ class UpdateSystemNotificationRoute(
         actor: UserDto,
         data: UpdateSystemNotificationRouteDto,
     ) -> Optional[SettingsDto]:
-        chat_id = data.chat_id
-        if chat_id is not None and not str(chat_id).startswith("-100"):
-            chat_id = int(f"-100{abs(chat_id)}")
+        chat_id = normalize_channel_id(data.chat_id) if data.chat_id is not None else None
 
         async with self.uow:
             settings = await self.settings_dao.get()

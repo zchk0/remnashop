@@ -65,7 +65,7 @@ from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.application.use_cases.user.queries.profile import GetUserDevices
 from src.core.constants import TARGET_TELEGRAM_ID, USER_KEY
 from src.core.enums import Role
-from src.core.utils.validators import parse_int
+from src.core.utils.validators import is_positive_int, parse_int
 from src.telegram.states import DashboardUser
 from src.telegram.utils import is_double_click
 
@@ -307,14 +307,15 @@ async def on_personal_discount_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     target_telegram_id = dialog_manager.dialog_data[TARGET_TELEGRAM_ID]
 
-    if not message.text or not message.text.isdigit():
+    number = parse_int(message.text)
+    if number is None:
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
     try:
         await set_user_personal_discount(
             user,
-            SetUserPersonalDiscountDto(target_telegram_id, discount=int(message.text)),
+            SetUserPersonalDiscountDto(target_telegram_id, discount=number),
         )
         await dialog_manager.switch_to(state=DashboardUser.DISCOUNT)
     except ValueError:
@@ -352,14 +353,15 @@ async def on_purchase_discount_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     target_telegram_id = dialog_manager.dialog_data[TARGET_TELEGRAM_ID]
 
-    if not message.text or not message.text.isdigit():
+    number = parse_int(message.text)
+    if number is None:
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
     try:
         await set_user_purchase_discount(
             user,
-            SetUserPurchaseDiscountDto(target_telegram_id, discount=int(message.text)),
+            SetUserPurchaseDiscountDto(target_telegram_id, discount=number),
         )
         await dialog_manager.switch_to(state=DashboardUser.DISCOUNT)
     except ValueError:
@@ -446,11 +448,11 @@ async def on_traffic_limit_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     target_telegram_id = dialog_manager.dialog_data[TARGET_TELEGRAM_ID]
 
-    if not message.text or not message.text.isdigit() or int(message.text) <= 0:
+    if not is_positive_int(message.text):
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
-    await update_traffic_limit(user, UpdateTrafficLimitDto(target_telegram_id, int(message.text)))
+    await update_traffic_limit(user, UpdateTrafficLimitDto(target_telegram_id, int(message.text)))  # type: ignore[arg-type]
     await dialog_manager.switch_to(state=DashboardUser.SUBSCRIPTION)
 
 
@@ -480,11 +482,11 @@ async def on_device_limit_input(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     target_telegram_id = dialog_manager.dialog_data[TARGET_TELEGRAM_ID]
 
-    if not message.text or not message.text.isdigit() or int(message.text) <= 0:
+    if not is_positive_int(message.text):
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
         return
 
-    await update_device_limit(user, UpdateDeviceLimitDto(target_telegram_id, int(message.text)))
+    await update_device_limit(user, UpdateDeviceLimitDto(target_telegram_id, int(message.text)))  # type: ignore[arg-type]
     await dialog_manager.switch_to(state=DashboardUser.SUBSCRIPTION)
 
 

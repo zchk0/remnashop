@@ -188,6 +188,19 @@ class BackupSettingsDto(TrackableMixin):
 
 
 @dataclass(kw_only=True)
+class BlacklistSourceDto:
+    id: int
+    url: str
+    name: Optional[str] = None
+
+
+@dataclass(kw_only=True)
+class BlacklistSettingsDto(TrackableMixin):
+    blocked_ids: list[int] = field(default_factory=list)
+    sources: list[BlacklistSourceDto] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
 class SettingsDto(BaseDto, TrackableMixin, TimestampMixin):
     default_currency: Currency = Currency.XTR
     access: AccessSettingsDto = field(default_factory=AccessSettingsDto)
@@ -196,3 +209,4 @@ class SettingsDto(BaseDto, TrackableMixin, TimestampMixin):
     referral: ReferralSettingsDto = field(default_factory=ReferralSettingsDto)
     menu: MenuSettingsDto = field(default_factory=MenuSettingsDto)
     backup: BackupSettingsDto = field(default_factory=BackupSettingsDto)
+    blacklist: BlacklistSettingsDto = field(default_factory=BlacklistSettingsDto)

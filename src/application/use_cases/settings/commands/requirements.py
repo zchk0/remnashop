@@ -8,6 +8,7 @@ from src.application.common.uow import UnitOfWork
 from src.application.dto import SettingsDto, UserDto
 from src.core.constants import T_ME
 from src.core.enums import AccessRequirements
+from src.core.utils.converters import normalize_channel_id
 from src.core.utils.validators import is_valid_url, is_valid_username
 
 
@@ -96,8 +97,4 @@ class UpdateChannelRequirement(Interactor[str, None]):
         logger.info(f"{actor.log} Updated channel requirement")
 
     async def _handle_id_input(self, text: str, settings: SettingsDto) -> None:
-        channel_id = int(text)
-        if not text.startswith("-100") and not text.startswith("-"):
-            channel_id = int(f"-100{text}")
-
-        settings.requirements.channel_id = channel_id
+        settings.requirements.channel_id = normalize_channel_id(text)

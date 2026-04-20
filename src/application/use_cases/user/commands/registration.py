@@ -6,7 +6,7 @@ from aiogram.types import User as AiogramUser
 from loguru import logger
 
 from src.application.common import Cryptographer, EventPublisher, Interactor
-from src.application.common.dao import UserDao
+from src.application.common.dao import SettingsDao, UserDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
 from src.application.events import UserRegisteredEvent
@@ -44,6 +44,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
         self,
         uow: UnitOfWork,
         user_dao: UserDao,
+        settings_dao: SettingsDao,
         config: AppConfig,
         cryptographer: Cryptographer,
         event_publisher: EventPublisher,
@@ -52,6 +53,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
     ) -> None:
         self.uow = uow
         self.user_dao = user_dao
+        self.settings_dao = settings_dao
         self.config = config
         self.cryptographer = cryptographer
         self.event_publisher = event_publisher
@@ -80,9 +82,16 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
                     old_owner[0].role = Role.DEV
                     await self.user_dao.update(old_owner[0])
 
-            user_dto = self._create_user_dto(data)
+            settings = await self.settings_dao.get()
+            is_blocked = data.telegram_id in settings.blacklist.blocked_ids
+
+            user_dto = self._create_user_dto(data, is_blocked=is_blocked)
             user = await self.user_dao.create(user_dto)
             await self.uow.commit()
+
+        if is_blocked:
+            logger.warning(f"New user '{user.telegram_id}' created as blocked (found in blacklist)")
+            return user
 
         referrer = None
         referral_code = await self.get_referral_code_from_event.system(data.event)
@@ -105,7 +114,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
         logger.info(f"New user '{user.telegram_id}' created")
         return user
 
-    def _create_user_dto(self, data: GetOrCreateUserDto) -> UserDto:
+    def _create_user_dto(self, data: GetOrCreateUserDto, *, is_blocked: bool = False) -> UserDto:
         if data.language_code in self.config.locales:
             locale = Locale(data.language_code)
         else:
@@ -118,6 +127,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
             name=data.full_name,
             role=data.role,
             language=locale,
+            is_blocked=is_blocked,
         )
 
 

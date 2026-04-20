@@ -1,6 +1,5 @@
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Row, Start
 
 from src.application.common.policy import Permission
 from src.core.enums import BannerName
@@ -17,6 +16,7 @@ from src.telegram.states import (
 )
 from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Row, Start
 
 from .handlers import on_smart_search, show_dev_promocode
 

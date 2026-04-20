@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final, Optional, Union
 
+from src.core.constants import UNLIMITED_EXPIRE_YEAR
 from src.core.enums import PlanType
 from src.core.utils.time import datetime_now
 
@@ -55,11 +56,6 @@ def user_name_clean(name: Optional[str], telegram_id: int) -> str:
     return cleaned
 
 
-def to_snake_case(name: str) -> str:
-    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-
-
 def event_to_key(class_name: str) -> str:
     snake = re.sub(r"(?<!^)(?=[A-Z])", "_", class_name).lower()
     formatted_key = snake.replace("_", "-")
@@ -95,7 +91,7 @@ def country_code_to_flag(code: str) -> str:
     return "".join(chr(ord("🇦") + ord(c.upper()) - ord("A")) for c in code)
 
 
-def days_to_datetime(value: int, year: int = 2099) -> datetime:
+def days_to_datetime(value: int, year: int = UNLIMITED_EXPIRE_YEAR) -> datetime:
     dt = datetime_now()
 
     if value == 0:  # UNLIMITED for panel
@@ -106,6 +102,13 @@ def days_to_datetime(value: int, year: int = 2099) -> datetime:
             return dt.replace(year=year, day=min(dt.day, last_day))
 
     return dt + timedelta(days=value)
+
+
+def normalize_channel_id(value: Union[str, int]) -> int:
+    channel_id = int(value)
+    if not str(channel_id).startswith("-100"):
+        channel_id = int(f"-100{abs(channel_id)}")
+    return channel_id
 
 
 def limits_to_plan_type(traffic: int, devices: int) -> PlanType:

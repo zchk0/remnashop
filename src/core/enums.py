@@ -144,6 +144,7 @@ class BannerName(StrEnum):
     SUBSCRIPTION = auto()
     PROMOCODE = auto()
     REFERRAL = auto()
+    DEVICES = auto()
 
 
 class BannerFormat(StrEnum):

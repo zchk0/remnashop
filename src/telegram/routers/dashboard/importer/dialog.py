@@ -1,6 +1,5 @@
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
-from aiogram_dialog.widgets.kbd import Button, Column, Row, Select, Start, SwitchTo
 from magic_filter import F
 
 from src.core.enums import BannerName
@@ -9,6 +8,7 @@ from src.telegram.states import Dashboard, DashboardImporter
 from src.telegram.widgets.banner import Banner
 from src.telegram.widgets.i18n_format import I18nFormat
 from src.telegram.widgets.ignore_update import IgnoreUpdate
+from src.telegram.widgets.kbd import Button, Column, Row, Select, Start, SwitchTo
 
 from .getters import (
     from_xui_getter,

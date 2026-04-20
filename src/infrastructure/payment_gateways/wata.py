@@ -18,6 +18,7 @@ from loguru import logger
 from src.application.dto import PaymentGatewayDto, PaymentResultDto
 from src.application.dto.payment_gateway import WataGatewaySettingsDto
 from src.core.config import AppConfig
+from src.core.constants import TTL_6H
 from src.core.enums import TransactionStatus
 
 from .base import BasePaymentGateway
@@ -29,7 +30,6 @@ class WataGateway(BasePaymentGateway):
 
     API_BASE: Final[str] = "https://api.wata.pro/api/h2h"
 
-    _PUBLIC_KEY_TTL_SECONDS: Final[int] = 6 * 60 * 60
     _public_key_pem: bytes | None = None
     _public_key_loaded_at: datetime | None = None
 
@@ -130,7 +130,7 @@ class WataGateway(BasePaymentGateway):
         cache_valid = (
             self._public_key_pem is not None
             and self._public_key_loaded_at is not None
-            and (now - self._public_key_loaded_at).total_seconds() < self._PUBLIC_KEY_TTL_SECONDS
+            and (now - self._public_key_loaded_at).total_seconds() < TTL_6H
         )
         if cache_valid and not force_refresh:
             return self._public_key_pem  # type: ignore[return-value]

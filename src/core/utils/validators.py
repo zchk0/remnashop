@@ -1,6 +1,6 @@
 from typing import Optional
 
-from src.core.constants import URL_PATTERN, USERNAME_PATTERN
+from src.core.constants import DOMAIN_REGEX, TAG_REGEX, URL_PATTERN, USERNAME_PATTERN
 
 
 def is_valid_url(text: str) -> bool:
@@ -9,6 +9,14 @@ def is_valid_url(text: str) -> bool:
 
 def is_valid_username(text: str) -> bool:
     return bool(USERNAME_PATTERN.match(text))
+
+
+def is_valid_domain(text: str) -> bool:
+    return bool(DOMAIN_REGEX.match(text))
+
+
+def is_valid_tag(text: str) -> bool:
+    return bool(TAG_REGEX.fullmatch(text))
 
 
 def is_valid_int(value: Optional[str]) -> bool:
@@ -28,3 +36,8 @@ def parse_int(value: Optional[str]) -> Optional[int]:
         return int(value)
     except ValueError:
         return None
+
+
+def is_positive_int(value: Optional[str]) -> bool:
+    parsed = parse_int(value)
+    return parsed is not None and parsed > 0
