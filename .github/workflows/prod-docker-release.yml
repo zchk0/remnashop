@@ -66,13 +66,13 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: false
           body: |
-            # 🛍 Remnashop ${{ github.ref_name }} 
-            [![Telegram Group](https://img.shields.io/badge/public_group-white?style=social&logo=Telegram&logoColor=blue)](https://t.me/remna_shop)
+            # 🛍 Meow VPN ${{ github.ref_name }} 
+            [![Meow VPN](https://img.shields.io/badge/public_group-white?style=social&logo=Telegram&logoColor=blue)](https://t.me/meow_meow_vpn_bot)
             [![Remnawave](https://img.shields.io/badge/remnawave-white?style=social&logo=Telegram&logoColor=blue)](https://t.me/+xQs17zMzwCY1NzYy)
 
             ---
 
-            - [Compare changes (${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})](https://github.com/zchk0/remnashop/compare/${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})
+            [Compare changes (${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})](https://github.com/zchk0/remnashop/compare/${{ steps.latest-tag.outputs.previousTag }}...${{ steps.latest-tag.outputs.latestTag }})
 
             ---
 
