@@ -10,6 +10,7 @@ from src.application.common.dao import BroadcastDao, PlanDao, SettingsDao
 from src.application.dto import PlanDto
 from src.application.services import BotService
 from src.core.constants import DATETIME_FORMAT
+from src.core.constants import USER_KEY
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 
 
@@ -58,11 +59,14 @@ async def buttons_getter(
     **kwargs: Any,
 ) -> dict[str, Any]:
     buttons = dialog_manager.dialog_data.get("buttons", [])
+    user = dialog_manager.middleware_data[USER_KEY]
     settings = await settings_dao.get()
 
     if not buttons:
         all_buttons = get_broadcast_buttons(
-            support_url=bot_service.get_support_url(text=i18n.get("message.help")),
+            support_url=bot_service.get_support_url(
+                text=i18n.get("message.help", telegram_id=user.telegram_id)
+            ),
             is_referral_enable=settings.referral.enable,
         )
         buttons = [

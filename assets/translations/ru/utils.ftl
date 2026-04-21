@@ -14,7 +14,7 @@ inline-invite =
     .title = Пригласить друга
     .description = Нажмите, чтобы отправить пригласительную ссылку!
     .message =
-        🚀 Привет! Хочешь стабильный и быстрый VPN?
+        Привет! Хочешь стабильный и быстрый VPN?
         
         { $bot_name } - поможет тебе с этим!
 
@@ -22,9 +22,12 @@ inline-invite =
     .start = 🚀 Присоединиться
 
 message =
-    .withdraw-points = Здравствуйте! Я бы хотел запросить обмен баллов.
-    .paysupport = Здравствуйте! Я бы хотел запросить возврат средств.
-    .help = Здравствуйте! Мне нужна помощь.
+    .withdraw-points = Мой код: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+        Здравствуйте! Я бы хотел запросить обмен баллов.
+    .paysupport = Мой код: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+        Здравствуйте! Я бы хотел запросить возврат средств.
+    .help = Мой код: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+        Здравствуйте! Мне нужна помощь.
 
 command =
     .start = Перезапустить бота
@@ -297,10 +300,10 @@ availability-type = { $availability_type ->
 }
 
 gateway-type = { $gateway_type ->
-    [TELEGRAM_STARS] Telegram Stars
+    [TELEGRAM_STARS] Telegram Stars 
     [YOOKASSA] ЮKassa
     [YOOMONEY] ЮMoney
-    [CRYPTOMUS] Cryptomus
+    [CRYPTOMUS] Криптовалюта (Cryptomus)
     [HELEKET] Heleket
     [CRYPTOPAY] CryptoPay
     [FREEKASSA] FreeKassa

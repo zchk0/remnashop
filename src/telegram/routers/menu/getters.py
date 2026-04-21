@@ -32,7 +32,9 @@ async def menu_getter(
 ) -> dict[str, Any]:
     try:
         menu_data = await get_menu_data(user)
-        support_url = bot_service.get_support_url(text=i18n.get("message.help"))
+        support_url = bot_service.get_support_url(
+            text=i18n.get("message.help", telegram_id=user.telegram_id)
+        )
 
         purchase_discount = user.purchase_discount or 0
         personal_discount = user.personal_discount or 0
@@ -191,7 +193,9 @@ async def invite_getter(
     referrals = await referral_dao.get_referrals_count(user.telegram_id)
     payments = await referral_dao.get_referrals_with_payment_count(user.telegram_id)
     referral_url = await bot_service.get_referral_url(user.referral_code)
-    support_url = bot_service.get_support_url(text=i18n.get("message.withdraw-points"))
+    support_url = bot_service.get_support_url(
+        text=i18n.get("message.withdraw-points", telegram_id=user.telegram_id)
+    )
 
     return {
         "reward_type": settings.referral.reward.type,

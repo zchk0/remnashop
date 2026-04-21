@@ -25,7 +25,9 @@ async def on_paysupport_command(
     notifier: FromDishka[Notifier],
 ) -> None:
     logger.info(f"{user.log} Called '/paysupport' command")
-    support_url = bot_service.get_support_url(text=i18n.get("message.paysupport"))
+    support_url = bot_service.get_support_url(
+        text=i18n.get("message.paysupport", telegram_id=user.telegram_id)
+    )
 
     await notifier.notify_user(
         user=user,
@@ -70,7 +72,9 @@ async def on_help_command(
     notifier: FromDishka[Notifier],
 ) -> None:
     logger.info(f"{user.log} Called '/help' command")
-    support_url = bot_service.get_support_url(text=i18n.get("message.help"))
+    support_url = bot_service.get_support_url(
+        text=i18n.get("message.help", telegram_id=user.telegram_id)
+    )
 
     await notifier.notify_user(
         user=user,

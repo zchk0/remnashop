@@ -36,7 +36,9 @@ class SendMessageToUser(Interactor[SendMessageToUserDto, bool]):
         if not target_user:
             raise ValueError(f"User '{data.telegram_id}' not found")
 
-        support_url = self.bot_service.get_support_url(text=self.i18n.get("message.help"))
+        support_url = self.bot_service.get_support_url(
+            text=self.i18n.get("message.help", telegram_id=target_user.telegram_id)
+        )
         data.payload.reply_markup = get_contact_support_keyboard(support_url)
         message = await self.notifier.notify_user(user=target_user, payload=data.payload)
 

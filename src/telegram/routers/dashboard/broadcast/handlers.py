@@ -224,7 +224,9 @@ async def on_button_select(
     settings = await settings_dao.get()
 
     all_buttons = get_broadcast_buttons(
-        support_url=bot_service.get_support_url(text=i18n.get("message.help")),
+        support_url=bot_service.get_support_url(
+            text=i18n.get("message.help", telegram_id=user.telegram_id)
+        ),
         is_referral_enable=settings.referral.enable,
     )
     goto_buttons = all_buttons[:-1]
