@@ -3,6 +3,7 @@ from dishka import Provider, Scope, provide
 from src.application.common.dao import (
     AuthTokenDao,
     BroadcastDao,
+    DeviceSessionDao,
     LinkedDeviceDao,
     PaymentGatewayDao,
     PlanDao,
@@ -18,6 +19,7 @@ from src.application.common.dao import (
 from src.infrastructure.database.dao import (
     AuthTokenDaoImpl,
     BroadcastDaoImpl,
+    DeviceSessionDaoImpl,
     LinkedDeviceDaoImpl,
     PaymentGatewayDaoImpl,
     PlanDaoImpl,
@@ -37,6 +39,7 @@ class DaoProvider(Provider):
 
     auth_token = provide(source=AuthTokenDaoImpl, provides=AuthTokenDao)
     broadcast = provide(source=BroadcastDaoImpl, provides=BroadcastDao)
+    device_session = provide(source=DeviceSessionDaoImpl, provides=DeviceSessionDao)
     linked_device = provide(source=LinkedDeviceDaoImpl, provides=LinkedDeviceDao)
     payment_gateway = provide(source=PaymentGatewayDaoImpl, provides=PaymentGatewayDao)
     plan = provide(source=PlanDaoImpl, provides=PlanDao)

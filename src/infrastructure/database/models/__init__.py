@@ -2,6 +2,7 @@ from .auth_token import AuthToken
 from .base import BaseSql
 from .broadcast import Broadcast, BroadcastMessage
 from .device import LinkedDevice
+from .device_session import DeviceSession
 from .payment_gateway import PaymentGateway
 from .plan import Plan, PlanDuration, PlanPrice
 from .referral import Referral, ReferralReward
@@ -16,6 +17,7 @@ __all__ = [
     "BaseSql",
     "Broadcast",
     "BroadcastMessage",
+    "DeviceSession",
     "LinkedDevice",
     "PaymentGateway",
     "Plan",

@@ -1,5 +1,5 @@
 from .broadcast import BroadcastDao
-from .device import AuthTokenDao, LinkedDeviceDao, TvPairingDao
+from .device import AuthTokenDao, DeviceSessionDao, LinkedDeviceDao, TvPairingDao
 from .payment_gateway import PaymentGatewayDao
 from .plan import PlanDao
 from .referral import ReferralDao
@@ -13,6 +13,7 @@ from .webhook import WebhookDao
 __all__ = [
     "AuthTokenDao",
     "BroadcastDao",
+    "DeviceSessionDao",
     "LinkedDeviceDao",
     "PaymentGatewayDao",
     "TvPairingDao",

@@ -1,5 +1,5 @@
 from .broadcast import BroadcastDaoImpl
-from .device import AuthTokenDaoImpl, LinkedDeviceDaoImpl, TvPairingDaoImpl
+from .device import AuthTokenDaoImpl, DeviceSessionDaoImpl, LinkedDeviceDaoImpl, TvPairingDaoImpl
 from .payment_gateway import PaymentGatewayDaoImpl
 from .plan import PlanDaoImpl
 from .referral import ReferralDaoImpl
@@ -13,6 +13,7 @@ from .webhook import WebhookDaoImpl
 __all__ = [
     "AuthTokenDaoImpl",
     "BroadcastDaoImpl",
+    "DeviceSessionDaoImpl",
     "LinkedDeviceDaoImpl",
     "PaymentGatewayDaoImpl",
     "TvPairingDaoImpl",

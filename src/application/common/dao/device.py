@@ -1,6 +1,6 @@
 from typing import Optional, Protocol, runtime_checkable
 
-from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
+from src.application.dto.device import AuthTokenDto, DeviceSessionDto, LinkedDeviceDto, TvPairingCodeDto
 
 
 @runtime_checkable
@@ -34,6 +34,23 @@ class AuthTokenDao(Protocol):
     ) -> bool: ...
 
     async def cleanup_expired(self, max_age_seconds: int = 86400) -> int: ...
+
+
+@runtime_checkable
+class DeviceSessionDao(Protocol):
+    async def upsert(self, session: DeviceSessionDto) -> DeviceSessionDto: ...
+
+    async def get_by_device_id(self, device_id: str) -> Optional[DeviceSessionDto]: ...
+
+    async def get_by_access_token_hash(self, token_hash: str) -> Optional[DeviceSessionDto]: ...
+
+    async def get_by_refresh_token_hash(self, token_hash: str) -> Optional[DeviceSessionDto]: ...
+
+    async def revoke(self, device_id: str) -> bool: ...
+
+    async def touch(self, device_id: str) -> None: ...
+
+    async def cleanup_expired(self) -> int: ...
 
 
 @runtime_checkable

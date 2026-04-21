@@ -8,9 +8,19 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao, TvPairingDao
-from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
-from src.infrastructure.database.models import AuthToken, LinkedDevice, TvPairingCode
+from src.application.common.dao.device import (
+    AuthTokenDao,
+    DeviceSessionDao,
+    LinkedDeviceDao,
+    TvPairingDao,
+)
+from src.application.dto.device import (
+    AuthTokenDto,
+    DeviceSessionDto,
+    LinkedDeviceDto,
+    TvPairingCodeDto,
+)
+from src.infrastructure.database.models import AuthToken, DeviceSession, LinkedDevice, TvPairingCode
 
 
 class LinkedDeviceDaoImpl(LinkedDeviceDao):
@@ -192,6 +202,106 @@ class AuthTokenDaoImpl(AuthTokenDao):
         count = len(result.all())
         if count:
             logger.debug(f"Cleaned up {count} expired auth tokens")
+        return count
+
+
+class DeviceSessionDaoImpl(DeviceSessionDao):
+    def __init__(
+        self,
+        session: AsyncSession,
+        retort: Retort,
+        conversion_retort: ConversionRetort,
+    ) -> None:
+        self.session = session
+        self.retort = retort
+        self.conversion_retort = conversion_retort
+        self._to_dto = self.conversion_retort.get_converter(DeviceSession, DeviceSessionDto)
+
+    async def upsert(self, session: DeviceSessionDto) -> DeviceSessionDto:
+        data = self.retort.dump(session)
+        data.pop("id", None)
+        data.pop("created_at", None)
+        data.pop("updated_at", None)
+
+        stmt = (
+            pg_insert(DeviceSession)
+            .values(**data)
+            .on_conflict_do_update(
+                index_elements=[DeviceSession.device_id],
+                set_={
+                    "access_token_hash": data["access_token_hash"],
+                    "refresh_token_hash": data["refresh_token_hash"],
+                    "access_expires_at": data["access_expires_at"],
+                    "refresh_expires_at": data["refresh_expires_at"],
+                    "platform": data.get("platform"),
+                    "integrity_token_hash": data.get("integrity_token_hash"),
+                    "last_used_at": data.get("last_used_at"),
+                    "revoked_at": data.get("revoked_at"),
+                },
+            )
+            .returning(DeviceSession)
+        )
+        db_session = await self.session.scalar(stmt)
+        await self.session.flush()
+
+        logger.debug(f"Upserted device session for '{session.device_id}'")
+        return self._to_dto(db_session)
+
+    async def get_by_device_id(self, device_id: str) -> Optional[DeviceSessionDto]:
+        stmt = select(DeviceSession).where(DeviceSession.device_id == device_id)
+        db_session = await self.session.scalar(stmt)
+        if db_session:
+            return self._to_dto(db_session)
+        return None
+
+    async def get_by_access_token_hash(self, token_hash: str) -> Optional[DeviceSessionDto]:
+        stmt = select(DeviceSession).where(DeviceSession.access_token_hash == token_hash)
+        db_session = await self.session.scalar(stmt)
+        if db_session:
+            return self._to_dto(db_session)
+        return None
+
+    async def get_by_refresh_token_hash(self, token_hash: str) -> Optional[DeviceSessionDto]:
+        stmt = select(DeviceSession).where(DeviceSession.refresh_token_hash == token_hash)
+        db_session = await self.session.scalar(stmt)
+        if db_session:
+            return self._to_dto(db_session)
+        return None
+
+    async def revoke(self, device_id: str) -> bool:
+        stmt = (
+            update(DeviceSession)
+            .where(DeviceSession.device_id == device_id, DeviceSession.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(timezone.utc))
+            .returning(DeviceSession.id)
+        )
+        result = await self.session.scalar(stmt)
+        if result:
+            logger.debug(f"Revoked device session for '{device_id}'")
+            return True
+        return False
+
+    async def touch(self, device_id: str) -> None:
+        stmt = (
+            update(DeviceSession)
+            .where(DeviceSession.device_id == device_id)
+            .values(last_used_at=datetime.now(timezone.utc))
+        )
+        await self.session.execute(stmt)
+
+    async def cleanup_expired(self) -> int:
+        now = datetime.now(timezone.utc)
+        stmt = (
+            delete(DeviceSession)
+            .where(
+                DeviceSession.refresh_expires_at < now,
+            )
+            .returning(DeviceSession.id)
+        )
+        result = await self.session.execute(stmt)
+        count = len(result.all())
+        if count:
+            logger.debug(f"Cleaned up {count} expired device sessions")
         return count
 
 

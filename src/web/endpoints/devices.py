@@ -7,7 +7,8 @@ sensitive credentials (Remnawave API token) server-side.
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
 from dishka import FromDishka
@@ -19,9 +20,10 @@ from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
 
-from src.application.common import Remnawave
+from src.application.common import Cryptographer, Remnawave
 from src.application.common.dao import (
     AuthTokenDao,
+    DeviceSessionDao,
     LinkedDeviceDao,
     PaymentGatewayDao,
     PlanDao,
@@ -37,7 +39,12 @@ from src.application.dto import (
     SubscriptionDto,
     UserDto,
 )
-from src.application.dto.device import AuthTokenDto, LinkedDeviceDto, TvPairingCodeDto
+from src.application.dto.device import (
+    AuthTokenDto,
+    DeviceSessionDto,
+    LinkedDeviceDto,
+    TvPairingCodeDto,
+)
 from src.application.services import BotService, PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
@@ -51,37 +58,206 @@ from src.core.utils.device_description import (
 )
 
 
+@dataclass(kw_only=True)
+class DeviceAuthContext:
+    is_legacy: bool = False
+    device_id: Optional[str] = None
+    telegram_id: Optional[int] = None
+    panel_user_uuid: Optional[str] = None
+    short_uuid: Optional[str] = None
+    platform: Optional[str] = None
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _extract_bearer_token(authorization: str) -> Optional[str]:
+    auth_scheme, _, token = authorization.partition(" ")
+    if auth_scheme.lower() != "bearer" or not token:
+        return None
+    return token
+
+
+def _build_device_auth_unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _is_expired(expires_at: datetime) -> bool:
+    return expires_at <= _utcnow()
+
+
+def _build_session_response(
+    access_token: str,
+    refresh_token: str,
+    access_expires_at: datetime,
+    refresh_expires_at: datetime,
+    linked_device: Optional[LinkedDeviceDto] = None,
+) -> dict:
+    now = _utcnow()
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "Bearer",
+        "expires_in": max(0, int((access_expires_at - now).total_seconds())),
+        "refresh_expires_in": max(0, int((refresh_expires_at - now).total_seconds())),
+        "device_id": linked_device.device_id if linked_device else None,
+        "telegram_id": linked_device.telegram_id if linked_device else None,
+        "panel_user_uuid": linked_device.panel_user_uuid if linked_device else None,
+        "short_uuid": linked_device.short_uuid if linked_device else None,
+        "is_linked": bool(
+            linked_device and (linked_device.telegram_id is not None or linked_device.panel_user_uuid)
+        ),
+    }
+
+
+def _generate_session_tokens(
+    device_id: str,
+    platform: Optional[str],
+    integrity_token: Optional[str],
+    config: AppConfig,
+    cryptographer: Cryptographer,
+    current_session: Optional[DeviceSessionDto] = None,
+) -> tuple[DeviceSessionDto, str, str]:
+    now = _utcnow()
+    access_token = secrets.token_urlsafe(32)
+    refresh_token = secrets.token_urlsafe(48)
+    session = DeviceSessionDto(
+        device_id=device_id,
+        access_token_hash=cryptographer.get_hash(access_token),
+        refresh_token_hash=cryptographer.get_hash(refresh_token),
+        access_expires_at=now + timedelta(seconds=config.tobevpn.access_token_ttl_seconds),
+        refresh_expires_at=now + timedelta(seconds=config.tobevpn.refresh_token_ttl_seconds),
+        platform=platform or (current_session.platform if current_session else None),
+        integrity_token_hash=(
+            cryptographer.get_hash(integrity_token)
+            if integrity_token
+            else (current_session.integrity_token_hash if current_session else None)
+        ),
+        last_used_at=now,
+        revoked_at=None,
+    )
+    return session, access_token, refresh_token
+
+
+def _merge_linked_device(
+    device: LinkedDeviceDto,
+    *,
+    device_name: Optional[str] = None,
+    device_type: Optional[str] = None,
+    platform: Optional[str] = None,
+) -> LinkedDeviceDto:
+    return replace(
+        device,
+        device_name=device_name if device_name is not None else device.device_name,
+        device_type=device_type if device_type is not None else device.device_type,
+        platform=platform if platform is not None else device.platform,
+    )
+
+
+def _resolve_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str:
+    if auth.device_id:
+        if device_id is not None and device_id != auth.device_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="device_id does not match current device session",
+            )
+        return auth.device_id
+
+    if device_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="device_id is required")
+
+    return device_id
+
+
+def _resolve_telegram_id(auth: DeviceAuthContext, telegram_id: Optional[int]) -> int:
+    if auth.telegram_id is not None:
+        if telegram_id is not None and telegram_id != auth.telegram_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="telegram_id does not match current device session",
+            )
+        return auth.telegram_id
+
+    if auth.device_id and not auth.is_legacy:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current device session is not linked to a Telegram user",
+        )
+
+    if telegram_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="telegram_id is required")
+
+    return telegram_id
+
+
+def _resolve_panel_user_uuid(auth: DeviceAuthContext, panel_user_uuid: Optional[str]) -> str:
+    if auth.panel_user_uuid:
+        if panel_user_uuid is not None and panel_user_uuid != auth.panel_user_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="panel_user_uuid does not match current device session",
+            )
+        return auth.panel_user_uuid
+
+    if auth.device_id and not auth.is_legacy:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current device session is not linked to a panel user",
+        )
+
+    if panel_user_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="panel_user_uuid is required",
+        )
+
+    return panel_user_uuid
+
+
 @inject
-async def verify_tobevpn_api_token(
+async def get_device_auth_context(
     config: FromDishka[AppConfig],
+    cryptographer: FromDishka[Cryptographer],
+    session_dao: FromDishka[DeviceSessionDao],
+    device_dao: FromDishka[LinkedDeviceDao],
     authorization: Annotated[str, Header(alias="Authorization")] = "",
-) -> None:
+) -> DeviceAuthContext:
     if not config.tobevpn.is_enabled:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="ToBeVPN integration is not configured",
         )
 
-    expected_token = config.tobevpn.api_token.get_secret_value()
-    auth_scheme, _, provided_token = authorization.partition(" ")
+    token = _extract_bearer_token(authorization)
+    if not token:
+        raise _build_device_auth_unauthorized("Missing bearer token")
 
-    if auth_scheme.lower() != "bearer" or not provided_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing ToBeVPN API token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    expected_legacy_token = config.tobevpn.api_token.get_secret_value()
+    if config.tobevpn.has_legacy_api_token and secrets.compare_digest(token, expected_legacy_token):
+        return DeviceAuthContext(is_legacy=True)
 
-    if not secrets.compare_digest(provided_token, expected_token):
-        logger.warning("Invalid ToBeVPN API token provided")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid ToBeVPN API token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    token_hash = cryptographer.get_hash(token)
+    session = await session_dao.get_by_access_token_hash(token_hash)
+    if not session or session.revoked_at or _is_expired(session.access_expires_at):
+        logger.warning("Invalid or expired ToBeVPN device access token provided")
+        raise _build_device_auth_unauthorized("Invalid or expired access token")
+
+    linked_device = await device_dao.get_by_device_id(session.device_id)
+    return DeviceAuthContext(
+        device_id=session.device_id,
+        telegram_id=linked_device.telegram_id if linked_device else None,
+        panel_user_uuid=linked_device.panel_user_uuid if linked_device else None,
+        short_uuid=linked_device.short_uuid if linked_device else None,
+        platform=session.platform,
+    )
 
 
-router = APIRouter(prefix="/api", dependencies=[Depends(verify_tobevpn_api_token)])
+router = APIRouter(prefix="/api")
 
 
 ANONYMOUS_TRIAL_PRIORITY: dict[PlanAvailability, int] = {
@@ -345,31 +521,41 @@ async def get_config(plan_dao: FromDishka[PlanDao]) -> dict:
 
 # ── Request / response models ────────────────────────────────────
 class AuthRequest(BaseModel):
-    device_id: str
-    auth_token: str
+    device_id: Optional[str] = None
+    auth_token: Optional[str] = None
     panel_user_uuid: Optional[str] = None
 
 
-class DeviceRegisterRequest(BaseModel):
+class DeviceBootstrapRequest(BaseModel):
     device_id: str
-    telegram_id: int
+    platform: Optional[str] = None
+    integrity_token: Optional[str] = None
+
+
+class DeviceRefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class DeviceRegisterRequest(BaseModel):
+    device_id: Optional[str] = None
+    telegram_id: Optional[int] = None
     device_name: Optional[str] = None
     device_type: Optional[str] = None
     platform: Optional[str] = None
 
 
 class DeviceUnlinkRequest(BaseModel):
-    device_id: str
-    telegram_id: int
+    device_id: Optional[str] = None
+    telegram_id: Optional[int] = None
 
 
 class TvPairCreateRequest(BaseModel):
-    device_id: str
+    device_id: Optional[str] = None
 
 
 class TvPairConfirmRequest(BaseModel):
     code: str
-    telegram_id: int
+    telegram_id: Optional[int] = None
 
 
 # ── Auth token endpoints ─────────────────────────────────────────
@@ -377,24 +563,28 @@ class TvPairConfirmRequest(BaseModel):
 @inject
 async def request_auth(
     request: AuthRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
     auth_dao: FromDishka[AuthTokenDao],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
-    existing = await device_dao.get_by_device_id(request.device_id)
+    device_id = _resolve_device_id(auth, request.device_id)
+    auth_token = request.auth_token or secrets.token_urlsafe(24)
+
+    existing = await device_dao.get_by_device_id(device_id)
     if not existing:
-        await device_dao.upsert(LinkedDeviceDto(device_id=request.device_id))
+        await device_dao.upsert(LinkedDeviceDto(device_id=device_id))
 
     await auth_dao.create(
         AuthTokenDto(
-            token=request.auth_token,
-            device_id=request.device_id,
+            token=auth_token,
+            device_id=device_id,
             panel_user_uuid=request.panel_user_uuid,
         )
     )
     await uow.commit()
 
-    return {"success": True, "data": None}
+    return {"success": True, "data": {"auth_token": auth_token}}
 
 
 @router.get("/auth/status")
@@ -427,10 +617,12 @@ async def check_auth_status(
 @router.get("/device/traffic")
 @inject
 async def get_device_traffic(
-    device_id: str = Query(...),
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    device_id: Optional[str] = Query(default=None),
     device_dao: FromDishka[LinkedDeviceDao] = None,  # type: ignore[assignment]
 ) -> dict:
-    device = await device_dao.get_by_device_id(device_id)
+    resolved_device_id = _resolve_device_id(auth, device_id)
+    device = await device_dao.get_by_device_id(resolved_device_id)
     anon_bytes = device.anon_traffic_bytes if device else 0
     return {"success": True, "data": {"anon_traffic_bytes": anon_bytes or 0}}
 
@@ -439,11 +631,15 @@ async def get_device_traffic(
 @inject
 async def register_device(
     request: DeviceRegisterRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
     remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
-    panel_user = await _get_panel_user_by_telegram_id(request.telegram_id, remnawave)
+    device_id = _resolve_device_id(auth, request.device_id)
+    telegram_id = _resolve_telegram_id(auth, request.telegram_id)
+
+    panel_user = await _get_panel_user_by_telegram_id(telegram_id, remnawave)
     if panel_user is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -452,13 +648,13 @@ async def register_device(
 
     device_limit = _get_device_limit(panel_user)
 
-    existing = await device_dao.get_by_device_id(request.device_id)
-    already_linked = existing is not None and existing.telegram_id == request.telegram_id
+    existing = await device_dao.get_by_device_id(device_id)
+    already_linked = existing is not None and existing.telegram_id == telegram_id
 
     if not already_linked:
         linked_count = await device_dao.count_by_telegram_id(
-            request.telegram_id,
-            exclude_device_id=request.device_id,
+            telegram_id,
+            exclude_device_id=device_id,
         )
         if _is_device_limit_reached(linked_count, device_limit):
             return {
@@ -466,15 +662,30 @@ async def register_device(
                 "message": f"Device limit reached. Maximum is {device_limit}.",
             }
 
-    await device_dao.upsert(
-        LinkedDeviceDto(
-            device_id=request.device_id,
-            telegram_id=request.telegram_id,
+    panel_user_uuid = str(panel_user.uuid) if panel_user.uuid else None
+    short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
+    if existing:
+        device_to_save = replace(
+            existing,
+            telegram_id=telegram_id,
+            panel_user_uuid=panel_user_uuid,
+            short_uuid=short_uuid,
+            device_name=request.device_name if request.device_name is not None else existing.device_name,
+            device_type=request.device_type if request.device_type is not None else existing.device_type,
+            platform=(request.platform or auth.platform or existing.platform),
+        )
+    else:
+        device_to_save = LinkedDeviceDto(
+            device_id=device_id,
+            telegram_id=telegram_id,
+            panel_user_uuid=panel_user_uuid,
+            short_uuid=short_uuid,
             device_name=request.device_name,
             device_type=request.device_type,
-            platform=request.platform,
+            platform=request.platform or auth.platform,
         )
-    )
+
+    await device_dao.upsert(device_to_save)
     await uow.commit()
 
     return {"success": True, "data": None}
@@ -484,10 +695,13 @@ async def register_device(
 @inject
 async def unlink_device(
     request: DeviceUnlinkRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
-    await device_dao.unlink(request.device_id, request.telegram_id)
+    device_id = _resolve_device_id(auth, request.device_id)
+    telegram_id = _resolve_telegram_id(auth, request.telegram_id)
+    await device_dao.unlink(device_id, telegram_id)
     await uow.commit()
     return {"success": True, "data": None}
 
@@ -495,18 +709,20 @@ async def unlink_device(
 @router.get("/devices")
 @inject
 async def get_devices(
-    telegram_id: int = Query(...),
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    telegram_id: Optional[int] = Query(default=None),
     device_dao: FromDishka[LinkedDeviceDao] = None,  # type: ignore[assignment]
     remnawave: FromDishka[Remnawave] = None,  # type: ignore[assignment]
 ) -> dict:
-    panel_user = await _get_panel_user_by_telegram_id(telegram_id, remnawave)
+    resolved_telegram_id = _resolve_telegram_id(auth, telegram_id)
+    panel_user = await _get_panel_user_by_telegram_id(resolved_telegram_id, remnawave)
     if panel_user is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="telegram_id not authenticated",
         )
 
-    devices = await device_dao.get_by_telegram_id(telegram_id)
+    devices = await device_dao.get_by_telegram_id(resolved_telegram_id)
     return {
         "success": True,
         "data": {
@@ -530,6 +746,7 @@ async def get_devices(
 @router.get("/purchase/plans")
 @inject
 async def get_available_purchase_plans(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
@@ -537,14 +754,15 @@ async def get_available_purchase_plans(
     match_plan: FromDishka[MatchPlan],
     pricing_service: FromDishka[PricingService],
     bot_service: FromDishka[BotService],
-    telegram_id: int = Query(...),
+    telegram_id: Optional[int] = Query(default=None),
 ) -> dict:
-    user = await user_dao.get_by_telegram_id(telegram_id)
+    resolved_telegram_id = _resolve_telegram_id(auth, telegram_id)
+    user = await user_dao.get_by_telegram_id(resolved_telegram_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     plans = await get_available_plans.system(user)
-    current_subscription = await subscription_dao.get_current(telegram_id)
+    current_subscription = await subscription_dao.get_current(resolved_telegram_id)
     gateways = await payment_gateway_dao.get_active()
     renewable_plan_id = None
 
@@ -557,7 +775,7 @@ async def get_available_purchase_plans(
     return {
         "success": True,
         "data": {
-            "telegram_id": telegram_id,
+            "telegram_id": resolved_telegram_id,
             "effective_discount_percent": pricing_service.get_effective_discount(user),
             "plans": [
                 await _build_purchase_plan_data(
@@ -580,11 +798,13 @@ async def get_available_purchase_plans(
 @inject
 async def tv_pair_create(
     request: TvPairCreateRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     pairing_dao: FromDishka[TvPairingDao],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
+    device_id = _resolve_device_id(auth, request.device_id)
     code = secrets.token_hex(8).upper()
-    await pairing_dao.create(TvPairingCodeDto(code=code, device_id=request.device_id))
+    await pairing_dao.create(TvPairingCodeDto(code=code, device_id=device_id))
     await uow.commit()
 
     return {
@@ -597,13 +817,15 @@ async def tv_pair_create(
 @inject
 async def tv_pair_confirm(
     request: TvPairConfirmRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
     pairing_dao: FromDishka[TvPairingDao],
     remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
+    telegram_id = _resolve_telegram_id(auth, request.telegram_id)
     # Verify mobile user is authenticated (exists in devices or on panel)
-    panel_user = await _get_panel_user_by_telegram_id(request.telegram_id, remnawave)
+    panel_user = await _get_panel_user_by_telegram_id(telegram_id, remnawave)
     if panel_user is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -625,14 +847,14 @@ async def tv_pair_confirm(
 
     # Check device limit
     device_limit = _get_device_limit(panel_user)
-    linked_count = await device_dao.count_by_telegram_id(request.telegram_id)
+    linked_count = await device_dao.count_by_telegram_id(telegram_id)
     if _is_device_limit_reached(linked_count, device_limit):
         return {
             "success": False,
             "message": f"Device limit reached. Maximum is {device_limit}.",
         }
 
-    await pairing_dao.complete(request.code, request.telegram_id)
+    await pairing_dao.complete(request.code, telegram_id)
     await uow.commit()
 
     return {"success": True, "data": None}
@@ -687,9 +909,11 @@ async def tv_pair_status(
 @router.get("/panel/user-by-telegram/{telegram_id}")
 @inject
 async def proxy_user_by_telegram(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     telegram_id: int,
     remnawave: FromDishka[Remnawave],
 ) -> dict:
+    _resolve_telegram_id(auth, telegram_id)
     try:
         users = await remnawave.get_user_by_telegram_id(telegram_id)
         if not users:
@@ -703,8 +927,10 @@ async def proxy_user_by_telegram(
 @router.get("/panel/nodes")
 @inject
 async def proxy_nodes(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
+    del auth
     try:
         response = await remnawave_sdk.nodes.get_all_nodes()
         return {"response": [n.model_dump(mode="json", by_alias=False) for n in response.root]}
@@ -716,9 +942,15 @@ async def proxy_nodes(
 @router.get("/panel/sub/{short_uuid}/info")
 @inject
 async def proxy_sub_info(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     short_uuid: str,
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
+    if auth.short_uuid and short_uuid != auth.short_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="short_uuid does not match current device session",
+        )
     try:
         info = await remnawave_sdk.subscription.get_subscription_info_by_short_uuid(short_uuid)
         if info is None:
@@ -745,26 +977,129 @@ async def proxy_sub_info(
 
 # ── Device user management (keeps panel logic server-side) ────────
 class EnsureUserRequest(BaseModel):
-    device_id: str
+    device_id: Optional[str] = None
 
 
 class SaveEmailRequest(BaseModel):
-    panel_user_uuid: str
+    panel_user_uuid: Optional[str] = None
     email: EmailStr
+
+
+@router.post("/device/bootstrap")
+@inject
+async def bootstrap_device_session(
+    request: DeviceBootstrapRequest,
+    config: FromDishka[AppConfig],
+    cryptographer: FromDishka[Cryptographer],
+    session_dao: FromDishka[DeviceSessionDao],
+    device_dao: FromDishka[LinkedDeviceDao],
+    uow: FromDishka[UnitOfWork],
+) -> dict:
+    existing_device = await device_dao.get_by_device_id(request.device_id)
+    if existing_device is None:
+        existing_device = await device_dao.upsert(
+            LinkedDeviceDto(device_id=request.device_id, platform=request.platform)
+        )
+    elif request.platform and request.platform != existing_device.platform:
+        existing_device = await device_dao.upsert(
+            _merge_linked_device(existing_device, platform=request.platform)
+        )
+
+    current_session = await session_dao.get_by_device_id(request.device_id)
+    session, access_token, refresh_token = _generate_session_tokens(
+        device_id=request.device_id,
+        platform=request.platform,
+        integrity_token=request.integrity_token,
+        config=config,
+        cryptographer=cryptographer,
+        current_session=current_session,
+    )
+    await session_dao.upsert(session)
+    await uow.commit()
+
+    return {
+        "success": True,
+        "data": _build_session_response(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_expires_at=session.access_expires_at,
+            refresh_expires_at=session.refresh_expires_at,
+            linked_device=existing_device,
+        ),
+    }
+
+
+@router.post("/device/refresh")
+@inject
+async def refresh_device_session(
+    request: DeviceRefreshRequest,
+    config: FromDishka[AppConfig],
+    cryptographer: FromDishka[Cryptographer],
+    session_dao: FromDishka[DeviceSessionDao],
+    device_dao: FromDishka[LinkedDeviceDao],
+    uow: FromDishka[UnitOfWork],
+) -> dict:
+    refresh_token_hash = cryptographer.get_hash(request.refresh_token)
+    current_session = await session_dao.get_by_refresh_token_hash(refresh_token_hash)
+    if (
+        not current_session
+        or current_session.revoked_at
+        or _is_expired(current_session.refresh_expires_at)
+    ):
+        raise _build_device_auth_unauthorized("Invalid or expired refresh token")
+
+    session, access_token, refresh_token = _generate_session_tokens(
+        device_id=current_session.device_id,
+        platform=current_session.platform,
+        integrity_token=None,
+        config=config,
+        cryptographer=cryptographer,
+        current_session=current_session,
+    )
+    await session_dao.upsert(session)
+    linked_device = await device_dao.get_by_device_id(current_session.device_id)
+    await uow.commit()
+
+    return {
+        "success": True,
+        "data": _build_session_response(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_expires_at=session.access_expires_at,
+            refresh_expires_at=session.refresh_expires_at,
+            linked_device=linked_device,
+        ),
+    }
+
+
+@router.post("/device/logout")
+@inject
+async def logout_device_session(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    session_dao: FromDishka[DeviceSessionDao],
+    uow: FromDishka[UnitOfWork],
+) -> dict:
+    if auth.device_id:
+        await session_dao.revoke(auth.device_id)
+        await uow.commit()
+
+    return {"success": True, "data": None}
 
 
 @router.post("/device/ensure-user")
 @inject
 async def ensure_user(
     request: EnsureUserRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     plan_dao: FromDishka[PlanDao],
     device_dao: FromDishka[LinkedDeviceDao],
     remnawave: FromDishka[Remnawave],
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
     """Find or create an anonymous panel user for a device."""
-    username = _build_device_username(request.device_id)
-    linked_device = await device_dao.get_by_device_id(request.device_id)
+    device_id = _resolve_device_id(auth, request.device_id)
+    username = _build_device_username(device_id)
+    linked_device = await device_dao.get_by_device_id(device_id)
     saved_anon_traffic = _get_saved_anon_traffic(linked_device)
 
     if _is_linked_device_bound(linked_device):
@@ -793,13 +1128,13 @@ async def ensure_user(
 
     # Try to find existing user
     try:
-        user = await _get_anonymous_panel_user_by_device_id(request.device_id, remnawave_sdk)
+        user = await _get_anonymous_panel_user_by_device_id(device_id, remnawave_sdk)
         if user:
             try:
                 await _ensure_panel_user_device_comment(
                     remnawave_sdk,
                     user,
-                    request.device_id,
+                    device_id,
                     saved_anon_traffic,
                 )
             except Exception as e:
@@ -840,7 +1175,7 @@ async def ensure_user(
                 tag=trial_plan.tag,
                 description=_build_anonymous_description(
                     trial_plan,
-                    request.device_id,
+                    device_id,
                     saved_anon_traffic,
                 ),
             )
@@ -863,7 +1198,7 @@ async def ensure_user(
                 await _ensure_panel_user_device_comment(
                     remnawave_sdk,
                     user,
-                    request.device_id,
+                    device_id,
                     saved_anon_traffic,
                 )
             except Exception as e:
@@ -888,13 +1223,26 @@ async def ensure_user(
 @inject
 async def save_email(
     request: SaveEmailRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    device_dao: FromDishka[LinkedDeviceDao],
+    remnawave: FromDishka[Remnawave],
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
     """Update email on a panel user."""
+    panel_user_uuid = request.panel_user_uuid
+    if auth.device_id and not auth.is_legacy and panel_user_uuid is None:
+        linked_device = await device_dao.get_by_device_id(auth.device_id)
+        if linked_device and linked_device.panel_user_uuid:
+            panel_user_uuid = linked_device.panel_user_uuid
+        elif linked_device and linked_device.telegram_id is not None:
+            linked_user = await _get_panel_user_by_telegram_id(linked_device.telegram_id, remnawave)
+            panel_user_uuid = str(linked_user.uuid) if linked_user else None
+
+    resolved_panel_user_uuid = _resolve_panel_user_uuid(auth, panel_user_uuid)
     try:
         await remnawave_sdk.users.update_user(
             UpdateUserRequestDto(
-                uuid=request.panel_user_uuid,
+                uuid=resolved_panel_user_uuid,
                 email=request.email,
             )
         )
