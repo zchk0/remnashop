@@ -66,6 +66,11 @@ connect_buttons = (
         when=~F["is_mini_app"] & F["connectable"],
         style=Style(ButtonStyle.PRIMARY),
     ),
+    CopyText(
+        text=I18nFormat("btn-common.copy-link"),
+        copy_text=Format("{subscription_url}"),
+        when=F["has_subscription_url"] & F["connectable"],
+    ),
 )
 
 main_menu_button = (

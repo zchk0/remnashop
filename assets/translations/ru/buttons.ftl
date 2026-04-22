@@ -8,6 +8,7 @@ btn-common =
     .notification-close = ❌ Закрыть
     .devices-empty = ⚠️ У вас нет подключённых устройств
     .cancel = Отмена
+    .copy-link = 📋 Скопировать ссылку
 
     .squad-choice = { $selected -> 
     [1] 🔘
