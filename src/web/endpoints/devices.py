@@ -174,6 +174,16 @@ def _resolve_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str
     return device_id
 
 
+def _resolve_unlink_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str:
+    if device_id is not None:
+        return device_id
+
+    if auth.device_id:
+        return auth.device_id
+
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="device_id is required")
+
+
 def _resolve_telegram_id(auth: DeviceAuthContext, telegram_id: Optional[int]) -> int:
     if auth.telegram_id is not None:
         if telegram_id is not None and telegram_id != auth.telegram_id:
@@ -699,8 +709,8 @@ async def unlink_device(
     device_dao: FromDishka[LinkedDeviceDao],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
-    device_id = _resolve_device_id(auth, request.device_id)
     telegram_id = _resolve_telegram_id(auth, request.telegram_id)
+    device_id = _resolve_unlink_device_id(auth, request.device_id)
     await device_dao.unlink(device_id, telegram_id)
     await uow.commit()
     return {"success": True, "data": None}
