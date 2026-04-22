@@ -1,4 +1,6 @@
+import asyncio
 from dataclasses import dataclass
+from uuid import UUID
 
 from loguru import logger
 from remnapy import RemnawaveSDK
@@ -8,7 +10,8 @@ from src.application.common import Interactor
 from src.application.common.dao import SubscriptionDao
 from src.application.common.policy import Permission
 from src.application.common.remnawave import Remnawave
-from src.application.dto import UserDto
+from src.application.common.uow import UnitOfWork
+from src.application.dto import RemnaSubscriptionDto, UserDto
 
 
 @dataclass(frozen=True)
@@ -88,8 +91,16 @@ class ResetUserTraffic(Interactor[int, None]):
 
 class ReissueSubscription(Interactor[None, None]):
     required_permission = Permission.PUBLIC
+    FETCH_ATTEMPTS = 5
+    FETCH_DELAY_SECONDS = 1
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave: Remnawave) -> None:
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+    ) -> None:
+        self.uow = uow
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
 
@@ -99,6 +110,49 @@ class ReissueSubscription(Interactor[None, None]):
         if not current_subscription:
             raise ValueError(f"No active subscription for user '{actor.telegram_id}'")
 
+        previous_url = current_subscription.url
         await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
+        synced = await self._sync_reissued_subscription(
+            telegram_id=actor.telegram_id,
+            user_remna_id=current_subscription.user_remna_id,
+            previous_url=previous_url,
+        )
+
+        if not synced:
+            logger.warning(
+                f"{actor.log} Subscription was reissued, but updated URL was not synced immediately"
+            )
 
         logger.info(f"{actor.log} Reissued subscription")
+
+    async def _sync_reissued_subscription(
+        self,
+        telegram_id: int,
+        user_remna_id: UUID,
+        previous_url: str,
+    ) -> bool:
+        for attempt in range(1, self.FETCH_ATTEMPTS + 1):
+            remna_user = await self.remnawave.get_user_by_uuid(user_remna_id)
+
+            if remna_user:
+                remna_subscription = RemnaSubscriptionDto.from_remna_user(remna_user)
+
+                if remna_subscription.url != previous_url:
+                    async with self.uow:
+                        subscription = await self.subscription_dao.get_current(telegram_id)
+
+                        if not subscription:
+                            logger.warning(
+                                f"Current subscription for user '{telegram_id}' disappeared during reissue sync"
+                            )
+                            return False
+
+                        subscription = self.remnawave.apply_sync(subscription, remna_subscription)
+                        await self.subscription_dao.update(subscription)
+                        await self.uow.commit()
+                    return True
+
+            if attempt < self.FETCH_ATTEMPTS:
+                await asyncio.sleep(self.FETCH_DELAY_SECONDS)
+
+        return False

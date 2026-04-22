@@ -154,7 +154,7 @@ async def on_reissue_subscription_confirm(
     user: UserDto = dialog_manager.middleware_data[USER_KEY]
     await reissue_subscription(user)
     await notifier.notify_user(user=user, i18n_key="ntf-devices.reissued")
-    await dialog_manager.switch_to(state=MainMenu.DEVICES)
+    await dialog_manager.switch_to(state=MainMenu.MAIN)
 
 
 @inject
