@@ -68,6 +68,8 @@ async def menu_getter(
             "expire_time": None,
             "reset_time": None,
             "connection_url": None,
+            "subscription_url": None,
+            "has_subscription_url": False,
             "row_1_buttons": [b for b in menu_data.custom_buttons if b.index in (1, 2)],
             "row_2_buttons": [b for b in menu_data.custom_buttons if b.index in (3, 4)],
             "row_3_buttons": [b for b in menu_data.custom_buttons if b.index in (5, 6)],
@@ -102,6 +104,8 @@ async def menu_getter(
                 )
                 if subscription.is_active
                 else False,
+                "subscription_url": subscription.url,
+                "has_subscription_url": bool(subscription.url),
                 "connection_url": config.bot.mini_app_url
                 if isinstance(config.bot.mini_app_url, str)
                 else subscription.url,

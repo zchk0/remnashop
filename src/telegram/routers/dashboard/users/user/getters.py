@@ -77,6 +77,8 @@ async def user_getter(
                 "traffic_limit": i18n_format_traffic_limit(profile.subscription.traffic_limit),
                 "device_limit": i18n_format_device_limit(profile.subscription.device_limit),
                 "expire_time": i18n_format_expire_time(profile.subscription.expire_at),
+                "subscription_url": profile.subscription.url,
+                "has_subscription_url": bool(profile.subscription.url),
             }
         )
 

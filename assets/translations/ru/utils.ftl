@@ -105,6 +105,10 @@ frg-subscription =
     • <b>Лимит трафика</b>: { $traffic_limit }
     • <b>Лимит устройств</b>: { $device_limit }
     • <b>Осталось</b>: { $expire_time }
+    { $has_subscription_url ->
+    [1] • <b>URL</b>: <code>{ $subscription_url }</code>
+    *[0] { empty }
+    }
     </blockquote>
 
 frg-subscription-details =
