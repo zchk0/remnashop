@@ -1,3 +1,5 @@
+import html
+import re
 from typing import Optional
 from urllib.parse import quote
 
@@ -64,7 +66,15 @@ class BotService:
         base_url = await self._get_bot_redirect_url()
         return Deeplink.BUY.build_url(base_url, f"{plan_id}_{duration_days}")
 
+    @staticmethod
+    def _prepare_support_text(text: Optional[str]) -> str:
+        if not text:
+            return ""
+        # Telegram prefilled chat text does not parse bot-style HTML tags.
+        plain_text = re.sub(r"</?[^>]+>", "", text)
+        return html.unescape(plain_text)
+
     def get_support_url(self, text: Optional[str] = None) -> str:
         base_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"
-        encoded_text = quote(text or "")
+        encoded_text = quote(self._prepare_support_text(text))
         return f"{base_url}?text={encoded_text}"
