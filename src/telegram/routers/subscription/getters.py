@@ -235,6 +235,7 @@ async def confirm_getter(
     plan = retort.load(raw_plan, PlanDto)
     selected_duration = dialog_manager.dialog_data["selected_duration"]
     only_single_duration = dialog_manager.dialog_data.get("only_single_duration", False)
+    only_single_plan = dialog_manager.dialog_data.get("only_single_plan", False)
     is_free = dialog_manager.dialog_data.get("is_free", False)
     selected_payment_method = dialog_manager.dialog_data["selected_payment_method"]
     purchase_type = dialog_manager.dialog_data["purchase_type"]
@@ -271,6 +272,7 @@ async def confirm_getter(
         "url": result_url,
         "only_single_gateway": len(gateways) == 1,
         "only_single_duration": only_single_duration,
+        "only_single_plan": only_single_plan,
         "is_free": is_free,
     }
 
