@@ -236,6 +236,7 @@ async def get_device_auth_context(
     session_dao: FromDishka[DeviceSessionDao],
     device_dao: FromDishka[LinkedDeviceDao],
     authorization: Annotated[str, Header(alias="Authorization")] = "",
+    proxied_authorization: Annotated[str, Header(alias="X-Authorization")] = "",
 ) -> DeviceAuthContext:
     if not config.tobevpn.is_enabled:
         raise HTTPException(
@@ -243,7 +244,12 @@ async def get_device_auth_context(
             detail="ToBeVPN integration is not configured",
         )
 
-    token = _extract_bearer_token(authorization)
+    # Some edge fallback gateways consume Authorization before the request
+    # reaches this API. The mobile client transports its bearer through those
+    # proxies using X-Authorization; prefer that value in case a gateway also
+    # supplies its own Authorization header. Both paths use identical token
+    # validation below.
+    token = _extract_bearer_token(proxied_authorization) or _extract_bearer_token(authorization)
     if not token:
         raise _build_device_auth_unauthorized("Missing bearer token")
 
