@@ -1,6 +1,7 @@
 from dishka import Provider, Scope, provide
 
 from src.application.common.dao import (
+    AdLinkDao,
     AuthSessionDao,
     BroadcastDao,
     PaymentGatewayDao,
@@ -15,6 +16,7 @@ from src.application.common.dao import (
     WebhookDao,
 )
 from src.infrastructure.database.dao import (
+    AdLinkDaoImpl,
     BroadcastDaoImpl,
     PaymentGatewayDaoImpl,
     PlanDaoImpl,
@@ -33,6 +35,7 @@ from src.infrastructure.redis.auth import RedisAuthRepository
 class DaoProvider(Provider):
     scope = Scope.REQUEST
 
+    ad_link = provide(source=AdLinkDaoImpl, provides=AdLinkDao)
     broadcast = provide(source=BroadcastDaoImpl, provides=BroadcastDao)
     payment_gateway = provide(source=PaymentGatewayDaoImpl, provides=PaymentGatewayDao)
     plan = provide(source=PlanDaoImpl, provides=PlanDao)

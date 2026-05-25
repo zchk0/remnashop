@@ -4,7 +4,7 @@ from typing import Optional
 from loguru import logger
 
 from src.application.common import Cryptographer, EventPublisher, Interactor
-from src.application.common.dao import SettingsDao, UserDao
+from src.application.common.dao import AdLinkDao, SettingsDao, UserDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
 from src.application.events import BlacklistRegistrationAttemptEvent, UserRegisteredEvent
@@ -22,6 +22,7 @@ class GetOrCreateUserDto:
     language_code: Optional[str]
     is_chat_member_event: bool = False
     referral_code: Optional[str] = None
+    ad_link_code: Optional[str] = None
     role: Role = Role.USER
 
 
@@ -37,6 +38,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
         cryptographer: Cryptographer,
         event_publisher: EventPublisher,
         attach_referral: AttachReferral,
+        ad_link_dao: AdLinkDao,
     ) -> None:
         self.uow = uow
         self.user_dao = user_dao
@@ -45,6 +47,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
         self.cryptographer = cryptographer
         self.event_publisher = event_publisher
         self.attach_referral = attach_referral
+        self.ad_link_dao = ad_link_dao
 
     async def _execute(self, actor: UserDto, data: GetOrCreateUserDto) -> Optional[UserDto]:
         is_owner = data.telegram_id == self.config.bot.owner_id
@@ -76,8 +79,10 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
             new_referral_code = await self.cryptographer.generate_unique_code(
                 self.user_dao.get_by_referral_code
             )
+
+            ad_link_id = await self._resolve_ad_link_id(data.ad_link_code)
             user_dto = self._create_user_dto(
-                data, referral_code=new_referral_code, is_blocked=is_blocked
+                data, referral_code=new_referral_code, is_blocked=is_blocked, ad_link_id=ad_link_id
             )
             user = await self.user_dao.create(user_dto)
 
@@ -131,6 +136,14 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
         logger.info(f"New user '{user.remna_name}' created")
         return user
 
+    async def _resolve_ad_link_id(self, ad_link_code: Optional[str]) -> Optional[int]:
+        if not ad_link_code:
+            return None
+        ad_link = await self.ad_link_dao.get_by_code(ad_link_code)
+        if ad_link and ad_link.is_active:
+            return ad_link.id
+        return None
+
     async def _transfer_owner_role(self, new_owner: UserDto) -> UserDto:
         old_owners = await self.user_dao.filter_by_role([Role.OWNER])
         for old_owner in old_owners:
@@ -140,7 +153,12 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
         return await self.user_dao.update(new_owner) or new_owner
 
     def _create_user_dto(
-        self, data: GetOrCreateUserDto, *, referral_code: str, is_blocked: bool = False
+        self,
+        data: GetOrCreateUserDto,
+        *,
+        referral_code: str,
+        is_blocked: bool = False,
+        ad_link_id: Optional[int] = None,
     ) -> UserDto:
         if data.language_code in self.config.locales:
             locale = Locale(data.language_code)
@@ -155,6 +173,7 @@ class GetOrCreateUser(Interactor[GetOrCreateUserDto, Optional[UserDto]]):
             role=data.role,
             language=locale,
             is_blocked=is_blocked,
+            ad_link_id=ad_link_id,
         )
 
 

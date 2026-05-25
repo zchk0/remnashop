@@ -27,7 +27,7 @@ from src.core.constants import REMNAWAVE_MAX_VERSION
 from src.core.utils.i18n_helpers import i18n_format_seconds
 from src.core.utils.time import get_uptime
 from src.infrastructure.redis.keys import WelcomedVersionKey
-from src.infrastructure.services import BotServiceImpl as BotService
+from src.application.common import BotService
 from src.infrastructure.services import (
     CommandService,
     EventBusImpl,

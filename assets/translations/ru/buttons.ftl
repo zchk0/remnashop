@@ -515,8 +515,27 @@ btn-promocode =
     .lifetime = ⌛ Время жизни
     .allowed = 👥 Разрешенные пользователи
     .confirm = ✅ Подтвердить
-    
-    .active-toggle = { $is_active -> 
+
+    .active-toggle = { $is_active ->
     [1] 🟢
     *[0] 🔴
     } Статус
+
+btn-ad-links =
+    .create = ✅ Создать ссылку
+    .save = ✅ Сохранить
+    .delete = ❌ Удалить ссылку
+    .name = 🏷️ Название
+    .code = 🔗 Код (slug)
+    .stats = 📊 Статистика
+    .url = 📋 Скопировать ссылку
+
+    .title = { $is_active ->
+    [1] 🟢
+    *[0] 🔴
+    } { $name }
+
+    .active-toggle = { $is_active ->
+    [1] 🟢 Активна
+    *[0] 🔴 Неактивна
+    }

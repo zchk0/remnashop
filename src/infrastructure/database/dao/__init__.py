@@ -1,3 +1,4 @@
+from .ad_link import AdLinkDaoImpl
 from .broadcast import BroadcastDaoImpl
 from .oauth_provider import UserOAuthProviderDaoImpl
 from .payment_gateway import PaymentGatewayDaoImpl
@@ -11,6 +12,7 @@ from .waitlist import WaitlistDaoImpl
 from .webhook import WebhookDaoImpl
 
 __all__ = [
+    "AdLinkDaoImpl",
     "BroadcastDaoImpl",
     "UserOAuthProviderDaoImpl",
     "PaymentGatewayDaoImpl",

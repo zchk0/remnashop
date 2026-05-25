@@ -132,6 +132,14 @@ class RemnashopReferral(StatesGroup):
     REWARD_STRATEGY = State()
 
 
+class RemnashopAdvertising(StatesGroup):
+    MAIN = State()
+    CONFIGURATOR = State()
+    NAME = State()
+    CODE = State()
+    STATS = State()
+
+
 class RemnashopGateways(StatesGroup):
     MAIN = State()
     SETTINGS = State()

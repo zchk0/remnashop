@@ -61,6 +61,7 @@ class UserDto(BaseDto, TrackableMixin, TimestampMixin):
     is_bot_blocked: bool = False
     is_rules_accepted: bool = False
     is_trial_available: bool = True
+    ad_link_id: Optional[int] = None
 
     @property
     def is_privileged(self) -> bool:

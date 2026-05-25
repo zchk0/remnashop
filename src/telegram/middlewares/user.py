@@ -37,6 +37,23 @@ def _parse_referral_code(event: TelegramObject) -> Optional[str]:
     return None
 
 
+def _parse_ad_link_code(event: TelegramObject) -> Optional[str]:
+    if not isinstance(event, Message) or not event.text:
+        return None
+
+    parts = event.text.split()
+    if len(parts) <= 1:
+        return None
+
+    code = parts[1]
+    if code.startswith(Deeplink.ADVERTISING.with_underscore):
+        raw = code[len(Deeplink.ADVERTISING.with_underscore):]
+        logger.debug(f"Parsed ad link code '{raw}' from deeplink in user middleware")
+        return raw
+
+    return None
+
+
 class UserMiddleware(EventTypedMiddleware):
     __event_types__ = [
         MiddlewareEventType.MESSAGE,
@@ -61,6 +78,7 @@ class UserMiddleware(EventTypedMiddleware):
 
         is_chat_member_event = isinstance(event, ChatMemberUpdated)
         referral_code = _parse_referral_code(event)
+        ad_link_code = _parse_ad_link_code(event)
 
         container: AsyncContainer = data[CONTAINER_KEY]
         get_or_create_user = await container.get(GetOrCreateUser)
@@ -74,6 +92,7 @@ class UserMiddleware(EventTypedMiddleware):
                 language_code=aiogram_user.language_code,
                 is_chat_member_event=is_chat_member_event,
                 referral_code=referral_code,
+                ad_link_code=ad_link_code,
             )
         )
 

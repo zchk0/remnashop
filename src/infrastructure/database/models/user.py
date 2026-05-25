@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.enums import AuthType, Locale, Role
@@ -43,6 +43,13 @@ class User(BaseSql, TimestampMixin):
     is_bot_blocked: Mapped[bool]
     is_rules_accepted: Mapped[bool]
     is_trial_available: Mapped[bool]
+
+    ad_link_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("ad_links.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     current_subscription_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey(

@@ -14,6 +14,7 @@ class CheckAccessDto:
     temp_user: TempUserDto
     is_payment_event: bool
     is_referral_event: bool
+    is_ad_link_event: bool = False
 
     @property
     def telegram_id(self) -> int:
@@ -77,8 +78,10 @@ class CheckAccess(Interactor[CheckAccessDto, bool]):
             return False
 
         if settings.access.mode == AccessMode.INVITED:
-            if data.is_referral_event:
-                logger.info(f"Access allowed for referral event for user '{data.telegram_id}'")
+            if data.is_referral_event or data.is_ad_link_event:
+                logger.info(
+                    f"Access allowed for referral/ad-link event for user '{data.telegram_id}'"
+                )
                 return True
 
             await self.notifier.notify_user(

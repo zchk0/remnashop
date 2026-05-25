@@ -1,3 +1,4 @@
+from .ad_link import AdLinkDto, AdLinkStatsDto
 from .base import BaseDto, TimestampMixin, TrackableMixin
 from .broadcast import BroadcastDto, BroadcastMessageDto
 from .build import BuildInfoDto
@@ -39,6 +40,8 @@ from .transaction import PriceDetailsDto, TransactionDto
 from .user import TelegramUserDto, TempUserDto, UserDto, UserOAuthProviderDto
 
 __all__ = [
+    "AdLinkDto",
+    "AdLinkStatsDto",
     "BaseDto",
     "TimestampMixin",
     "TrackableMixin",

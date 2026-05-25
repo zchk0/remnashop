@@ -1444,7 +1444,7 @@ msg-promocode-configurator =
     • <b>Код</b>: { $code }
     • <b>Тип</b>: { promocode-type }
     • <b>Доступ</b>: { availability-type }
-    • <b>Статус</b>: { $is_active -> 
+    • <b>Статус</b>: { $is_active ->
         [1] 🟢 Включен
         *[0] 🔴 Выключен
         }
@@ -1465,3 +1465,60 @@ msg-promocode-configurator =
     </blockquote>
 
     Выберите пункт для изменения.
+
+
+# Ad Links
+msg-ad-links-main = <b>📣 Рекламные ссылки</b>
+
+msg-ad-link-configurator =
+    <b>📣 Рекламная ссылка</b>
+
+    <blockquote>
+    • <b>Название</b>: { $name ->
+        [0] не задано
+       *[HAS] { $name }
+      }
+    • <b>Код</b>: { $code ->
+        [0] не задан
+       *[HAS] <code>{ $code }</code>
+      }
+    • <b>Статус</b>: { $is_active ->
+        [1] 🟢 Активна
+       *[0] 🔴 Неактивна
+      }
+    </blockquote>
+
+    Выберите пункт для изменения.
+
+msg-ad-link-name =
+    <b>🏷️ Название ссылки</b>
+
+    { $name ->
+    [0] { space }
+    *[HAS]
+    <blockquote>{ $name }</blockquote>
+    }
+
+    Введите название рекламной кампании.
+
+msg-ad-link-code =
+    <b>🔗 Код (slug) ссылки</b>
+
+    { $code ->
+    [0] { space }
+    *[HAS]
+    Текущий: <code>{ $code }</code>
+    }
+
+    Введите уникальный slug или отправьте <code>-</code> для авто-генерации.
+
+msg-ad-link-stats =
+    <b>📊 Статистика: { $name }</b>
+
+    <blockquote>
+    • <b>Регистрации</b>: { $registrations }
+    • <b>Конверсия</b>: { $conversions } ({ $conversion_rate }%)
+    • <b>Пробники</b>: { $trials }
+    • <b>Выручка</b>:
+{ $revenue_lines }
+    </blockquote>

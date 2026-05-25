@@ -60,6 +60,10 @@ class BotService:
         base_url = await self._get_bot_redirect_url()
         return Deeplink.PLAN.build_url(base_url, public_code)
 
+    async def get_ad_link_url(self, code: str) -> str:
+        base_url = await self._get_bot_redirect_url()
+        return Deeplink.ADVERTISING.build_url(base_url, code)
+
     def get_support_url(self, text: Optional[str] = None) -> str:
         base_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"
         encoded_text = quote(text or "")

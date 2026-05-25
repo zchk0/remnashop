@@ -203,7 +203,7 @@ event-blacklist =
     .registration-attempt =
     #BlacklistRegistrationAttemptEvent
 
-    <b>🚫 Событие: Попытка регистрации из чёрного списка!</b>
+    <b>🔅 Событие: Попытка регистрации из чёрного списка!</b>
 
     { hdr-user }
     { frg-user-info }

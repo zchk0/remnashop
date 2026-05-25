@@ -7,10 +7,10 @@ from magic_filter import F
 from src.application.common.policy import Permission
 from src.core.enums import BannerName
 from src.telegram.keyboards import main_menu_button
-from src.telegram.routers.extra.test import show_dev_popup
 from src.telegram.states import (
     Dashboard,
     DashboardRemnashop,
+    RemnashopAdvertising,
     RemnashopBackup,
     RemnashopGateways,
     RemnashopMenuEditor,
@@ -51,11 +51,10 @@ remnashop = Window(
             state=RemnashopReferral.MAIN,
             when=require_permission(Permission.VIEW_REFERRAL),
         ),
-        Button(
+        Start(
             text=I18nFormat("btn-remnashop.advertising"),
             id="advertising",
-            # state=DashboardRemnashop.ADVERTISING,
-            on_click=show_dev_popup,
+            state=RemnashopAdvertising.MAIN,
             when=require_permission(Permission.VIEW_ADVERTISING),
         ),
     ),

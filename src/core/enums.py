@@ -16,6 +16,7 @@ class Deeplink(StrEnum):
     REFERRAL = "ref"
     PLAN = "plan"
     INVITE = "invite"
+    ADVERTISING = "ad"
 
     def build_url(self, base_url: str, data: Optional[str]) -> str:
         if not data:
@@ -83,6 +84,7 @@ class PaymentGatewayType(UpperStrEnum):
     TELEGRAM_STARS = auto()
     YOOKASSA = auto()
     YOOMONEY = auto()
+    VALUTIX = auto()
     CRYPTOMUS = auto()
     HELEKET = auto()
     CRYPTOPAY = auto()
@@ -93,7 +95,6 @@ class PaymentGatewayType(UpperStrEnum):
     ROBOKASSA = auto()
     URLPAY = auto()
     WATA = auto()
-    VALUTIX = auto()
 
 
 class PurchaseType(UpperStrEnum):
