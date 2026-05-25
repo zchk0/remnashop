@@ -10,8 +10,12 @@ from remnapy import RemnawaveSDK
 from remnapy.exceptions import AuthenticationError, ConflictError, NotFoundError
 from remnapy.models import (
     CreateUserRequestDto,
+    DeleteUserAllHwidDeviceRequestDto,
     DeleteUserHwidDeviceRequestDto,
+    DropByUserUuids,
+    DropConnectionsRequestDto,
     GetMetadataResponseDto,
+    TargetAllNodes,
     UpdateUserRequestDto,
     UserResponseDto,
 )
@@ -173,6 +177,28 @@ class RemnawaveImpl(Remnawave):
             return None
 
         return int(response.total)
+
+    async def delete_all_devices(self, user_uuid: UUID) -> None:
+        try:
+            result = await self.sdk.hwid.delete_all_hwid_user(
+                DeleteUserAllHwidDeviceRequestDto(user_uuid=user_uuid)
+            )
+        except NotFoundError:
+            logger.debug(f"RemnaUser '{user_uuid}' not found in panel")
+            return
+        logger.info(f"Deleted all HWID devices ({result.total}) for RemnaUser '{user_uuid}'")
+
+    async def drop_connections(self, user_uuid: UUID) -> None:
+        try:
+            await self.sdk.ip_control.drop_connections(
+                body=DropConnectionsRequestDto(
+                    drop_by=DropByUserUuids(user_uuids=[user_uuid]),
+                    target_nodes=TargetAllNodes(),
+                )
+            )
+            logger.info(f"Dropped connections for RemnaUser '{user_uuid}'")
+        except Exception as e:
+            logger.warning(f"Failed to drop connections for RemnaUser '{user_uuid}': {e}")
 
     async def reset_traffic(self, uuid: UUID) -> Optional[UserResponseDto]:
         try:

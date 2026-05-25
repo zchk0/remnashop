@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from loguru import logger
 from remnapy import RemnawaveSDK
-from remnapy.models import DeleteUserAllHwidDeviceRequestDto
 
 from src.application.common import Interactor
 from src.application.common.dao import SubscriptionDao, UserDao
@@ -35,6 +34,8 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
             data.hwid,
         )
 
+        await self.remnawave.drop_connections(current_subscription.user_remna_id)
+
         logger.info(f"{actor.log} Deleted device '{data.hwid}' for user_id '{data.user_id}'")
         return bool(remaining_devices)
 
@@ -42,9 +43,9 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
 class DeleteUserAllDevices(Interactor[None, None]):
     required_permission = Permission.PUBLIC
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave_sdk: RemnawaveSDK) -> None:
+    def __init__(self, subscription_dao: SubscriptionDao, remnawave: Remnawave) -> None:
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
 
     async def _execute(self, actor: UserDto, data: None) -> None:
         current_subscription = await self.subscription_dao.get_current(actor.id)
@@ -54,11 +55,10 @@ class DeleteUserAllDevices(Interactor[None, None]):
                 f"User '{actor.remna_name}' has no active subscription or device limit unlimited"
             )
 
-        result = await self.remnawave_sdk.hwid.delete_all_hwid_user(
-            DeleteUserAllHwidDeviceRequestDto(user_uuid=current_subscription.user_remna_id)
-        )
+        await self.remnawave.delete_all_devices(current_subscription.user_remna_id)
+        await self.remnawave.drop_connections(current_subscription.user_remna_id)
 
-        logger.info(f"{actor.log} Deleted all devices ({result.total})")
+        logger.info(f"{actor.log} Deleted all devices and dropped connections")
 
 
 class ResetUserTraffic(Interactor[int, None]):
