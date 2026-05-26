@@ -26,9 +26,11 @@ from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
 )
+from src.application.use_cases.user.commands.profile_edit import ResetOwnReferralCode
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
 from src.core.constants import USER_KEY
 from src.core.enums import MediaType
+from src.core.exceptions import CooldownError
 from src.core.utils.i18n_helpers import i18n_format_expire_time
 from src.core.utils.time import get_traffic_reset_delta
 from src.telegram.keyboards import CALLBACK_CHANNEL_CONFIRM, CALLBACK_RULES_ACCEPT
@@ -141,7 +143,17 @@ async def on_device_delete_confirm(
     if not full_hwid:
         raise ValueError(f"Full HWID not found for '{selected_short_hwid}'")
 
-    await delete_user_device(user, DeleteUserDeviceDto(user_id=user.id, hwid=full_hwid))
+    try:
+        await delete_user_device(user, DeleteUserDeviceDto(user_id=user.id, hwid=full_hwid))
+    except CooldownError as e:
+        await notifier.notify_user(
+            user=user,
+            payload=MessagePayloadDto(
+                i18n_key="ntf-common.cooldown-active",
+                i18n_kwargs={"available_at": i18n_format_expire_time(e.available_at)},
+            ),
+        )
+        return
     await notifier.notify_user(user=user, i18n_key="ntf-devices.deleted")
     await dialog_manager.switch_to(state=MainMenu.DEVICES)
 
@@ -155,7 +167,17 @@ async def on_device_delete_all_confirm(
     notifier: FromDishka[Notifier],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
-    await delete_user_all_devices(user)
+    try:
+        await delete_user_all_devices(user)
+    except CooldownError as e:
+        await notifier.notify_user(
+            user=user,
+            payload=MessagePayloadDto(
+                i18n_key="ntf-common.cooldown-active",
+                i18n_kwargs={"available_at": i18n_format_expire_time(e.available_at)},
+            ),
+        )
+        return
     await notifier.notify_user(user=user, i18n_key="ntf-devices.all-deleted")
     await dialog_manager.switch_to(state=MainMenu.DEVICES)
 
@@ -169,7 +191,17 @@ async def on_reissue_subscription_confirm(
     notifier: FromDishka[Notifier],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
-    await reissue_subscription(user)
+    try:
+        await reissue_subscription(user)
+    except CooldownError as e:
+        await notifier.notify_user(
+            user=user,
+            payload=MessagePayloadDto(
+                i18n_key="ntf-common.cooldown-active",
+                i18n_kwargs={"available_at": i18n_format_expire_time(e.available_at)},
+            ),
+        )
+        return
     await notifier.notify_user(user=user, i18n_key="ntf-devices.reissued")
     await dialog_manager.switch_to(state=MainMenu.DEVICES)
 
@@ -285,3 +317,26 @@ async def on_invite(
     if settings.referral.enable:
         await dialog_manager.switch_to(state=MainMenu.INVITE)
     return
+
+
+@inject
+async def on_reset_referral_code(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    reset_own_referral_code: FromDishka[ResetOwnReferralCode],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    try:
+        await reset_own_referral_code(user)
+    except CooldownError as e:
+        await notifier.notify_user(
+            user=user,
+            payload=MessagePayloadDto(
+                i18n_key="ntf-common.cooldown-active",
+                i18n_kwargs={"available_at": i18n_format_expire_time(e.available_at)},
+            ),
+        )
+        return
+    await notifier.notify_user(user=user, i18n_key="ntf-invite.referral-reset")

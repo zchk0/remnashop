@@ -18,6 +18,7 @@ ntf-common =
 
     .invalid-value = ❌ <i>Некорректное значение.</i>
     .value-updated = ✅ <i>Параметр успешно обновлен.</i>
+    .cooldown-active = ⏳ <i>Функция временно недоступна. Попробуйте снова после { $available_at }.</i>
 
     .plan-not-found = ❌ <i>План не найден или недоступен.</i>
     .connect-not-available =
@@ -181,3 +182,6 @@ ntf-blacklist =
     • <b>Заблокировано ID</b>: { $blocked_ids }
     • <b>Уже заблокированные</b>: { $already_blocked }
     </blockquote>
+
+ntf-invite =
+    .referral-reset = ✅ <i>Реферальная ссылка обновлена.</i>

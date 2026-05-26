@@ -12,6 +12,7 @@ from src.telegram.states import (
     DashboardRemnashop,
     RemnashopAdvertising,
     RemnashopBackup,
+    RemnashopExtra,
     RemnashopGateways,
     RemnashopMenuEditor,
     RemnashopNotifications,
@@ -93,6 +94,14 @@ remnashop = Window(
             id="menu_editor",
             state=RemnashopMenuEditor.MAIN,
             when=require_permission(Permission.VIEW_MENU_EDITOR),
+        ),
+    ),
+    Row(
+        Start(
+            text=I18nFormat("btn-remnashop.extra"),
+            id="extra",
+            state=RemnashopExtra.MAIN,
+            when=require_permission(Permission.VIEW_EXTRA_SETTINGS),
         ),
     ),
     Row(

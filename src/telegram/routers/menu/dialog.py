@@ -40,6 +40,7 @@ from .handlers import (
     on_get_trial,
     on_invite,
     on_reissue_subscription_confirm,
+    on_reset_referral_code,
     on_show_qr,
     on_text_button_click,
     on_withdraw_points,
@@ -153,14 +154,14 @@ devices = Window(
         id="devices_list",
         item_id_getter=lambda item: item["short_hwid"],
         items="devices",
-        when=F["has_devices"],
+        when=F["has_devices"] & F["device_single_enabled"],
     ),
     Row(
         Start(
             text=I18nFormat("btn-devices.delete-all"),
             id="delete_all",
             state=MainMenu.DEVICE_CONFIRM_DELETE_ALL,
-            when=F["has_devices"],
+            when=F["has_devices"] & F["device_all_enabled"],
             style=Style(ButtonStyle.DANGER),
         ),
     ),
@@ -170,6 +171,7 @@ devices = Window(
             id="reissue",
             state=MainMenu.DEVICE_CONFIRM_REISSUE,
             style=Style(ButtonStyle.PRIMARY),
+            when=F["link_reset_enabled"],
         ),
     ),
     Row(
@@ -271,6 +273,14 @@ invite = Window(
             when=F["has_points"],
         ),
         when=F["is_points_reward"],
+    ),
+    Row(
+        Button(
+            text=I18nFormat("btn-invite.reset-referral"),
+            id="reset_referral",
+            on_click=on_reset_referral_code,
+            when=F["referral_reset_enabled"],
+        ),
     ),
     Row(
         SwitchTo(

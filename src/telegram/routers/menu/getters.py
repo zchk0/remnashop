@@ -137,6 +137,7 @@ async def devices_getter(
     i18n: FromDishka[TranslatorRunner],
     subscription_dao: FromDishka[SubscriptionDao],
     remnawave: FromDishka[Remnawave],
+    settings_dao: FromDishka[SettingsDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
     current_subscription = await subscription_dao.get_current(user.id)
@@ -168,12 +169,17 @@ async def devices_getter(
 
     dialog_manager.dialog_data["hwid_map"] = formatted_devices
 
+    settings = await settings_dao.get()
+
     return {
         "current_count": len(devices),
         "max_count": current_subscription.device_limit,
         "devices": formatted_devices,
         "devices_empty": len(devices) == 0,
         "has_devices": len(devices) > 0,
+        "device_single_enabled": int(settings.extra.device_single_reset.enabled),
+        "device_all_enabled": int(settings.extra.device_all_reset.enabled),
+        "link_reset_enabled": int(settings.extra.link_reset.enabled),
     }
 
 
@@ -216,6 +222,7 @@ async def invite_getter(
         "has_points": True if user.points > 0 else False,
         "referral_url": referral_url,
         "withdraw": support_url,
+        "referral_reset_enabled": int(settings.extra.referral_reset.enabled),
     }
 
 

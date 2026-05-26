@@ -25,9 +25,7 @@ class ToggleResetFeature(Interactor[ToggleResetFeatureDto, Optional[SettingsDto]
         self.uow = uow
         self.settings_dao = settings_dao
 
-    async def _execute(
-        self, actor: UserDto, data: ToggleResetFeatureDto
-    ) -> Optional[SettingsDto]:
+    async def _execute(self, actor: UserDto, data: ToggleResetFeatureDto) -> Optional[SettingsDto]:
         async with self.uow:
             settings = await self.settings_dao.get()
             feature = getattr(settings.extra, data.feature)
@@ -52,9 +50,7 @@ class UpdateResetCooldown(Interactor[UpdateResetCooldownDto, Optional[SettingsDt
         self.uow = uow
         self.settings_dao = settings_dao
 
-    async def _execute(
-        self, actor: UserDto, data: UpdateResetCooldownDto
-    ) -> Optional[SettingsDto]:
+    async def _execute(self, actor: UserDto, data: UpdateResetCooldownDto) -> Optional[SettingsDto]:
         hours = int(data.raw_value.strip())
         if hours < COOLDOWN_MIN or hours > COOLDOWN_MAX:
             raise ValueError(f"Cooldown must be between {COOLDOWN_MIN} and {COOLDOWN_MAX}")

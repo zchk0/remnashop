@@ -123,6 +123,14 @@ class RemnashopBackup(StatesGroup):
     MAX_FILES = State()
 
 
+class RemnashopExtra(StatesGroup):
+    MAIN = State()
+    DEVICE_SINGLE_CD = State()
+    DEVICE_ALL_CD = State()
+    LINK_CD = State()
+    REFERRAL_CD = State()
+
+
 class RemnashopReferral(StatesGroup):
     MAIN = State()
     LEVEL = State()

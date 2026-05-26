@@ -82,6 +82,7 @@ btn-invite =
     .send = 📩 Пригласить
     .qr = 🧾 QR-код
     .withdraw-points = 💎 Обменять баллы
+    .reset-referral = 🔄 Сбросить реф. ссылку
 
 btn-dashboard =
     .statistics = 📊 Статистика
@@ -281,6 +282,7 @@ btn-remnashop =
     .logs = 📄 Логи
     .menu-editor = 🎛 Редактор главного меню
     .backup = 💾 Бэкап
+    .extra = ⚙️ Доп. настройки
     .transactions = 🧾 Транзакции
 
 btn-remnashop-transaction = { $status ->
@@ -291,6 +293,28 @@ btn-remnashop-transaction = { $status ->
     [FAILED] ⚠️
     *[OTHER] { $status }
     } #{ $user_id } · { gateway-type } · { $created_at }
+
+btn-extra =
+    .device-single-toggle = { $device_single_enabled ->
+        [1] ✅
+        *[0] ❌
+    } Удал. одного
+    .device-single-cd = ⏱ КД одного
+    .device-all-toggle = { $device_all_enabled ->
+        [1] ✅
+        *[0] ❌
+    } Удал. всех
+    .device-all-cd = ⏱ КД всех
+    .link-toggle = { $link_reset_enabled ->
+        [1] ✅
+        *[0] ❌
+    } Сброс ссылки
+    .link-cd = ⏱ КД ссылки
+    .referral-toggle = { $referral_reset_enabled ->
+        [1] ✅
+        *[0] ❌
+    } Сброс реф.
+    .referral-cd = ⏱ КД реф.
 
 btn-menu-editor =
     .text = 🏷️ Текст
