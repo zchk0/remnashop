@@ -125,6 +125,24 @@ class RemnawaveImpl(Remnawave):
             logger.warning(f"RemnaUser '{uuid}' not found")
             raise
 
+    async def update_user_traffic_limit(
+        self,
+        uuid: UUID,
+        traffic_limit_bytes: int,
+    ) -> UserResponseDto:
+        try:
+            remna_user = await self.sdk.users.update_user(
+                UpdateUserRequestDto(uuid=uuid, traffic_limit_bytes=traffic_limit_bytes)
+            )
+            logger.info(
+                f"Traffic limit for RemnaUser '{uuid}' updated to "
+                f"'{traffic_limit_bytes}' bytes"
+            )
+            return remna_user
+        except NotFoundError:
+            logger.warning(f"RemnaUser '{uuid}' not found")
+            raise
+
     async def delete_user(self, uuid: UUID) -> bool:
         try:
             response = await self.sdk.users.delete_user(uuid)

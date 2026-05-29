@@ -26,6 +26,7 @@ from src.application.use_cases.subscription.commands.purchase import (
 )
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
 from src.core.enums import Deeplink
+from src.core.utils.converters import gb_to_bytes
 from src.core.utils.device_description import (
     append_device_id_to_description,
     extract_device_id_from_description,
@@ -67,8 +68,9 @@ async def _transfer_anon_subscription_and_delete(
     device_dao: LinkedDeviceDao,
     remnawave: Remnawave,
     uow: UnitOfWork,
-) -> None:
+) -> int:
     anon_user = None
+    anon_traffic = 0
 
     try:
         anon_user = await remnawave.get_user_by_uuid(UUID(anon_uuid))
@@ -104,6 +106,26 @@ async def _transfer_anon_subscription_and_delete(
         logger.info(f"Deleted anon panel user '{anon_uuid}'")
     except Exception as e:
         logger.warning(f"Failed to clean up anon user '{anon_uuid}': {e}")
+
+    return anon_traffic
+
+
+async def _apply_anon_traffic_to_trial_limit(
+    remnawave: Remnawave,
+    panel_user_uuid: UUID,
+    trial_traffic_limit_gb: int,
+    anon_traffic_bytes: int,
+) -> None:
+    trial_traffic_limit_bytes = gb_to_bytes(trial_traffic_limit_gb)
+    if trial_traffic_limit_bytes <= 0 or anon_traffic_bytes <= 0:
+        return
+
+    remaining_traffic_limit_bytes = max(trial_traffic_limit_bytes - anon_traffic_bytes, 1)
+    await remnawave.update_user_traffic_limit(panel_user_uuid, remaining_traffic_limit_bytes)
+    logger.info(
+        f"Applied anon traffic '{anon_traffic_bytes}' bytes to trial user "
+        f"'{panel_user_uuid}', remaining limit '{remaining_traffic_limit_bytes}' bytes"
+    )
 
 
 @inject
@@ -148,6 +170,8 @@ async def on_device_auth(
     existing_user = existing_users[0] if existing_users else None
 
     panel_user = None
+    created_trial = False
+    trial: PlanSnapshotDto | None = None
 
     if existing_user:
         panel_user = existing_user
@@ -169,6 +193,7 @@ async def on_device_auth(
             await activate_trial_subscription.system(
                 ActivateTrialSubscriptionDto(user=user, plan=trial)
             )
+            created_trial = True
         except Exception as e:
             await message.answer(i18n.get("message.device-auth-trial-create-failed"))
             logger.warning(f"{user.log} ToBeVPN trial activation failed: {e}")
@@ -182,6 +207,7 @@ async def on_device_auth(
         logger.warning(f"Failed auth for telegram '{telegram_id}': panel user not resolved")
         return
 
+    anon_traffic = 0
     if anon_uuid:
         if str(anon_uuid) == str(panel_user.uuid):
             try:
@@ -194,7 +220,7 @@ async def on_device_auth(
             except Exception as e:
                 logger.warning(f"Failed to save device_id for panel user '{panel_user.uuid}': {e}")
         else:
-            await _transfer_anon_subscription_and_delete(
+            anon_traffic = await _transfer_anon_subscription_and_delete(
                 anon_uuid=anon_uuid,
                 device_id=token_record.device_id,
                 panel_user_uuid=panel_user.uuid,
@@ -202,6 +228,20 @@ async def on_device_auth(
                 device_dao=device_dao,
                 remnawave=remnawave,
                 uow=uow,
+            )
+
+    if created_trial and trial and anon_traffic > 0:
+        try:
+            await _apply_anon_traffic_to_trial_limit(
+                remnawave=remnawave,
+                panel_user_uuid=panel_user.uuid,
+                trial_traffic_limit_gb=trial.traffic_limit,
+                anon_traffic_bytes=anon_traffic,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to apply anon traffic '{anon_traffic}' bytes to "
+                f"trial user '{panel_user.uuid}': {e}"
             )
 
     short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None

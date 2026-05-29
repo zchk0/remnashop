@@ -284,6 +284,12 @@ def _get_plan_duration_days(plan: PlanDto) -> Optional[int]:
     return duration.days
 
 
+def _get_anonymous_trial_traffic_limit_bytes(config: AppConfig, plan: PlanDto) -> int:
+    if config.tobevpn.anonymous_trial_traffic_gb > 0:
+        return gb_to_bytes(config.tobevpn.anonymous_trial_traffic_gb)
+    return gb_to_bytes(plan.traffic_limit)
+
+
 async def _get_anonymous_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
     active_trials = await plan_dao.get_active_trial_plans()
 
@@ -305,7 +311,7 @@ async def _get_anonymous_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
     return plan
 
 
-def _build_trial_config_data(plan: PlanDto) -> dict:
+def _build_trial_config_data(config: AppConfig, plan: PlanDto) -> dict:
     duration_days = _get_plan_duration_days(plan)
     internal_squad_uuids = [str(uuid) for uuid in plan.internal_squads]
 
@@ -315,7 +321,7 @@ def _build_trial_config_data(plan: PlanDto) -> dict:
         "free_squad_uuid": internal_squad_uuids[0] if internal_squad_uuids else None,
         "free_squad_uuids": internal_squad_uuids,
         "external_squad_uuid": str(plan.external_squad) if plan.external_squad else None,
-        "free_trial_traffic_bytes": gb_to_bytes(plan.traffic_limit),
+        "free_trial_traffic_bytes": _get_anonymous_trial_traffic_limit_bytes(config, plan),
         "free_trial_days": duration_days,
     }
 
@@ -483,10 +489,12 @@ def _build_panel_user_data(
     user: UserResponseDto,
     *,
     extra_traffic_used_bytes: int = 0,
+    anon_traffic_bytes: int = 0,
     traffic_limit_bytes: Optional[int] = None,
     trial_plan_id: Optional[int] = None,
     is_anonymous: bool = False,
 ) -> dict:
+    anon_traffic_bytes = anon_traffic_bytes or extra_traffic_used_bytes
     data = {
         "short_uuid": str(user.short_uuid),
         "panel_user_uuid": str(user.uuid),
@@ -495,7 +503,7 @@ def _build_panel_user_data(
         else user.traffic_limit_bytes or 0,
         "traffic_used_bytes": int(user.used_traffic_bytes or 0)
         + extra_traffic_used_bytes,
-        "anon_traffic_bytes": extra_traffic_used_bytes,
+        "anon_traffic_bytes": anon_traffic_bytes,
         "max_devices": user.hwid_device_limit or 0,
         "is_anonymous": is_anonymous,
         "telegram_id": user.telegram_id,
@@ -518,14 +526,17 @@ def _is_device_limit_reached(linked_count: int, device_limit: int) -> bool:
 # ── Config endpoint ────────────────────────────────────────────
 @router.get("/config")
 @inject
-async def get_config(plan_dao: FromDishka[PlanDao]) -> dict:
+async def get_config(
+    config: FromDishka[AppConfig],
+    plan_dao: FromDishka[PlanDao],
+) -> dict:
     trial_plan = await _get_anonymous_trial_plan(plan_dao)
     if not trial_plan:
         return {"success": False, "message": "Trial plan is not configured", "data": None}
 
     return {
         "success": True,
-        "data": _build_trial_config_data(trial_plan),
+        "data": _build_trial_config_data(config, trial_plan),
     }
 
 
@@ -1101,6 +1112,7 @@ async def logout_device_session(
 async def ensure_user(
     request: EnsureUserRequest,
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    config: FromDishka[AppConfig],
     plan_dao: FromDishka[PlanDao],
     device_dao: FromDishka[LinkedDeviceDao],
     remnawave: FromDishka[Remnawave],
@@ -1131,7 +1143,7 @@ async def ensure_user(
             "success": True,
             "data": _build_panel_user_data(
                 linked_user,
-                extra_traffic_used_bytes=saved_anon_traffic,
+                anon_traffic_bytes=saved_anon_traffic,
                 is_anonymous=False,
             ),
         }
@@ -1169,9 +1181,9 @@ async def ensure_user(
         logger.warning(f"ToBeVPN trial plan '{trial_plan.id}' has no durations")
         return {"success": False, "message": "Trial plan is not configured"}
 
-    traffic_limit_bytes = gb_to_bytes(trial_plan.traffic_limit)
+    traffic_limit_bytes = _get_anonymous_trial_traffic_limit_bytes(config, trial_plan)
 
-    # Create new anonymous user with the same trial plan fields as the bot flow.
+    # Create an anonymous user with the trial plan metadata and the configured free limit.
     try:
         user = await remnawave_sdk.users.create_user(
             CreateUserRequestDto(
