@@ -75,6 +75,16 @@ class BotService:
         return html.unescape(plain_text)
 
     def get_support_url(self, text: Optional[str] = None) -> str:
-        base_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"
+        if self.config.bot.support_url:
+            base_url = self.config.bot.support_url.get_secret_value()
+        elif self.config.bot.support_username:
+            base_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"
+        else:
+            raise ValueError("Support URL is not configured")
+
         encoded_text = quote(self._prepare_support_text(text))
-        return f"{base_url}?text={encoded_text}"
+        if not encoded_text:
+            return base_url
+
+        separator = "&" if "?" in base_url else "?"
+        return f"{base_url}{separator}text={encoded_text}"

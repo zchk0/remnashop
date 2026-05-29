@@ -1,6 +1,6 @@
-from typing import Optional, Union
+from typing import Optional, Self, Union
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_core.core_schema import FieldValidationInfo
 
 from src.core.constants import API_V1, BOT_WEBHOOK_PATH, URL_PATTERN
@@ -13,7 +13,8 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
     token: SecretStr
     secret_token: SecretStr
     owner_id: int
-    support_username: SecretStr
+    support_username: Optional[SecretStr] = None
+    support_url: Optional[SecretStr] = None
     mini_app: Union[bool, SecretStr] = False
     proxy_url: Optional[SecretStr] = None
 
@@ -47,17 +48,62 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
     def safe_webhook_url(self, domain: SecretStr) -> str:
         return f"https://{domain}{self.webhook_path}"
 
-    @field_validator("token", "secret_token", "support_username")
+    @field_validator("token", "secret_token")
     @classmethod
     def validate_bot_fields(cls, field: object, info: FieldValidationInfo) -> object:
         validate_not_change_me(field, info)
         return field
 
+    @field_validator("support_username", "support_url", mode="before")
+    @classmethod
+    def normalize_optional_support_fields(cls, field: object) -> object:
+        if isinstance(field, SecretStr):
+            value = field.get_secret_value().strip()
+            return SecretStr(value) if value else None
+
+        if isinstance(field, str):
+            value = field.strip()
+            return value or None
+
+        return field
+
     @field_validator("support_username")
     @classmethod
-    def validate_bot_support_username(cls, field: object, info: FieldValidationInfo) -> object:
+    def validate_bot_support_username(
+        cls,
+        field: Optional[SecretStr],
+        info: FieldValidationInfo,
+    ) -> Optional[SecretStr]:
+        if field is None:
+            return field
+
+        validate_not_change_me(field, info)
         validate_username(field, info)
         return field
+
+    @field_validator("support_url")
+    @classmethod
+    def validate_bot_support_url(
+        cls,
+        field: Optional[SecretStr],
+    ) -> Optional[SecretStr]:
+        if field is None:
+            return field
+
+        value = field.get_secret_value()
+        if value.lower() == "change_me":
+            raise ValueError("BOT_SUPPORT_URL must be set and not equal to 'change_me'")
+
+        if not URL_PATTERN.match(value):
+            raise ValueError("BOT_SUPPORT_URL must be a valid HTTPS URL")
+
+        return field
+
+    @model_validator(mode="after")
+    def validate_support_destination(self) -> Self:
+        if self.support_url is None and self.support_username is None:
+            raise ValueError("BOT_SUPPORT_URL or BOT_SUPPORT_USERNAME must be set")
+        return self
 
     @field_validator("mini_app")
     @classmethod
