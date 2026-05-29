@@ -15,7 +15,7 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import Remnawave
+from src.application.common import Remnawave, TranslatorRunner
 from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, UserDto
@@ -124,6 +124,7 @@ async def on_device_auth(
     activate_trial_subscription: FromDishka[ActivateTrialSubscription],
     remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
+    i18n: FromDishka[TranslatorRunner],
 ) -> None:
     args = command.args or ""
     if not _is_auth_token(args):
@@ -134,11 +135,11 @@ async def on_device_auth(
 
     token_record = await auth_dao.get_by_token(auth_token)
     if not token_record:
-        await message.answer("Auth token not found or expired.")
+        await message.answer(i18n.get("message.device-auth-token-not-found"))
         return
 
     if token_record.status == "completed":
-        await message.answer("Already authorized!")
+        await message.answer(i18n.get("message.device-auth-already-authorized"))
         return
 
     anon_uuid = token_record.panel_user_uuid
@@ -152,13 +153,13 @@ async def on_device_auth(
         panel_user = existing_user
     else:
         if not user.is_trial_available:
-            await message.answer("Trial is not available for this Telegram account.")
+            await message.answer(i18n.get("message.device-auth-trial-not-available"))
             logger.warning(f"{user.log} ToBeVPN auth failed: trial is not available")
             return
 
         trial_plan = await get_available_trial.system(user)
         if not trial_plan:
-            await message.answer("Trial plan is not available.")
+            await message.answer(i18n.get("message.device-auth-trial-plan-not-available"))
             logger.warning(f"{user.log} ToBeVPN auth failed: no available trial plan")
             return
 
@@ -169,7 +170,7 @@ async def on_device_auth(
                 ActivateTrialSubscriptionDto(user=user, plan=trial)
             )
         except Exception as e:
-            await message.answer("Could not create trial subscription. Please try again later.")
+            await message.answer(i18n.get("message.device-auth-trial-create-failed"))
             logger.warning(f"{user.log} ToBeVPN trial activation failed: {e}")
             return
 
@@ -177,9 +178,7 @@ async def on_device_auth(
         panel_user = existing_users[0] if existing_users else None
 
     if not panel_user:
-        await message.answer(
-            "Could not complete account linking.\nPlease try again in a few seconds."
-        )
+        await message.answer(i18n.get("message.device-auth-linking-failed"))
         logger.warning(f"Failed auth for telegram '{telegram_id}': panel user not resolved")
         return
 
@@ -220,5 +219,5 @@ async def on_device_auth(
     )
     await uow.commit()
 
-    await message.answer("Authorization successful!\n\nReturn to the ToBeVPN app.")
+    await message.answer(i18n.get("message.device-auth-success"))
     logger.info(f"User '{telegram_id}' authorized, panel shortUuid={short_uuid}")

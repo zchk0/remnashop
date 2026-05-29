@@ -28,6 +28,18 @@ message =
         Здравствуйте! Я бы хотел запросить возврат средств.
     .help = Мой код: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
         Здравствуйте! Мне нужна помощь.
+    .device-auth-token-not-found = Токен авторизации не найден или истек.
+    .device-auth-already-authorized = Вы уже авторизованы.
+    .device-auth-trial-not-available = Пробный период недоступен для этого Telegram-аккаунта.
+    .device-auth-trial-plan-not-available = Пробный тариф сейчас недоступен.
+    .device-auth-trial-create-failed = Не удалось создать пробную подписку. Попробуйте позже.
+    .device-auth-linking-failed = Не удалось завершить привязку аккаунта.
+        Попробуйте еще раз через несколько секунд.
+    .device-auth-success = 🧩 Авторизация прошла успешно!
+
+        Вернитесь в приложение ToBeVPN.
+        Самостоятельно или используя DeepLink:
+        tobevpn.meowbot.ru
 
 command =
     .start = Перезапустить бота
