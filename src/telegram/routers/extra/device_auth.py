@@ -157,11 +157,11 @@ async def on_device_auth(
 
     token_record = await auth_dao.get_by_token(auth_token)
     if not token_record:
-        await message.answer(i18n.get("message.device-auth-token-not-found"))
+        await message.answer(i18n.get("msg-device-auth-token-not-found"))
         return
 
     if token_record.status == "completed":
-        await message.answer(i18n.get("message.device-auth-already-authorized"))
+        await message.answer(i18n.get("msg-device-auth-already-authorized"))
         return
 
     anon_uuid = token_record.panel_user_uuid
@@ -177,13 +177,13 @@ async def on_device_auth(
         panel_user = existing_user
     else:
         if not user.is_trial_available:
-            await message.answer(i18n.get("message.device-auth-trial-not-available"))
+            await message.answer(i18n.get("msg-device-auth-trial-not-available"))
             logger.warning(f"{user.log} ToBeVPN auth failed: trial is not available")
             return
 
         trial_plan = await get_available_trial.system(user)
         if not trial_plan:
-            await message.answer(i18n.get("message.device-auth-trial-plan-not-available"))
+            await message.answer(i18n.get("msg-device-auth-trial-plan-not-available"))
             logger.warning(f"{user.log} ToBeVPN auth failed: no available trial plan")
             return
 
@@ -195,7 +195,7 @@ async def on_device_auth(
             )
             created_trial = True
         except Exception as e:
-            await message.answer(i18n.get("message.device-auth-trial-create-failed"))
+            await message.answer(i18n.get("msg-device-auth-trial-create-failed"))
             logger.warning(f"{user.log} ToBeVPN trial activation failed: {e}")
             return
 
@@ -203,7 +203,7 @@ async def on_device_auth(
         panel_user = existing_users[0] if existing_users else None
 
     if not panel_user:
-        await message.answer(i18n.get("message.device-auth-linking-failed"))
+        await message.answer(i18n.get("msg-device-auth-linking-failed"))
         logger.warning(f"Failed auth for telegram '{telegram_id}': panel user not resolved")
         return
 
@@ -259,5 +259,5 @@ async def on_device_auth(
     )
     await uow.commit()
 
-    await message.answer(i18n.get("message.device-auth-success"))
+    await message.answer(i18n.get("msg-device-auth-success"))
     logger.info(f"User '{telegram_id}' authorized, panel shortUuid={short_uuid}")
