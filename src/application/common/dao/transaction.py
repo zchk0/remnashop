@@ -1,9 +1,9 @@
 from datetime import datetime
-from typing import Optional, Protocol, runtime_checkable
+from typing import Iterable, Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto, UserPaymentStatsDto
-from src.core.enums import TransactionStatus
+from src.core.enums import PaymentGatewayType, TransactionStatus
 
 
 @runtime_checkable
@@ -24,6 +24,13 @@ class TransactionDao(Protocol):
         status: TransactionStatus,
     ) -> Optional[TransactionDto]: ...
 
+    async def transition_status(
+        self,
+        payment_id: UUID,
+        new_status: TransactionStatus,
+        allowed_current: Iterable[TransactionStatus],
+    ) -> Optional[TransactionDto]: ...
+
     async def exists(self, payment_id: UUID) -> bool: ...
 
     async def cancel_old(self, minutes: int = 30) -> int: ...
@@ -41,6 +48,14 @@ class TransactionDao(Protocol):
     async def get_gateway_stats(self) -> list[GatewayStatsDto]: ...
 
     async def get_plan_income(self) -> list[PlanIncomeDto]: ...
+
+    async def get_recent_pending(
+        self,
+        user_id: int,
+        plan_id: int,
+        duration_days: int,
+        gateway_type: PaymentGatewayType,
+    ) -> Optional[TransactionDto]: ...
 
     async def get_user_payment_stats(
         self,

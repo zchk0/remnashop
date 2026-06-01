@@ -35,7 +35,7 @@ async def gateways_getter(
 @inject
 async def gateway_getter(
     dialog_manager: DialogManager,
-    config: AppConfig,
+    config: FromDishka[AppConfig],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     **kwargs: Any,
 ) -> dict[str, Any]:

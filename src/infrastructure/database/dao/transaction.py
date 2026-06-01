@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Iterable, Optional, cast
 from uuid import UUID
 
 from adaptix import Retort
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import TransactionDao
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto, UserPaymentStatsDto
-from src.core.enums import TransactionStatus
+from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Transaction
 
@@ -109,6 +109,28 @@ class TransactionDaoImpl(TransactionDao):
             return self._convert_to_dto(db_transaction)
 
         logger.warning(f"Failed to update transaction '{payment_id}': not found")
+        return None
+
+    async def transition_status(
+        self,
+        payment_id: UUID,
+        new_status: TransactionStatus,
+        allowed_current: Iterable[TransactionStatus],
+    ) -> Optional[TransactionDto]:
+        stmt = (
+            update(Transaction)
+            .where(
+                Transaction.payment_id == payment_id,
+                Transaction.status.in_(tuple(allowed_current)),
+            )
+            .values(status=new_status)
+            .returning(Transaction)
+        )
+        db_transaction = await self.session.scalar(stmt)
+        if db_transaction:
+            logger.debug(f"Transaction '{payment_id}' transitioned to '{new_status}'")
+            return self._convert_to_dto(db_transaction)
+        logger.info(f"Transaction '{payment_id}' transition to '{new_status}' did not match")
         return None
 
     async def exists(self, payment_id: UUID) -> bool:
@@ -268,6 +290,42 @@ class TransactionDaoImpl(TransactionDao):
             )
             for row in result.mappings()
         ]
+
+    async def get_recent_pending(
+        self,
+        user_id: int,
+        plan_id: int,
+        duration_days: int,
+        gateway_type: PaymentGatewayType,
+    ) -> Optional[TransactionDto]:
+        threshold = datetime_now() - timedelta(minutes=15)
+        stmt = (
+            select(Transaction)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.gateway_type == gateway_type,
+                Transaction.status == TransactionStatus.PENDING,
+                Transaction.plan_snapshot["id"].as_integer() == plan_id,
+                Transaction.plan_snapshot["duration"].as_integer() == duration_days,
+                Transaction.created_at >= threshold,
+            )
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        db_transaction = await self.session.scalar(stmt)
+
+        if db_transaction:
+            logger.debug(
+                f"Found recent pending transaction for user_id '{user_id}', "
+                f"plan_id '{plan_id}', duration '{duration_days}'"
+            )
+            return self._convert_to_dto(db_transaction)
+
+        logger.debug(
+            f"No recent pending transaction for user_id '{user_id}', "
+            f"plan_id '{plan_id}', duration '{duration_days}'"
+        )
+        return None
 
     async def get_user_payment_stats(
         self,

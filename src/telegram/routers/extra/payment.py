@@ -7,7 +7,7 @@ from loguru import logger
 
 from src.application.dto import TelegramUserDto
 from src.application.use_cases.gateways.commands.payment import ProcessPayment, ProcessPaymentDto
-from src.core.enums import TransactionStatus
+from src.core.enums import PaymentGatewayType, TransactionStatus
 
 router = Router(name=__name__)
 
@@ -34,15 +34,18 @@ async def on_successful_payment(
     if not payment:
         return
 
+    new_status = TransactionStatus.COMPLETED
     if user.is_owner:
         logger.info(f"{user.log} Refunding test payment '{payment.telegram_payment_charge_id}'")
         await bot.refund_star_payment(
             user_id=user.telegram_id,
             telegram_payment_charge_id=payment.telegram_payment_charge_id,
         )
+        new_status = TransactionStatus.CANCELED
     await process_payment.system(
         ProcessPaymentDto(
             payment_id=UUID(payment.invoice_payload),
-            new_transaction_status=TransactionStatus.COMPLETED,
+            new_transaction_status=new_status,
+            gateway_type=PaymentGatewayType.TELEGRAM_STARS,
         )
     )

@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import uuid
 from decimal import Decimal
 from typing import Any, Final, Union
@@ -131,7 +132,7 @@ class YoomoneyGateway(BasePaymentGateway):
         sign_str = "&".join(params)
         computed_hash = hashlib.sha1(sign_str.encode("utf-8")).hexdigest()
 
-        is_valid: bool = computed_hash == data.get("sha1_hash", "")
+        is_valid: bool = hmac.compare_digest(computed_hash, data.get("sha1_hash", ""))
         if not is_valid:
             logger.warning(
                 f"Invalid signature. Expected {computed_hash}, received {data.get('sha1_hash')}"

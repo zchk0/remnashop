@@ -1,3 +1,6 @@
+from typing import Optional
+from uuid import UUID
+
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, Request, Response, status
@@ -8,11 +11,83 @@ from src.application.events import ErrorEvent
 from src.application.use_cases.gateways.queries.providers import GetPaymentGatewayInstance
 from src.core.config import AppConfig
 from src.core.constants import API_V1, PAYMENTS_WEBHOOK_PATH
-from src.core.enums import PaymentGatewayType
+from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.exceptions import GatewayNotConfiguredError
+from src.infrastructure.payment_gateways.base import BasePaymentGateway
 from src.infrastructure.taskiq.tasks.payments import handle_payment_transaction_task
 
 router = APIRouter(prefix=API_V1 + PAYMENTS_WEBHOOK_PATH, include_in_schema=False)
+
+
+async def _build_response(
+    gateway: Optional[BasePaymentGateway], request: Request, gateway_type: str
+) -> Response:
+    """Try to build a gateway-specific response; fall back to plain 200."""
+    if gateway is not None:
+        try:
+            return await gateway.build_webhook_response(request)
+        except Exception:
+            logger.exception(f"Failed to build webhook response for '{gateway_type}'")
+    return Response(status_code=status.HTTP_200_OK)
+
+
+async def _enqueue_payment_task(
+    payment_id: UUID,
+    payment_status: TransactionStatus,
+    gateway_enum: PaymentGatewayType,
+    gateway_type: str,
+    config: AppConfig,
+    event_publisher: EventPublisher,
+) -> Optional[Response]:
+    """Enqueue the payment task. Returns a 503 Response on failure, or None on success."""
+    try:
+        await handle_payment_transaction_task.kiq(payment_id, payment_status, gateway_enum)  # type: ignore[call-overload]
+        return None
+    except Exception as e:
+        logger.exception(f"Failed to enqueue payment task for '{gateway_type}'")
+        error_event = ErrorEvent(**config.build.data, exception=e)
+        await event_publisher.publish(error_event)
+        return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+async def _process_payment_webhook(
+    gateway_type: str,
+    request: Request,
+    config: AppConfig,
+    event_publisher: EventPublisher,
+    get_payment_gateway_instance: GetPaymentGatewayInstance,
+) -> Response:
+    try:
+        gateway_enum = PaymentGatewayType(gateway_type.upper())
+    except ValueError:
+        logger.exception(f"Invalid gateway type received: '{gateway_type}'")
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+
+    gateway: Optional[BasePaymentGateway] = None
+    try:
+        gateway = await get_payment_gateway_instance.system(gateway_enum)
+        result = await gateway.handle_webhook(request)
+    except GatewayNotConfiguredError:
+        logger.warning(f"Webhook received for inactive/unconfigured gateway '{gateway_enum}'")
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    except PermissionError:
+        logger.warning(f"Webhook signature verification failed for '{gateway_enum}'")
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
+    except Exception as e:
+        logger.exception(f"Error processing webhook for '{gateway_type}': {e}")
+        error_event = ErrorEvent(**config.build.data, exception=e)
+        await event_publisher.publish(error_event)
+        return await _build_response(gateway, request, gateway_type)
+
+    if result is not None:
+        payment_id, payment_status = result
+        enqueue_error = await _enqueue_payment_task(
+            payment_id, payment_status, gateway_enum, gateway_type, config, event_publisher
+        )
+        if enqueue_error is not None:
+            return enqueue_error
+
+    return await _build_response(gateway, request, gateway_type)
 
 
 @router.post("/{gateway_type}")
@@ -24,34 +99,10 @@ async def payments_webhook(
     event_publisher: FromDishka[EventPublisher],
     get_payment_gateway_instance: FromDishka[GetPaymentGatewayInstance],
 ) -> Response:
-    try:
-        gateway_enum = PaymentGatewayType(gateway_type.upper())
-    except ValueError:
-        logger.exception(f"Invalid gateway type received: '{gateway_type}'")
-        return Response(status_code=status.HTTP_404_NOT_FOUND)
-
-    gateway = None
-    try:
-        gateway = await get_payment_gateway_instance.system(gateway_enum)
-        result = await gateway.handle_webhook(request)
-        if result is not None:
-            payment_id, payment_status = result
-            await handle_payment_transaction_task.kiq(payment_id, payment_status)  # type: ignore[call-overload]
-
-    except GatewayNotConfiguredError:
-        logger.warning(f"Webhook received for inactive/unconfigured gateway '{gateway_enum}'")
-        return Response(status_code=status.HTTP_404_NOT_FOUND)
-    except PermissionError:
-        logger.warning(f"Webhook signature verification failed for '{gateway_enum}'")
-        return Response(status_code=status.HTTP_403_FORBIDDEN)
-    except Exception as e:
-        logger.exception(f"Error processing webhook for '{gateway_type}': {e}")
-        error_event = ErrorEvent(**config.build.data, exception=e)
-        await event_publisher.publish(error_event)
-
-    if gateway is not None:
-        try:
-            return await gateway.build_webhook_response(request)
-        except Exception:
-            logger.exception(f"Failed to build webhook response for '{gateway_type}'")
-    return Response(status_code=status.HTTP_200_OK)
+    return await _process_payment_webhook(
+        gateway_type=gateway_type,
+        request=request,
+        config=config,
+        event_publisher=event_publisher,
+        get_payment_gateway_instance=get_payment_gateway_instance,
+    )

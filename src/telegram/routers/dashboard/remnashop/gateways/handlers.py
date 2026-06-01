@@ -86,7 +86,6 @@ async def on_gateway_test(
             f"{user.log} Test payment failed for gateway '{gateway_id}'. Exception: {e}"
         )
         await notifier.notify_user(user, i18n_key="ntf-gateway.test-payment-error")
-        raise
 
 
 @inject
