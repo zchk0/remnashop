@@ -398,6 +398,57 @@ event-referral =
     <i>Купите подписку, чтобы получать бонусы за приглашенных друзей!</i>
     </blockquote>
 
+event-promocode =
+    .activated =
+    #PromocodeActivatedEvent
+
+    <b>🔅 Событие: Активация промокода!</b>
+
+    { hdr-user }
+    <blockquote>
+    • <b>ID</b>: <code>{ $telegram_id ->
+        [0] —
+        *[HAS] { NUMBER($telegram_id, useGrouping: 0) }
+        }</code>
+    • <b>Имя</b>: { $name } { $username ->
+        [0] { empty }
+        *[HAS] (@{ $username })
+        }
+    </blockquote>
+
+    <b>🎟 Промокод</b>:
+    <blockquote>
+    • <b>Код</b>: <code>{ $promocode_code }</code>
+    • <b>Тип</b>: { $reward_type }
+    • <b>Награда</b>: { $reward ->
+        [0] —
+        *[HAS] { $reward }
+        }
+    </blockquote>
+
+event-payment =
+    .refunded =
+    #PaymentRefundedEvent
+
+    <b>⚠️ Событие: Платёж возвращён!</b>
+
+    <blockquote>
+    • <b>ID платежа</b>: <code>{ $payment_id }</code>
+    • <b>Пользователь</b>: <code>{ $user }</code>
+    </blockquote>
+
+    Требуется ручная проверка — подписка пользователя могла остаться активной.
+
+    .referral-failed =
+    <b>⚠️ Не удалось начислить реферальные награды</b>
+
+    <blockquote>
+    • <b>ID платежа</b>: <code>{ $payment_id }</code>
+    • <b>Пользователь</b>: <code>{ $user }</code>
+    </blockquote>
+
+    Покупка завершена успешно, но начисление реферальных наград упало. Требуется ручная проверка.
+
 event-remnashop-welcome =
     <b>💎 Remnashop v{ $version }</b>
 

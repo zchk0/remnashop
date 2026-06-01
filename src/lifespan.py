@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 
 from src.application.common import BotService, Remnawave
 from src.application.common.dao import SettingsDao
+from src.application.common.uow import UnitOfWork
 from src.application.events import (
     BotInlineModeDisabledEvent,
     BotShutdownEvent,
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         config = await startup_container.get(AppConfig)
         bot_service = await startup_container.get(BotService)
         settings_dao = await startup_container.get(SettingsDao)
+        uow = await startup_container.get(UnitOfWork)
         webhook_service = await startup_container.get(WebhookService)
         command_service = await startup_container.get(CommandService)
         remnawave_service = await startup_container.get(Remnawave)
@@ -69,7 +71,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         states = await bot_service.get_bot_states()
         await create_default_payment_gateway.system()
-        settings = await settings_dao.get()
+        # `get()` lazily creates default settings via flush; commit here so the
+        # DAO stays free of commits (UoW owns the transaction boundary).
+        async with uow:
+            settings = await settings_dao.get()
+            await uow.commit()
         allowed_updates = dispatcher.resolve_used_update_types()
         webhook_info: WebhookInfo = await webhook_service.setup_webhook(allowed_updates)
 

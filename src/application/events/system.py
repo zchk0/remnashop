@@ -519,3 +519,37 @@ class SubscriptionRevokedEvent(UserEvent):
     @property
     def event_key(self) -> str:
         return "event-subscription.revoked"
+
+
+@dataclass(frozen=True, kw_only=True)
+class PromocodeActivatedEvent(BaseEvent):
+    notification_type: NotificationType = field(
+        default=SystemNotificationType.PROMOCODE_ACTIVATED,
+        init=False,
+    )
+
+    telegram_id: Optional[int]
+    username: Optional[str]
+    name: str
+    promocode_code: str
+    reward_type: str
+    reward: Optional[int]
+
+    @property
+    def event_key(self) -> str:
+        return "event-promocode.activated"
+
+    def as_payload(self) -> "MessagePayloadDto":
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            i18n_kwargs={
+                "telegram_id": self.telegram_id or 0,
+                "username": self.username or 0,
+                "name": self.name,
+                "promocode_code": self.promocode_code,
+                "reward_type": self.reward_type,
+                "reward": self.reward if self.reward is not None else 0,
+            },
+            disable_default_markup=False,
+            delete_after=None,
+        )

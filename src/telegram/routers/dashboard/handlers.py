@@ -10,10 +10,9 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.dao import TransactionDao, UserDao
 from src.application.common.policy import Permission, PermissionPolicy
-from src.application.dto import MessagePayloadDto, TelegramUserDto, UserDto
+from src.application.dto import TelegramUserDto, UserDto
 from src.application.use_cases.user.queries.search import SearchUsersDto, SmartSearch
 from src.core.constants import USER_KEY
-from src.telegram.keyboards import get_boosty_keyboard
 from src.telegram.states import DashboardRemnashop, DashboardUsers
 
 from .users.user.handlers import start_user_transaction_window, start_user_window
@@ -37,26 +36,6 @@ async def on_transactions_list(
     await dialog_manager.start(
         state=DashboardRemnashop.TRANSACTIONS,
         mode=StartMode.RESET_STACK,
-    )
-
-
-@inject
-async def show_dev_promocode(
-    callback: CallbackQuery,
-    widget: Button,
-    dialog_manager: DialogManager,
-    notifier: FromDishka[Notifier],
-) -> None:
-    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
-
-    await notifier.notify_user(
-        user,
-        MessagePayloadDto(
-            i18n_key="development-promocode",
-            reply_markup=get_boosty_keyboard(),
-            disable_default_markup=False,
-            delete_after=None,
-        ),
     )
 
 

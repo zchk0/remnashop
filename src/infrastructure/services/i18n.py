@@ -6,12 +6,6 @@ from fluentogram.translator import FluentTranslator
 
 
 class LayeredFileStorage(BaseStorage):
-    """Two-layer translation storage: custom.ftl (user) has priority over defaults.
-
-    If default_translations_dir does not exist (local dev without assets.default/),
-    falls back to loading all .ftl files from user_translations_dir — same as FileStorage.
-    """
-
     def __init__(
         self,
         user_translations_dir: Path,

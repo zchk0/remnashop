@@ -23,7 +23,10 @@ class GarbageMiddleware(EventTypedMiddleware):
         user: TelegramUserDto = data[USER_KEY]
 
         if message.text != f"/{Command.START.value.command}":
-            await message.delete()
-            logger.debug(f"Message '{message.content_type}' deleted from '{user.remna_name}'")
+            try:
+                await message.delete()
+                logger.debug(f"Message '{message.content_type}' deleted from '{user.remna_name}'")
+            except Exception as e:
+                logger.debug(f"Failed to delete message from '{user.remna_name}': '{e}'")
 
         return await handler(event, data)

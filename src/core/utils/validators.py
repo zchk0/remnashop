@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from src.core.constants import (
@@ -7,6 +8,12 @@ from src.core.constants import (
     URL_PATTERN,
     USERNAME_PATTERN,
 )
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def is_valid_email(value: str) -> bool:
+    return bool(_EMAIL_RE.match(value))
 
 
 def is_valid_url(text: str) -> bool:

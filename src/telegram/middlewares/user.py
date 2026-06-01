@@ -1,7 +1,6 @@
-from dataclasses import fields as dataclass_fields
 from typing import Any, Awaitable, Callable, Optional
 
-from aiogram.types import ChatMemberUpdated, Message, TelegramObject
+from aiogram.types import ChatMemberUpdated, TelegramObject
 from aiogram.types import User as AiogramUser
 from aiogram_dialog.api.internal import FakeUser
 from dishka import AsyncContainer
@@ -15,43 +14,10 @@ from src.application.use_cases.user.commands.registration import (
     UpdateUserProfileDto,
 )
 from src.core.constants import CONTAINER_KEY, USER_KEY
-from src.core.enums import Deeplink, MiddlewareEventType
+from src.core.enums import MiddlewareEventType
 
+from ._codes import parse_ad_link_code, parse_referral_code
 from .base import EventTypedMiddleware
-
-
-def _parse_referral_code(event: TelegramObject) -> Optional[str]:
-    if not isinstance(event, Message) or not event.text:
-        return None
-
-    parts = event.text.split()
-    if len(parts) <= 1:
-        return None
-
-    code = parts[1]
-    if code.startswith(Deeplink.REFERRAL.with_underscore):
-        raw = code[len(Deeplink.REFERRAL.with_underscore) :]
-        logger.debug(f"Parsed referral code '{raw}' from deeplink")
-        return raw
-
-    return None
-
-
-def _parse_ad_link_code(event: TelegramObject) -> Optional[str]:
-    if not isinstance(event, Message) or not event.text:
-        return None
-
-    parts = event.text.split()
-    if len(parts) <= 1:
-        return None
-
-    code = parts[1]
-    if code.startswith(Deeplink.ADVERTISING.with_underscore):
-        raw = code[len(Deeplink.ADVERTISING.with_underscore) :]
-        logger.debug(f"Parsed ad link code '{raw}' from deeplink in user middleware")
-        return raw
-
-    return None
 
 
 class UserMiddleware(EventTypedMiddleware):
@@ -77,8 +43,8 @@ class UserMiddleware(EventTypedMiddleware):
             return
 
         is_chat_member_event = isinstance(event, ChatMemberUpdated)
-        referral_code = _parse_referral_code(event)
-        ad_link_code = _parse_ad_link_code(event)
+        referral_code = parse_referral_code(event)
+        ad_link_code = parse_ad_link_code(event)
 
         container: AsyncContainer = data[CONTAINER_KEY]
         get_or_create_user = await container.get(GetOrCreateUser)
@@ -108,12 +74,6 @@ class UserMiddleware(EventTypedMiddleware):
             )
 
         if user is not None and not isinstance(user, TelegramUserDto):
-            user = TelegramUserDto(
-                **{
-                    f.name: getattr(user, f.name)
-                    for f in dataclass_fields(user)
-                    if not f.name.startswith("_")
-                }
-            )
+            user = TelegramUserDto.from_user(user)
         data[USER_KEY] = user
         return await handler(event, data)

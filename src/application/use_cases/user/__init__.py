@@ -20,6 +20,7 @@ from .commands.profile_edit import (
 )
 from .commands.registration import GetOrCreateUser, UpdateUserProfile
 from .commands.roles import GetAdmins, RevokeRole, SetUserRole
+from .commands.web_registration import RegisterWebUser
 from .queries.plans import GetAvailablePlanByCode, GetAvailablePlans, GetAvailableTrial
 from .queries.profile import GetUserDevices, GetUserProfile, GetUserProfileSubscription
 from .queries.search import SearchUsers, SmartSearch
@@ -50,4 +51,5 @@ USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     GetAvailableTrial,
     GetAvailablePlanByCode,
     UpdateUserProfile,
+    RegisterWebUser,
 )

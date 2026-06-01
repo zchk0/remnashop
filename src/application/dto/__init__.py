@@ -11,7 +11,8 @@ from .payment_gateway import (
     PaymentResultDto,
 )
 from .plan import PlanDto, PlanDurationDto, PlanPriceDto, PlanSnapshotDto
-from .referral import ReferralDto, ReferralRewardDto
+from .promocode import PromocodeActivationDto, PromocodeDto
+from .referral import ReferralDto, ReferralRewardDto, UserReferralStatsDto
 from .settings import (
     AccessSettingsDto,
     BackupSettingsDto,
@@ -37,7 +38,7 @@ from .statistics import (
     UserPaymentStatsDto,
     UserStatisticsDto,
 )
-from .subscription import RemnaSubscriptionDto, SubscriptionDto
+from .subscription import RemnaSubscriptionDto, SquadInfoDto, SubscriptionDto
 from .transaction import PriceDetailsDto, TransactionDto
 from .user import TelegramUserDto, TempUserDto, UserDto, UserOAuthProviderDto
 
@@ -68,8 +69,11 @@ __all__ = [
     "PlanDurationDto",
     "PlanPriceDto",
     "PlanSnapshotDto",
+    "PromocodeActivationDto",
+    "PromocodeDto",
     "ReferralDto",
     "ReferralRewardDto",
+    "UserReferralStatsDto",
     "AccessSettingsDto",
     "BackupSettingsDto",
     "BlacklistSettingsDto",
@@ -85,6 +89,7 @@ __all__ = [
     "SettingsDto",
     "SystemNotificationRouteDto",
     "RemnaSubscriptionDto",
+    "SquadInfoDto",
     "SubscriptionDto",
     "PriceDetailsDto",
     "TransactionDto",

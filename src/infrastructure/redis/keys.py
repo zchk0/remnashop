@@ -54,3 +54,8 @@ class SyncBotRunningKey(StorageKey, prefix="sync_bot_running"): ...
 @dataclass(frozen=True)
 class RefreshTokenKey(StorageKey, prefix="refresh"):
     token: str
+
+
+@dataclass(frozen=True)
+class UserTokensKey(StorageKey, prefix="user_tokens"):
+    user_id: int

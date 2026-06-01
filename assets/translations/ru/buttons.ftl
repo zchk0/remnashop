@@ -9,6 +9,9 @@ btn-common =
     .notification-close = ❌ Закрыть
     .devices-empty = ⚠️ У вас нет подключенных устройств
     .cancel = Отмена
+    .create = ➕ Создать
+    .next = ▶️ Далее
+    .prev = ◀️ Назад
 
     .squad-choice = { $selected -> 
     [1] 🔘
@@ -250,6 +253,13 @@ btn-promocodes =
     .create = 🆕 Создать
     .delete = 🗑️ Удалить
     .edit = ✏️ Редактировать
+
+    .item = 🎟 { $code } — { $reward_type }
+
+    .toggle = { $is_active ->
+        [1] 🔴 Деактивировать
+        *[0] 🟢 Активировать
+    }
 
 btn-access =
     .mode = { access-mode }
@@ -539,9 +549,16 @@ btn-promocode =
     .type = 🔖 Тип награды
     .availability = ✴️ Доступ
     .reward = 🎁 Награда
+    .plan = 📦 План
+    .plan-duration = { $days } дн.
     .lifetime = ⌛ Время жизни
     .allowed = 👥 Разрешенные пользователи
     .confirm = ✅ Подтвердить
+    .save = 💾 Сохранить
+    .create = ✅ Создать
+    .delete = 🗑️ Удалить
+    .max-activations = 🔢 Лимит активаций
+    .reset = 🔄 Сбросить
 
     .active-toggle = { $is_active ->
     [1] 🟢

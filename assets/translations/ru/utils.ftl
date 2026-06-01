@@ -434,6 +434,8 @@ notification-type = { $notification_type ->
     [USER_FIRST_CONNECTION] Первое подключение
     [USER_DEVICES_UPDATED] Устройства пользователя
     [USER_REVOKED_SUBSCRIPTION] Сброс подписки
+    [NOT_CONNECTED] Нет подключения
+    [BLACKLIST_ATTEMPT] Попытка входа из чёрного списка
     *[OTHER] { $notification_type }
     }
 

@@ -808,18 +808,27 @@ msg-remnawave-inbound-details =
 
 msg-remnawave-hosts =
     <b>🌐 Хосты</b>
-    
-    { $host }
 
-msg-remnawave-nodes = 
+    { $is_empty ->
+    [1] <i>Нет хостов</i>
+    *[0] { $host }
+    }
+
+msg-remnawave-nodes =
     <b>🖥️ Ноды</b>
 
-    { $node }
+    { $is_empty ->
+    [1] <i>Нет нод</i>
+    *[0] { $node }
+    }
 
 msg-remnawave-inbounds =
     <b>🔌 Инбаунды</b>
 
-    { $inbound }
+    { $is_empty ->
+    [1] <i>Нет инбаундов</i>
+    *[0] { $inbound }
+    }
 
 
 # RemnaShop
@@ -1532,16 +1541,47 @@ msg-promocode-configurator =
     [DURATION] • <b>Длительность</b>: { $reward }
     [TRAFFIC] • <b>Трафик</b>: { $reward }
     [DEVICES] • <b>Устройства</b>: { $reward }
-    [SUBSCRIPTION] • <b>Подписка</b>: { frg-plan-snapshot }
+    [SUBSCRIPTION] • <b>Подписка</b>: { $plan_name }
     [PERSONAL_DISCOUNT] • <b>Персональная скидка</b>: { $reward }%
     [PURCHASE_DISCOUNT] • <b>Скидка на покупку</b>: { $reward }%
-    *[OTHER] { $promocode_type }
+    *[OTHER] • <b>Награда</b>: { $reward }
     }
     • <b>Срок действия</b>: { $lifetime }
     • <b>Лимит активаций</b>: { $max_activations }
     </blockquote>
 
     Выберите пункт для изменения.
+
+msg-promocode-input-code = Введите код промокода (от 3 до 16 символов):
+
+msg-promocode-select-type = Выберите тип награды:
+
+msg-promocode-input-reward = Введите значение награды (целое число):
+
+msg-promocode-select-plan = Выберите тарифный план:
+
+msg-promocode-select-plan-duration = Выберите длительность плана:
+
+msg-promocode-select-availability = Выберите доступность промокода:
+
+msg-promocode-input-lifetime =
+    Введите срок жизни промокода в днях.
+    Нажмите <b>Сбросить</b> для снятия ограничения.
+
+msg-promocode-input-max-activations =
+    Введите максимальное количество активаций.
+    Нажмите <b>Сбросить</b> для снятия ограничения.
+
+msg-promocode-allowed-ids =
+    <b>Разрешённые пользователи</b>
+
+    Введите Telegram ID пользователя для добавления в список.
+
+msg-promocode-input =
+    <b>🎟 Промокод</b>
+
+    Введите код промокода.
+    После проверки нажмите <b>Подтвердить</b> для активации.
 
 
 # Ad Links

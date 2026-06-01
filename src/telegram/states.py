@@ -60,7 +60,10 @@ class DashboardPromocodes(StatesGroup):
     TYPE = State()
     AVAILABILITY = State()
     REWARD = State()
+    PLAN = State()
+    PLAN_DURATION = State()
     LIFETIME = State()
+    MAX_ACTIVATIONS = State()
     ALLOWED = State()
 
 

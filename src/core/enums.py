@@ -17,6 +17,7 @@ class Deeplink(StrEnum):
     PLAN = "plan"
     INVITE = "invite"
     ADVERTISING = "ad"
+    PROMOCODE = "promo"
 
     def build_url(self, base_url: str, data: Optional[str]) -> str:
         if not data:
@@ -122,6 +123,23 @@ class SubscriptionStatus(UpperStrEnum):
 class ReferralRewardType(UpperStrEnum):
     POINTS = auto()
     EXTRA_DAYS = auto()
+
+
+class PromocodeRewardType(UpperStrEnum):
+    DURATION = auto()
+    TRAFFIC = auto()
+    DEVICES = auto()
+    SUBSCRIPTION = auto()
+    PERSONAL_DISCOUNT = auto()
+    PURCHASE_DISCOUNT = auto()
+
+
+class PromocodeAvailability(UpperStrEnum):
+    ALL = auto()
+    NEW = auto()
+    EXISTING = auto()
+    INVITED = auto()
+    ALLOWED = auto()
 
 
 class ReferralLevel(IntEnum):

@@ -8,9 +8,18 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.dto import TelegramUserDto
+from src.application.use_cases.promocode.queries.validate import (
+    ValidatePromocode,
+    ValidatePromocodeDto,
+)
 from src.application.use_cases.user.queries.plans import GetAvailablePlanByCode
 from src.core.constants import GOTO_PREFIX, PAYMENT_PREFIX, TARGET_USER_ID
 from src.core.enums import Deeplink
+from src.core.exceptions import (
+    PromocodeAlreadyActivatedError,
+    PromocodeNotAvailableError,
+    PromocodeNotFoundError,
+)
 from src.telegram.states import DashboardUser, MainMenu, Subscription, state_from_string
 
 router = Router(name=__name__)
@@ -127,3 +136,44 @@ async def on_goto_invite(
             mode=StartMode.RESET_STACK,
             show_mode=ShowMode.DELETE_AND_SEND,
         )
+
+
+@inject
+@router.message(
+    CommandStart(deep_link=True, ignore_case=True),
+    F.text.contains(Deeplink.PROMOCODE),
+)
+async def on_goto_promocode(
+    message: Message,
+    command: CommandObject,
+    dialog_manager: DialogManager,
+    user: TelegramUserDto,
+    validate_promocode: FromDishka[ValidatePromocode],
+    notifier: FromDishka[Notifier],
+) -> None:
+    args = command.args or ""
+    code = args.removeprefix(Deeplink.PROMOCODE.with_underscore).strip().upper()
+
+    if not code:
+        return
+
+    try:
+        await validate_promocode(user, ValidatePromocodeDto(code=code, user=user))
+    except PromocodeAlreadyActivatedError:
+        await notifier.notify_user(user=user, i18n_key="ntf-promocode.already-activated")
+        return
+    except (PromocodeNotFoundError, PromocodeNotAvailableError):
+        await notifier.notify_user(user=user, i18n_key="ntf-promocode.not-found")
+        return
+
+    logger.info(f"{user.log} Deeplink promocode '{code}' validated, redirecting")
+
+    await dialog_manager.bg(
+        user_id=user.telegram_id,
+        chat_id=user.telegram_id,
+    ).start(
+        state=Subscription.PROMOCODE,
+        data={"prefill_code": code},
+        mode=StartMode.RESET_STACK,
+        show_mode=ShowMode.DELETE_AND_SEND,
+    )

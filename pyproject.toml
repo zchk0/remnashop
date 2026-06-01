@@ -31,6 +31,8 @@ dependencies = [
     "msgspec~=0.19.0",
     "cryptography>=46.0.3",
     "qrcode[pil]>=8.2",
+    "pyjwt>=2.13.0",
+    "greenlet>=3.3.0",
 ]
 
 [tool.uv.sources]

@@ -3,6 +3,7 @@ from .broadcast import BroadcastDaoImpl
 from .oauth_provider import UserOAuthProviderDaoImpl
 from .payment_gateway import PaymentGatewayDaoImpl
 from .plan import PlanDaoImpl
+from .promocode import PromocodeDaoImpl
 from .referral import ReferralDaoImpl
 from .settings import SettingsDaoImpl
 from .subscription import SubscriptionDaoImpl
@@ -17,6 +18,7 @@ __all__ = [
     "UserOAuthProviderDaoImpl",
     "PaymentGatewayDaoImpl",
     "PlanDaoImpl",
+    "PromocodeDaoImpl",
     "ReferralDaoImpl",
     "SettingsDaoImpl",
     "SubscriptionDaoImpl",
