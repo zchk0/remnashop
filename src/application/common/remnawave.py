@@ -5,7 +5,13 @@ from packaging.version import Version
 from remnapy.models import UserResponseDto
 from remnapy.models.hwid import HwidDeviceDto
 
-from src.application.dto import PlanSnapshotDto, RemnaSubscriptionDto, SubscriptionDto, UserDto
+from src.application.dto import (
+    PlanSnapshotDto,
+    RemnaSubscriptionDto,
+    SquadInfoDto,
+    SubscriptionDto,
+    UserDto,
+)
 
 T = TypeVar("T", SubscriptionDto, RemnaSubscriptionDto)
 
@@ -56,6 +62,10 @@ class Remnawave(Protocol):
     async def revoke_subscription(self, uuid: UUID) -> None: ...
 
     async def get_squads_available(self) -> bool: ...
+
+    async def get_internal_squads(self) -> List[SquadInfoDto]: ...
+
+    async def get_external_squads(self) -> List[SquadInfoDto]: ...
 
     def apply_sync(
         self,

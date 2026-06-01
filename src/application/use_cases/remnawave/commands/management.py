@@ -2,15 +2,14 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from loguru import logger
-from remnapy import RemnawaveSDK
 
 from src.application.common import Interactor
 from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
-from src.application.common.policy import Permission
+from src.application.common.policy import Permission, PermissionPolicy
 from src.application.common.remnawave import Remnawave
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
-from src.core.exceptions import CooldownError
+from src.core.exceptions import CooldownError, PermissionDeniedError
 from src.core.utils.time import datetime_now
 
 
@@ -36,6 +35,14 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
         self.uow = uow
 
     async def _execute(self, actor: UserDto, data: DeleteUserDeviceDto) -> bool:
+        is_self = data.user_id == actor.id
+        if not is_self and not PermissionPolicy.has_permission(actor, Permission.USER_EDITOR):
+            logger.warning(
+                f"{actor.log} denied deleting device of foreign user '{data.user_id}' "
+                f"without USER_EDITOR"
+            )
+            raise PermissionDeniedError()
+
         settings = await self.settings_dao.get()
         extra = settings.extra.device_single_reset
 
@@ -119,11 +126,11 @@ class ResetUserTraffic(Interactor[int, None]):
         self,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave: Remnawave,
     ) -> None:
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
 
     async def _execute(self, actor: UserDto, user_id: int) -> None:
         target_user = await self.user_dao.get_by_id(user_id)
@@ -135,7 +142,7 @@ class ResetUserTraffic(Interactor[int, None]):
             raise ValueError(f"Subscription for user '{target_user.remna_name}' not found")
 
         try:
-            await self.remnawave_sdk.users.reset_user_traffic(subscription.user_remna_id)
+            await self.remnawave.reset_traffic(subscription.user_remna_id)
         except Exception as e:
             logger.error(
                 f"Failed to reset traffic in Remnawave for user '{target_user.remna_name}': {e}"

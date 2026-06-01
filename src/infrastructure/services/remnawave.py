@@ -23,7 +23,13 @@ from remnapy.models.hwid import HwidDeviceDto
 
 from src.application.common import Remnawave
 from src.application.common.remnawave import T
-from src.application.dto import PlanSnapshotDto, RemnaSubscriptionDto, SubscriptionDto, UserDto
+from src.application.dto import (
+    PlanSnapshotDto,
+    RemnaSubscriptionDto,
+    SquadInfoDto,
+    SubscriptionDto,
+    UserDto,
+)
 from src.core.constants import REMNAWAVE_MIN_VERSION
 from src.core.enums import SubscriptionStatus
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
@@ -235,6 +241,14 @@ class RemnawaveImpl(Remnawave):
     async def get_squads_available(self) -> bool:
         result = await self.sdk.internal_squads.get_internal_squads()
         return bool(result.internal_squads)
+
+    async def get_internal_squads(self) -> list[SquadInfoDto]:
+        result = await self.sdk.internal_squads.get_internal_squads()
+        return [SquadInfoDto(uuid=s.uuid, name=s.name) for s in result.internal_squads]
+
+    async def get_external_squads(self) -> list[SquadInfoDto]:
+        result = await self.sdk.external_squads.get_external_squads()
+        return [SquadInfoDto(uuid=s.uuid, name=s.name) for s in result.external_squads]
 
     def apply_sync(self, target: T, source: Union[SubscriptionDto, RemnaSubscriptionDto]) -> T:
         if not is_dataclass(target) or not is_dataclass(source):

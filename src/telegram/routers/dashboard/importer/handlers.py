@@ -111,15 +111,25 @@ async def on_import_all_xui(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
+    retort: FromDishka[Retort],
+    redis: FromDishka[Redis],
     notifier: FromDishka[Notifier],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     users = dialog_manager.dialog_data["users"]
     selected_squads = dialog_manager.dialog_data.get("selected_squads", [])
 
+    key = retort.dump(ImportRunningKey())
+
     if not selected_squads:
         await notifier.notify_user(user, i18n_key="ntf-common.internal-squads-empty")
         return
+
+    if await redis.get(key):
+        await notifier.notify_user(user, i18n_key="ntf-importer.already-running")
+        return
+
+    await redis.set(key, 1, ex=600)
 
     dialog_manager.dialog_data["has_started"] = True
     notification = await notifier.notify_user(
@@ -127,11 +137,13 @@ async def on_import_all_xui(
         payload=MessagePayloadDto(i18n_key="ntf-importer.started", delete_after=None),
     )
 
-    task = await import_exported_users_task.kiq(users["all"], selected_squads)  # type: ignore[call-overload]
-
-    logger.info(f"{user.log} Started import '{len(users['all'])}' users")
-    result = await task.wait_result()
-    success_count, failed_count = result.return_value
+    try:
+        task = await import_exported_users_task.kiq(users["all"], selected_squads)  # type: ignore[call-overload]
+        logger.info(f"{user.log} Started import '{len(users['all'])}' users")
+        result = await task.wait_result()
+        success_count, failed_count = result.return_value
+    finally:
+        await redis.delete(key)
 
     if notification:
         await notification.delete()
@@ -175,10 +187,13 @@ async def on_import_active_xui(
         payload=MessagePayloadDto(i18n_key="ntf-importer.started", delete_after=None),
     )
 
-    task = await import_exported_users_task.kiq(users["active"], selected_squads)  # type: ignore[call-overload]
-    logger.info(f"{user.log} Started import '{len(users['active'])}' users")
-    result = await task.wait_result()
-    success_count, failed_count = result.return_value
+    try:
+        task = await import_exported_users_task.kiq(users["active"], selected_squads)  # type: ignore[call-overload]
+        logger.info(f"{user.log} Started import '{len(users['active'])}' users")
+        result = await task.wait_result()
+        success_count, failed_count = result.return_value
+    finally:
+        await redis.delete(key)
 
     if notification:
         await notification.delete()
@@ -189,7 +204,6 @@ async def on_import_active_xui(
         "failed_count": failed_count,
     }
 
-    await redis.delete(key)
     await dialog_manager.switch_to(state=DashboardImporter.IMPORT_COMPLETED)
 
 
@@ -218,12 +232,14 @@ async def on_sync_from_panel(
         payload=MessagePayloadDto(i18n_key="ntf-sync.from-panel-started", delete_after=None),
     )
 
-    task = await sync_all_users_from_panel_task.kiq()  # type: ignore[call-overload]
-    result = await task.wait_result()
-    result = result.return_value
+    try:
+        task = await sync_all_users_from_panel_task.kiq()  # type: ignore[call-overload]
+        result = await task.wait_result()
+        result = result.return_value
+    finally:
+        await redis.delete(key)
 
     if not result:
-        await redis.delete(key)
         await notifier.notify_user(user, i18n_key="ntf-sync.users-not-found")
         return
 
@@ -259,12 +275,14 @@ async def on_sync_from_bot(
         payload=MessagePayloadDto(i18n_key="ntf-sync.from-bot-started", delete_after=None),
     )
 
-    task = await sync_all_users_from_bot_task.kiq()  # type: ignore[call-overload]
-    result = await task.wait_result()
-    result = result.return_value
+    try:
+        task = await sync_all_users_from_bot_task.kiq()  # type: ignore[call-overload]
+        result = await task.wait_result()
+        result = result.return_value
+    finally:
+        await redis.delete(key)
 
     if not result:
-        await redis.delete(key)
         await notifier.notify_user(user, i18n_key="ntf-sync.users-not-found")
         return
 

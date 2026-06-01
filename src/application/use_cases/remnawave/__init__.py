@@ -10,6 +10,7 @@ from .commands.management import (
     ResetUserTraffic,
 )
 from .commands.synchronization import SyncAllUsersFromBot, SyncAllUsersFromPanel, SyncRemnaUser
+from .queries.squads import GetExternalSquads, GetInternalSquads
 
 REMNAWAVE_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     SyncAllUsersFromBot,
@@ -20,4 +21,6 @@ REMNAWAVE_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     ResetUserTraffic,
     ReissueSubscription,
     ReissueUserSubscription,
+    GetInternalSquads,
+    GetExternalSquads,
 )

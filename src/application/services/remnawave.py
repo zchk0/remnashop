@@ -241,6 +241,7 @@ class RemnaWebhookService:
     ) -> None:
         if (
             remna_user.expire_at
+            and current_subscription.expire_at
             and (current_subscription.expire_at - remna_user.expire_at).total_seconds() > 3600
         ):
             logger.debug(
@@ -334,6 +335,11 @@ class RemnaWebhookService:
                 )
             )
         elif event == RemnaUserEvent.EXPIRED:
+            if remna_user.expire_at is None:
+                logger.debug(
+                    f"Skipping EXPIRED for '{remna_user.telegram_id}': unlimited (no expire_at)"
+                )
+                return
             if remna_user.expire_at + timedelta(days=3) < datetime_now():
                 logger.debug(
                     f"Skipping expiration notification for '{remna_user.telegram_id}': "

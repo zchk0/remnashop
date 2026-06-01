@@ -128,7 +128,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
             plan_snapshot=plan,
         )
 
-        subscription = await self.subscription_dao.create(subscription, user_id)
+        await self.subscription_dao.create(subscription, user_id)
 
     async def _update_subscription(
         self,
