@@ -459,6 +459,56 @@ async def _build_purchase_plan_data(
     }
 
 
+def _datetime_to_iso(value: Optional[datetime]) -> Optional[str]:
+    return value.isoformat() if value else None
+
+
+def _datetime_to_timestamp(value: Optional[datetime]) -> Optional[int]:
+    return int(value.timestamp()) if value else None
+
+
+def _build_current_plan_data(subscription: SubscriptionDto) -> dict:
+    plan = subscription.plan_snapshot
+
+    return {
+        "current_plan": {
+            "id": plan.id,
+            "name": plan.name,
+            "type": plan.type.value,
+            "tag": plan.tag,
+            "is_trial": plan.is_trial,
+            "duration_days": plan.duration,
+            "traffic_limit": plan.traffic_limit,
+            "traffic_limit_bytes": gb_to_bytes(plan.traffic_limit),
+            "traffic_limit_strategy": plan.traffic_limit_strategy.value,
+            "device_limit": plan.device_limit,
+            "internal_squad_uuids": [str(squad_uuid) for squad_uuid in plan.internal_squads],
+            "external_squad_uuid": str(plan.external_squad) if plan.external_squad else None,
+        },
+        "subscription": {
+            "id": subscription.id,
+            "user_remna_id": str(subscription.user_remna_id),
+            "status": subscription.current_status.value,
+            "stored_status": subscription.status.value,
+            "is_active": subscription.is_active,
+            "is_expired": subscription.is_expired,
+            "is_unlimited": subscription.is_unlimited,
+            "is_trial": subscription.is_trial,
+            "traffic_limit": subscription.traffic_limit,
+            "traffic_limit_bytes": gb_to_bytes(subscription.traffic_limit),
+            "traffic_limit_strategy": subscription.traffic_limit_strategy.value,
+            "device_limit": subscription.device_limit,
+            "expire_at": _datetime_to_iso(subscription.expire_at),
+            "expire_at_ts": _datetime_to_timestamp(subscription.expire_at),
+            "created_at": _datetime_to_iso(subscription.created_at),
+            "created_at_ts": _datetime_to_timestamp(subscription.created_at),
+            "updated_at": _datetime_to_iso(subscription.updated_at),
+            "updated_at_ts": _datetime_to_timestamp(subscription.updated_at),
+            "url": subscription.url,
+        },
+    }
+
+
 async def _get_panel_user_by_telegram_id(
     telegram_id: int,
     remnawave: Remnawave,
@@ -810,6 +860,40 @@ async def get_available_purchase_plans(
                 )
                 for plan in sorted(plans, key=lambda item: item.order_index)
             ],
+        },
+    }
+
+
+@router.get("/subscription/current-plan")
+@inject
+async def get_current_subscription_plan(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    subscription_dao: FromDishka[SubscriptionDao],
+) -> dict:
+    if auth.is_legacy:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Legacy token is not supported for this endpoint",
+        )
+
+    resolved_telegram_id = _resolve_telegram_id(auth, None)
+    current_subscription = await subscription_dao.get_current(resolved_telegram_id)
+
+    if not current_subscription:
+        return {
+            "success": True,
+            "data": {
+                "telegram_id": resolved_telegram_id,
+                "current_plan": None,
+                "subscription": None,
+            },
+        }
+
+    return {
+        "success": True,
+        "data": {
+            "telegram_id": resolved_telegram_id,
+            **_build_current_plan_data(current_subscription),
         },
     }
 
