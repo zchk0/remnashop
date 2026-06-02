@@ -19,7 +19,7 @@ from src.application.common import Remnawave, TranslatorRunner
 from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, UserDto
-from src.application.dto.device import LinkedDeviceDto
+from src.application.services.device_binding import bind_linked_device
 from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
@@ -207,6 +207,28 @@ async def on_device_auth(
         logger.warning(f"Failed auth for telegram '{telegram_id}': panel user not resolved")
         return
 
+    short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
+    panel_uuid = str(panel_user.uuid) if panel_user.uuid else None
+    binding = await bind_linked_device(
+        device_dao,
+        device_id=token_record.device_id,
+        telegram_id=telegram_id,
+        device_limit=panel_user.hwid_device_limit or 0,
+        panel_user_uuid=panel_uuid,
+        short_uuid=short_uuid,
+    )
+    if not binding.is_bound:
+        await message.answer(
+            i18n.get(
+                "msg-device-auth-device-limit-reached",
+                device_limit=binding.device_limit,
+            )
+        )
+        logger.warning(
+            f"{user.log} ToBeVPN auth failed: device limit '{binding.device_limit}' reached"
+        )
+        return
+
     anon_traffic = 0
     if anon_uuid:
         if str(anon_uuid) == str(panel_user.uuid):
@@ -244,19 +266,7 @@ async def on_device_auth(
                 f"trial user '{panel_user.uuid}': {e}"
             )
 
-    short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
-    panel_uuid = str(panel_user.uuid) if panel_user.uuid else None
-
     await auth_dao.complete(auth_token, telegram_id, short_uuid)
-
-    await device_dao.upsert(
-        LinkedDeviceDto(
-            device_id=token_record.device_id,
-            telegram_id=telegram_id,
-            panel_user_uuid=panel_uuid,
-            short_uuid=short_uuid,
-        )
-    )
     await uow.commit()
 
     await message.answer(i18n.get("msg-device-auth-success"))

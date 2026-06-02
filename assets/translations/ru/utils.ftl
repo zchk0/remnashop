@@ -11,6 +11,9 @@ msg-device-auth-already-authorized = Вы уже авторизованы.
 msg-device-auth-trial-not-available = Пробный период недоступен для этого Telegram-аккаунта.
 msg-device-auth-trial-plan-not-available = Пробный тариф сейчас недоступен.
 msg-device-auth-trial-create-failed = Не удалось создать пробную подписку. Попробуйте позже.
+msg-device-auth-device-limit-reached =
+    Достигнут лимит устройств для вашей подписки: { $device_limit }.
+    Удалите одно из устройств или измените подписку.
 msg-device-auth-linking-failed =
     Не удалось завершить привязку аккаунта.
     Попробуйте еще раз через несколько секунд.

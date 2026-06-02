@@ -46,6 +46,7 @@ from src.application.dto.device import (
     TvPairingCodeDto,
 )
 from src.application.services import BotService, PricingService
+from src.application.services.device_binding import bind_linked_device
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
@@ -569,10 +570,6 @@ def _get_device_limit(panel_user: UserResponseDto) -> int:
     return panel_user.hwid_device_limit or 0
 
 
-def _is_device_limit_reached(linked_count: int, device_limit: int) -> bool:
-    return device_limit > 0 and linked_count >= device_limit
-
-
 # ── Config endpoint ────────────────────────────────────────────
 @router.get("/config")
 @inject
@@ -717,46 +714,22 @@ async def register_device(
             detail="telegram_id not authenticated",
         )
 
-    device_limit = _get_device_limit(panel_user)
-
-    existing = await device_dao.get_by_device_id(device_id)
-    already_linked = existing is not None and existing.telegram_id == telegram_id
-
-    if not already_linked:
-        linked_count = await device_dao.count_by_telegram_id(
-            telegram_id,
-            exclude_device_id=device_id,
-        )
-        if _is_device_limit_reached(linked_count, device_limit):
-            return {
-                "success": False,
-                "message": f"Device limit reached. Maximum is {device_limit}.",
-            }
-
     panel_user_uuid = str(panel_user.uuid) if panel_user.uuid else None
     short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
-    if existing:
-        device_to_save = replace(
-            existing,
-            telegram_id=telegram_id,
-            panel_user_uuid=panel_user_uuid,
-            short_uuid=short_uuid,
-            device_name=request.device_name if request.device_name is not None else existing.device_name,
-            device_type=request.device_type if request.device_type is not None else existing.device_type,
-            platform=(request.platform or auth.platform or existing.platform),
-        )
-    else:
-        device_to_save = LinkedDeviceDto(
-            device_id=device_id,
-            telegram_id=telegram_id,
-            panel_user_uuid=panel_user_uuid,
-            short_uuid=short_uuid,
-            device_name=request.device_name,
-            device_type=request.device_type,
-            platform=request.platform or auth.platform,
-        )
+    binding = await bind_linked_device(
+        device_dao,
+        device_id=device_id,
+        telegram_id=telegram_id,
+        device_limit=_get_device_limit(panel_user),
+        panel_user_uuid=panel_user_uuid,
+        short_uuid=short_uuid,
+        device_name=request.device_name,
+        device_type=request.device_type,
+        platform=request.platform or auth.platform,
+    )
+    if not binding.is_bound:
+        return {"success": False, "message": binding.message}
 
-    await device_dao.upsert(device_to_save)
     await uow.commit()
 
     return {"success": True, "data": None}
@@ -950,14 +923,18 @@ async def tv_pair_confirm(
         if age > TV_PAIRING_TTL_SECONDS:
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="Pairing code expired")
 
-    # Check device limit
-    device_limit = _get_device_limit(panel_user)
-    linked_count = await device_dao.count_by_telegram_id(telegram_id)
-    if _is_device_limit_reached(linked_count, device_limit):
-        return {
-            "success": False,
-            "message": f"Device limit reached. Maximum is {device_limit}.",
-        }
+    panel_user_uuid = str(panel_user.uuid) if panel_user.uuid else None
+    short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
+    binding = await bind_linked_device(
+        device_dao,
+        device_id=pairing.device_id,
+        telegram_id=telegram_id,
+        device_limit=_get_device_limit(panel_user),
+        panel_user_uuid=panel_user_uuid,
+        short_uuid=short_uuid,
+    )
+    if not binding.is_bound:
+        return {"success": False, "message": binding.message}
 
     await pairing_dao.complete(request.code, telegram_id)
     await uow.commit()
