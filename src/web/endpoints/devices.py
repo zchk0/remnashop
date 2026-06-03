@@ -19,6 +19,7 @@ from pydantic import BaseModel, EmailStr
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
+from remnapy.models.hwid import HwidDeviceDto
 
 from src.application.common import Cryptographer, Remnawave
 from src.application.common.dao import (
@@ -289,6 +290,16 @@ def _get_anonymous_trial_traffic_limit_bytes(config: AppConfig, plan: PlanDto) -
     if config.tobevpn.anonymous_trial_traffic_gb > 0:
         return gb_to_bytes(config.tobevpn.anonymous_trial_traffic_gb)
     return gb_to_bytes(plan.traffic_limit)
+
+
+def _get_effective_anonymous_trial_traffic_limit_bytes(
+    traffic_limit_bytes: int,
+    saved_anon_traffic: int,
+) -> int:
+    if traffic_limit_bytes <= 0:
+        return 0
+
+    return max(traffic_limit_bytes - saved_anon_traffic, 1)
 
 
 async def _get_anonymous_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
@@ -566,6 +577,20 @@ def _build_panel_user_data(
     return data
 
 
+def _build_hwid_device_data(device: HwidDeviceDto) -> dict:
+    return {
+        "device_id": device.hwid,
+        "hwid": device.hwid,
+        "device_name": device.device_model,
+        "device_type": "hwid",
+        "platform": device.platform,
+        "device_model": device.device_model,
+        "user_agent": device.user_agent,
+        "linked_at": None,
+        "last_seen_at": None,
+    }
+
+
 def _get_device_limit(panel_user: UserResponseDto) -> int:
     return panel_user.hwid_device_limit or 0
 
@@ -741,13 +766,29 @@ async def unlink_device(
     request: DeviceUnlinkRequest,
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
+    remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
     telegram_id = _resolve_telegram_id(auth, request.telegram_id)
     device_id = _resolve_unlink_device_id(auth, request.device_id)
+
+    panel_user = await _get_panel_user_by_telegram_id(telegram_id, remnawave)
+    if panel_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="telegram_id not authenticated",
+        )
+
+    remaining_devices = await remnawave.delete_device(panel_user.uuid, device_id)
     await device_dao.unlink(device_id, telegram_id)
     await uow.commit()
-    return {"success": True, "data": None}
+
+    return {
+        "success": True,
+        "data": {
+            "remaining_devices": remaining_devices,
+        },
+    }
 
 
 @router.get("/devices")
@@ -755,7 +796,6 @@ async def unlink_device(
 async def get_devices(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     telegram_id: Optional[int] = Query(default=None),
-    device_dao: FromDishka[LinkedDeviceDao] = None,  # type: ignore[assignment]
     remnawave: FromDishka[Remnawave] = None,  # type: ignore[assignment]
 ) -> dict:
     resolved_telegram_id = _resolve_telegram_id(auth, telegram_id)
@@ -766,22 +806,13 @@ async def get_devices(
             detail="telegram_id not authenticated",
         )
 
-    devices = await device_dao.get_by_telegram_id(resolved_telegram_id)
+    devices = await remnawave.get_devices(panel_user.uuid)
     return {
         "success": True,
         "data": {
+            "current_count": len(devices),
             "max_devices": _get_device_limit(panel_user),
-            "devices": [
-                {
-                    "device_id": d.device_id,
-                    "device_name": d.device_name,
-                    "device_type": d.device_type,
-                    "platform": d.platform,
-                    "linked_at": (int(d.created_at.timestamp()) if d.created_at else None),
-                    "last_seen_at": (int(d.updated_at.timestamp()) if d.updated_at else None),
-                }
-                for d in devices
-            ],
+            "devices": [_build_hwid_device_data(device) for device in devices],
         },
     }
 
@@ -1250,13 +1281,17 @@ async def ensure_user(
         return {"success": False, "message": "Trial plan is not configured"}
 
     traffic_limit_bytes = _get_anonymous_trial_traffic_limit_bytes(config, trial_plan)
+    effective_traffic_limit_bytes = _get_effective_anonymous_trial_traffic_limit_bytes(
+        traffic_limit_bytes,
+        saved_anon_traffic,
+    )
 
-    # Create an anonymous user with the trial plan metadata and the configured free limit.
+    # Create an anonymous user with the trial plan metadata and remaining free limit.
     try:
         user = await remnawave_sdk.users.create_user(
             CreateUserRequestDto(
                 username=username,
-                traffic_limit_bytes=traffic_limit_bytes,
+                traffic_limit_bytes=effective_traffic_limit_bytes,
                 traffic_limit_strategy=trial_plan.traffic_limit_strategy,
                 expire_at=days_to_datetime(duration_days),
                 hwid_device_limit=trial_plan.device_limit,
