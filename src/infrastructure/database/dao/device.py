@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, cast
 
@@ -37,6 +38,14 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
         self._to_dto_list = self.conversion_retort.get_converter(
             list[LinkedDevice], list[LinkedDeviceDto]
         )
+
+    async def lock_binding_by_telegram_id(self, telegram_id: int) -> None:
+        lock_key = int.from_bytes(
+            hashlib.blake2b(f"linked-device:{telegram_id}".encode(), digest_size=8).digest(),
+            byteorder="big",
+            signed=True,
+        )
+        await self.session.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
     async def upsert(self, device: LinkedDeviceDto) -> LinkedDeviceDto:
         data = self.retort.dump(device)
@@ -181,7 +190,7 @@ class AuthTokenDaoImpl(AuthTokenDao):
     ) -> bool:
         stmt = (
             update(AuthToken)
-            .where(AuthToken.token == token)
+            .where(AuthToken.token == token, AuthToken.status == "pending")
             .values(status="completed", telegram_id=telegram_id, short_uuid=short_uuid)
             .returning(AuthToken.id)
         )
@@ -340,7 +349,7 @@ class TvPairingDaoImpl(TvPairingDao):
     async def complete(self, code: str, telegram_id: int) -> bool:
         stmt = (
             update(TvPairingCode)
-            .where(TvPairingCode.code == code)
+            .where(TvPairingCode.code == code, TvPairingCode.status == "pending")
             .values(status="completed", telegram_id=telegram_id)
             .returning(TvPairingCode.id)
         )

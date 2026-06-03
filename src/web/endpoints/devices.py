@@ -925,6 +925,13 @@ async def tv_pair_confirm(
 
     panel_user_uuid = str(panel_user.uuid) if panel_user.uuid else None
     short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
+    if not await pairing_dao.complete(request.code, telegram_id):
+        await uow.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pairing code already used",
+        )
+
     binding = await bind_linked_device(
         device_dao,
         device_id=pairing.device_id,
@@ -934,9 +941,9 @@ async def tv_pair_confirm(
         short_uuid=short_uuid,
     )
     if not binding.is_bound:
+        await uow.rollback()
         return {"success": False, "message": binding.message}
 
-    await pairing_dao.complete(request.code, telegram_id)
     await uow.commit()
 
     return {"success": True, "data": None}

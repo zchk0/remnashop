@@ -29,6 +29,8 @@ async def bind_linked_device(
     device_type: Optional[str] = None,
     platform: Optional[str] = None,
 ) -> DeviceBindingResult:
+    await device_dao.lock_binding_by_telegram_id(telegram_id)
+
     existing = await device_dao.get_by_device_id(device_id)
     already_linked = existing is not None and existing.telegram_id == telegram_id
 

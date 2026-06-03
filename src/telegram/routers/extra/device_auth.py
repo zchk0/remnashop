@@ -209,6 +209,12 @@ async def on_device_auth(
 
     short_uuid = str(panel_user.short_uuid) if panel_user.short_uuid else None
     panel_uuid = str(panel_user.uuid) if panel_user.uuid else None
+    if not await auth_dao.complete(auth_token, telegram_id, short_uuid):
+        await uow.rollback()
+        await message.answer(i18n.get("msg-device-auth-already-authorized"))
+        logger.warning(f"{user.log} ToBeVPN auth failed: auth token already used")
+        return
+
     binding = await bind_linked_device(
         device_dao,
         device_id=token_record.device_id,
@@ -218,6 +224,7 @@ async def on_device_auth(
         short_uuid=short_uuid,
     )
     if not binding.is_bound:
+        await uow.rollback()
         await message.answer(
             i18n.get(
                 "msg-device-auth-device-limit-reached",
@@ -266,7 +273,6 @@ async def on_device_auth(
                 f"trial user '{panel_user.uuid}': {e}"
             )
 
-    await auth_dao.complete(auth_token, telegram_id, short_uuid)
     await uow.commit()
 
     await message.answer(i18n.get("msg-device-auth-success"))

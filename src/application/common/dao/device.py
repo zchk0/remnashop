@@ -1,11 +1,18 @@
 from typing import Optional, Protocol, runtime_checkable
 
-from src.application.dto.device import AuthTokenDto, DeviceSessionDto, LinkedDeviceDto, TvPairingCodeDto
+from src.application.dto.device import (
+    AuthTokenDto,
+    DeviceSessionDto,
+    LinkedDeviceDto,
+    TvPairingCodeDto,
+)
 
 
 @runtime_checkable
 class LinkedDeviceDao(Protocol):
     async def upsert(self, device: LinkedDeviceDto) -> LinkedDeviceDto: ...
+
+    async def lock_binding_by_telegram_id(self, telegram_id: int) -> None: ...
 
     async def get_by_device_id(self, device_id: str) -> Optional[LinkedDeviceDto]: ...
 
