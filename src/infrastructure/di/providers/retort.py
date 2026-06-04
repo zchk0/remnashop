@@ -13,12 +13,16 @@ from adaptix import (
 )
 from adaptix._internal.provider.loc_stack_filtering import OriginSubclassLSC
 from adaptix.conversion import ConversionRetort, coercer, link_function
+from aiogram.enums import ButtonStyle
 from dishka import Provider, Scope, provide
 from pydantic import SecretStr, TypeAdapter
 
 from src.application.common import Cryptographer
 from src.application.dto import (
     AccessSettingsDto,
+    BackupSettingsDto,
+    BlacklistSettingsDto,
+    ExtraSettingsDto,
     MenuButtonDto,
     MenuSettingsDto,
     MessagePayloadDto,
@@ -27,6 +31,7 @@ from src.application.dto import (
     PriceDetailsDto,
     ReferralSettingsDto,
     RequirementSettingsDto,
+    ResetFeatureSettingsDto,
 )
 from src.application.dto.payment_gateway import (
     CryptomusGatewaySettingsDto,
@@ -38,6 +43,7 @@ from src.application.dto.payment_gateway import (
     PlategaGatewaySettingsDto,
     RoboKassaGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
+    ValutixGatewaySettingsDto,
     WataGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
     YooMoneyGatewaySettingsDto,
@@ -72,6 +78,10 @@ class RetortProvider(Provider):
                 ),
                 dumper(OriginSubclassLSC(StorageKey), serialize_storage_key),
                 #
+                loader(
+                    P[MenuButtonDto].color,
+                    lambda x: ButtonStyle(x) if x else None,
+                ),
                 loader(SecretStr, SecretStr),
                 dumper(
                     SecretStr, lambda v: v.get_secret_value() if isinstance(v, SecretStr) else v
@@ -101,6 +111,7 @@ class RetortProvider(Provider):
                 PaymentGatewayType.PLATEGA: PlategaGatewaySettingsDto,
                 PaymentGatewayType.ROBOKASSA: RoboKassaGatewaySettingsDto,
                 PaymentGatewayType.URLPAY: UrlPayGatewaySettingsDto,
+                PaymentGatewayType.VALUTIX: ValutixGatewaySettingsDto,
                 PaymentGatewayType.WATA: WataGatewaySettingsDto,
             }
 
@@ -130,7 +141,11 @@ class RetortProvider(Provider):
                     dict, NotificationsSettingsDto, retort.get_loader(NotificationsSettingsDto)
                 ),
                 coercer(dict, ReferralSettingsDto, retort.get_loader(ReferralSettingsDto)),
+                coercer(dict, BackupSettingsDto, retort.get_loader(BackupSettingsDto)),
+                coercer(dict, BlacklistSettingsDto, retort.get_loader(BlacklistSettingsDto)),
                 coercer(dict, MenuSettingsDto, retort.get_loader(MenuSettingsDto)),
+                coercer(dict, ExtraSettingsDto, retort.get_loader(ExtraSettingsDto)),
+                coercer(dict, ResetFeatureSettingsDto, retort.get_loader(ResetFeatureSettingsDto)),
                 coercer(dict, MenuButtonDto, retort.get_loader(MenuButtonDto)),
                 #
                 coercer(dict, PriceDetailsDto, retort.get_loader(PriceDetailsDto)),
@@ -150,6 +165,7 @@ class RetortProvider(Provider):
                         PlategaGatewaySettingsDto,
                         RoboKassaGatewaySettingsDto,
                         UrlPayGatewaySettingsDto,
+                        ValutixGatewaySettingsDto,
                         WataGatewaySettingsDto,
                     ]
                 ],

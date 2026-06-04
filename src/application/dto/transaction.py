@@ -31,7 +31,7 @@ class PriceDetailsDto(TrackableMixin):
 @dataclass(kw_only=True)
 class TransactionDto(BaseDto, TrackableMixin, TimestampMixin):
     payment_id: UUID
-    user_telegram_id: int
+    user_id: int
 
     status: TransactionStatus
     is_test: bool = False
@@ -46,3 +46,7 @@ class TransactionDto(BaseDto, TrackableMixin, TimestampMixin):
     @property
     def is_completed(self) -> bool:
         return self.status == TransactionStatus.COMPLETED
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in (TransactionStatus.COMPLETED, TransactionStatus.CANCELED)

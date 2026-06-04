@@ -1,7 +1,8 @@
 import hashlib
+import hmac
 import uuid
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, Union
 from urllib.parse import parse_qs
 from uuid import UUID
 
@@ -68,7 +69,7 @@ class YoomoneyGateway(BasePaymentGateway):
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 
-    async def handle_webhook(self, request: Request) -> tuple[UUID, TransactionStatus]:
+    async def handle_webhook(self, request: Request) -> Union[tuple[UUID, TransactionStatus], None]:
         logger.debug("Received YooMoney webhook request")
         webhook_data = await self._get_webhook_data(request)
         operation_id = webhook_data.get("operation_id")
@@ -77,7 +78,7 @@ class YoomoneyGateway(BasePaymentGateway):
             raise ValueError("Test webhook cannot be processed")
 
         if not self._verify_webhook(webhook_data):
-            raise ValueError("YooMoney verification failed")
+            raise PermissionError("YooMoney webhook verification failed")
 
         payment_id_str = webhook_data.get("label")
 
@@ -131,7 +132,7 @@ class YoomoneyGateway(BasePaymentGateway):
         sign_str = "&".join(params)
         computed_hash = hashlib.sha1(sign_str.encode("utf-8")).hexdigest()
 
-        is_valid: bool = computed_hash == data.get("sha1_hash", "")
+        is_valid: bool = hmac.compare_digest(computed_hash, data.get("sha1_hash", ""))
         if not is_valid:
             logger.warning(
                 f"Invalid signature. Expected {computed_hash}, received {data.get('sha1_hash')}"

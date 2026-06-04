@@ -5,6 +5,7 @@ from uuid import UUID
 
 from remnapy.enums import TrafficLimitStrategy
 
+from src.core.constants import UNLIMITED_EXPIRE_YEAR
 from src.core.enums import PlanType, SubscriptionStatus
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import bytes_to_gb
@@ -12,6 +13,12 @@ from src.core.utils.time import datetime_now
 
 from .base import BaseDto, TimestampMixin, TrackableMixin
 from .plan import PlanSnapshotDto
+
+
+@dataclass(frozen=True)
+class SquadInfoDto:
+    uuid: UUID
+    name: str
 
 
 @dataclass(kw_only=True)
@@ -47,6 +54,7 @@ class RemnaSubscriptionDto:
 
 @dataclass(kw_only=True)
 class SubscriptionDto(BaseDto, TrackableMixin, TimestampMixin):
+    user_id: int = 0
     user_remna_id: UUID
 
     status: SubscriptionStatus = SubscriptionStatus.ACTIVE
@@ -65,6 +73,10 @@ class SubscriptionDto(BaseDto, TrackableMixin, TimestampMixin):
 
     plan_snapshot: "PlanSnapshotDto"
 
+    device_single_reset_at: Optional[datetime] = None
+    device_all_reset_at: Optional[datetime] = None
+    link_reset_at: Optional[datetime] = None
+
     @property
     def is_active(self) -> bool:
         return self.current_status == SubscriptionStatus.ACTIVE
@@ -75,7 +87,7 @@ class SubscriptionDto(BaseDto, TrackableMixin, TimestampMixin):
 
     @property
     def is_unlimited(self) -> bool:
-        return self.expire_at.year == 2099
+        return self.expire_at.year == UNLIMITED_EXPIRE_YEAR
 
     @property
     def current_status(self) -> SubscriptionStatus:

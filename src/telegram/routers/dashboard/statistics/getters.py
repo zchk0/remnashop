@@ -7,11 +7,14 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 
 from src.application.common import TranslatorRunner
+from src.application.dto import TelegramUserDto
 from src.application.use_cases.statistics.queries.plans import GetPlanStatistics
+from src.application.use_cases.statistics.queries.promocodes import GetPromocodeStatistics
 from src.application.use_cases.statistics.queries.referrals import GetReferralStatistics
 from src.application.use_cases.statistics.queries.subscriptions import GetSubscriptionStatistics
 from src.application.use_cases.statistics.queries.transactions import GetTransactionStatistics
 from src.application.use_cases.statistics.queries.users import GetUsersStatistics
+from src.core.constants import USER_KEY
 from src.core.enums import Currency
 from src.core.utils.i18n_helpers import i18n_format_days
 
@@ -22,7 +25,8 @@ async def users_getter(
     get_users_statistics: FromDishka[GetUsersStatistics],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    data = await get_users_statistics.system()
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    data = await get_users_statistics(user)
     return asdict(data)
 
 
@@ -33,11 +37,12 @@ async def transactions_getter(
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     widget: Optional[ManagedScroll] = dialog_manager.find("scroll_transactions")
     if not widget:
-        raise ValueError()
+        raise ValueError("scroll_transactions widget not found")
 
-    data = await get_transaction_statistics.system()
+    data = await get_transaction_statistics(user)
     current_page = await widget.get_page()
     total_pages = 1 + len(data.gateway_stats)
 
@@ -63,6 +68,8 @@ async def transactions_getter(
             "pager_pages": pager_pages,
             "gateway_type": False,
             **asdict(data),
+            # Normalize None → 0 so the Fluent selector { $popular_gateway -> [0]... } matches.
+            "popular_gateway": data.popular_gateway or 0,
         }
 
     gateway_index = current_page - 1
@@ -103,12 +110,13 @@ async def subscriptions_getter(
     get_plan_statistics: FromDishka[GetPlanStatistics],
     **kwargs: Any,
 ) -> dict[str, Any]:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     widget: Optional[ManagedScroll] = dialog_manager.find("scroll_subscriptions")
     if not widget:
-        raise ValueError()
+        raise ValueError("scroll_subscriptions widget not found")
 
-    common_data = await get_subscription_statistics.system()
-    plans_data = await get_plan_statistics.system()
+    common_data = await get_subscription_statistics(user)
+    plans_data = await get_plan_statistics(user)
     current_page = await widget.get_page()
     total_pages = 1 + len(plans_data.plans)
 
@@ -162,16 +170,46 @@ async def subscriptions_getter(
         or "-"
     )
 
-    key, kw = i18n_format_days(plan.popular_duration) if plan.popular_duration else ("unknown", {})
+    # None = no data ("unknown"); 0 is a valid duration (unlimited) handled by the formatter.
+    duration = plan.popular_duration
+    key, kw = ("unknown", {}) if duration is None else i18n_format_days(duration)
 
     return {
+        # asdict(plan) FIRST so the localized popular_duration below is not overwritten
+        # by the raw int field it contains.
+        **asdict(plan),
         "pages": total_pages,
         "current_page": current_page + 1,
         "pager_pages": pager_pages,
-        "popular_duration": i18n.get(key, **kw),
         "all_income": all_income,
-        **asdict(plan),
+        "popular_duration": i18n.get(key, **kw),
     }
+
+
+@inject
+async def promocodes_getter(
+    dialog_manager: DialogManager,
+    get_promocode_statistics: FromDishka[GetPromocodeStatistics],
+    i18n: FromDishka[TranslatorRunner],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    data = await get_promocode_statistics(user)
+
+    top = (
+        "\n".join(
+            i18n.get(
+                "msg-statistics-promocodes-top-item",
+                index=i + 1,
+                code=item.code,
+                count=item.activations,
+            )
+            for i, item in enumerate(data.top)
+        )
+        or "-"
+    )
+
+    return {**asdict(data), "top": top}
 
 
 @inject
@@ -180,5 +218,11 @@ async def referrals_getter(
     get_referral_statistics: FromDishka[GetReferralStatistics],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    data = await get_referral_statistics.system()
-    return asdict(data)
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    data = await get_referral_statistics(user)
+    result = asdict(data)
+    result["top_referrer_id"] = data.top_referrer_id or 0
+    result["top_referrer_telegram_id"] = data.top_referrer_telegram_id or 0
+    result["top_referrer_email"] = data.top_referrer_email or 0
+    result["top_referrer_username"] = data.top_referrer_username or 0
+    return result

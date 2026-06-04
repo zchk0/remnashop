@@ -55,6 +55,35 @@ event-error =
     { $error }
     </blockquote>
 
+    .channel-check =
+    #ChannelCheckErrorEvent
+
+    <b>⚠️ Событие: Ошибка проверки подписки на канал/группу!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <blockquote>
+    • <b>Причина</b>: <code>{ $reason }</code>
+    </blockquote>
+    
+    Проверьте, что бот является администратором канала/группы с правом просмотра участников.
+
+    .notification =
+    #NotificationErrorEvent
+
+    <b>⚠️ Событие: Ошибка доставки системного уведомления!</b>
+
+    <blockquote>
+    • <b>Маршрут</b>: { NUMBER($chat_id, useGrouping: 0) }{ $thread_id ->
+        [0] { space }
+        *[HAS] :{ NUMBER($thread_id, useGrouping: 0) }
+    }
+    • <b>Причина</b>: <code>{ $reason }</code>
+    </blockquote>
+
+    Проверьте маршрут уведомлений и убедитесь, что бот является участником группы с правами на отправку сообщений.
+
 
 event-bot =
     .startup =
@@ -64,7 +93,7 @@ event-bot =
 
     { frg-build-info }
 
-    <b>🔓 Доступность:</b>
+    <b>🔓 Доступность</b>:
     <blockquote>
     • <b>Режим</b>: { access-mode }
     • <b>Платежи</b>: { $payments_allowed ->
@@ -75,6 +104,17 @@ event-bot =
     [0] запрещена
     *[1] разрешена
     }
+    </blockquote>
+
+    .inline-mode-disabled =
+    #BotInlineModeDisabledEvent
+
+    <b>⚠️ Событие: Inline-режим отключен в BotFather!</b>
+
+    <blockquote>
+    Бот не настроен для работы в inline-режиме. Некоторые функции бота могут работать некорректно.
+
+    Включите Inline Mode в BotFather: <b>@BotFather → /mybots → Bot Settings → Inline Mode → Enable</b>
     </blockquote>
 
     .shutdown =
@@ -93,7 +133,7 @@ event-bot =
 
     <b>🔅 Событие: Обнаружено обновление Remnashop!</b>
 
-    <b>📑 Версии:</b>
+    <b>📑 Версии</b>:
     <blockquote>
     • <b>Текущая</b>: { $local_version }
     • <b>Последняя</b>: { $remote_version }
@@ -109,13 +149,16 @@ event-user =
     { hdr-user }
     { frg-user-info }
 
-    { $referrer_telegram_id ->
+    { $referrer_user_id ->
     [0] { empty }
     *[HAS]
-    <b>🤝 Пригласитель:</b>
+    <b>🤝 Пригласитель</b>:
     <blockquote>
-    • <b>ID</b>: <code>{ NUMBER($referrer_telegram_id, useGrouping: 0) }</code>
-    • <b>Имя</b>: { $referrer_name } { $referrer_username -> 
+    { $referrer_telegram_id ->
+        [0] • <b>Почта</b>: <code>{ $referrer_email }</code>
+        *[HAS] • <b>ID</b>: <code>{ NUMBER($referrer_telegram_id, useGrouping: 0) }</code>
+    }
+    • <b>Имя</b>: { $referrer_name } { $referrer_username ->
         [0] { empty }
         *[HAS] (<a href="tg://user?id={ $referrer_telegram_id }">@{ $referrer_username }</a>)
     }
@@ -154,7 +197,17 @@ event-user =
 
     { hdr-hwid }
     { frg-user-hwid }
-    
+
+
+event-blacklist =
+    .registration-attempt =
+    #BlacklistRegistrationAttemptEvent
+
+    <b>🔅 Событие: Попытка регистрации из чёрного списка!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
 
 event-subscription =
     .trial =
@@ -252,6 +305,11 @@ event-subscription =
         }
     }
 
+    .not-connected =
+    <b>🔌 Не получилось подключиться?</b>
+
+    Если у вас возникли сложности с настройкой VPN — мы готовы помочь! Напишите в поддержку, и мы разберёмся вместе.
+
     .revoked =
     #SubscriptionRevokedEvent
 
@@ -276,7 +334,7 @@ event-node =
     .connection-restored =
     #NodeConnectionRestoredEvent
 
-    <b>🔅 Событие: Cоединение с узлом восстановлено!</b>
+    <b>🔅 Событие: Соединение с узлом восстановлено!</b>
 
     { hdr-node }
     { frg-node-info }
@@ -302,20 +360,20 @@ event-referral =
     <b>💰 Вам начислена награда!</b>
     
     <blockquote>
-    Пользователь <b>{ $name }</b> совершил платеж. Вы получили <b>{ $value } { $reward_type ->
-    [POINTS] { $value -> 
+    Пользователь <b>{ $name }</b> совершил платеж. Вы получили { $reward_type ->
+    [POINTS] <b>{ $value } { $value -> 
         [one] балл
         [few] балла
         *[more] баллов 
-        }
+        }</b>
 
     <i>Для использования баллов перейдите в раздел "Пригласить" в боте, чтобы узнать о доступных наградах и способах их использования.</i>
-    [EXTRA_DAYS] доп. { $value -> 
+    [EXTRA_DAYS] <b>{ $value } доп. { $value -> 
         [one] день
         [few] дня
         *[more] дней
-        } </b> к вашей подписке!
-    *[OTHER] { $reward_type }
+        }</b> к вашей подписке!
+    *[OTHER] <b>{ $value } { $reward_type }</b>
     }
     </blockquote>
 
@@ -323,7 +381,7 @@ event-referral =
     <b>❌ Не получилось выдать награду!</b>
     
     <blockquote>
-    Пользователь <b>{ $name }</b> совершил платеж, но мы не смогли начислить вам вознаграждение из-за того что <b>у вас нет купленной подписки</b>, к которой можно было бы добавить {$value} { $reward_type ->
+    Пользователь <b>{ $name }</b> совершил платеж, но мы не смогли начислить вам вознаграждение из-за того что <b>у вас нет купленной подписки</b>, к которой можно было бы добавить { $value } { $reward_type ->
     [POINTS] { $value -> 
         [one] балл
         [few] балла
@@ -340,9 +398,50 @@ event-referral =
     <i>Купите подписку, чтобы получать бонусы за приглашенных друзей!</i>
     </blockquote>
 
+event-promocode =
+    .activated =
+    #PromocodeActivatedEvent
+
+    <b>🔅 Событие: Активация промокода!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <b>🎟 Промокод</b>:
+    <blockquote>
+    • <b>Код</b>: <code>{ $promocode_code }</code>
+    • <b>Тип</b>: { promocode-type }
+    • <b>Награда</b>: { frg-promocode-reward }
+    </blockquote>
+
+event-payment =
+    .refunded =
+    #PaymentRefundedEvent
+
+    <b>⚠️ Событие: Платёж возвращён!</b>
+
+    <blockquote>
+    • <b>ID платежа</b>: <code>{ $payment_id }</code>
+    • <b>Пользователь</b>: <code>{ $user }</code>
+    </blockquote>
+
+    Требуется ручная проверка — подписка пользователя могла остаться активной.
+
+    .referral-failed =
+    <b>⚠️ Не удалось начислить реферальную награду</b>
+
+    <blockquote>
+    • <b>ID платежа</b>: <code>{ $payment_id }</code>
+    • <b>Пользователь</b>: <code>{ $user }</code>
+    </blockquote>
+
+    Покупка завершена успешно, но при начислении реферальной награды произошла ошибка. Требуется ручная проверка.
+
 event-remnashop-welcome =
     <b>💎 Remnashop v{ $version }</b>
 
-    Данный проект был создан и поддерживается всего одним <strike>разработчиком</strike> электриком. Поскольку бот полностью БЕСПЛАТНЫЙ и с открытым исходным кодом, он существует только благодаря вашей поддержке.
+    Проект создан и поддерживается всего одним <strike>разработчиком</strike> электриком. Поскольку бот полностью БЕСПЛАТНЫЙ и имеет открытый исходный код, он существует только благодаря вашей поддержке.
 
     ⭐ <i>Поставьте звездочку на <a href="{ $repository }">GitHub</a> и присоединяйтесь к нашему <a href="https://t.me/@remna_shop">сообществу</a>.</i>
+
+    🎁 <i>Также есть <a href="https://boosty.to/snoups/purchase/3778398?ssource=DIRECT&amp;share=subscription_link">приватный чат</a> для донатеров.</i>

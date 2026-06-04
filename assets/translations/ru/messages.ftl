@@ -51,30 +51,44 @@ msg-main-menu =
 msg-menu-devices =
     <b>📱 Управление устройствами</b>
 
-    Подключено: <b>{ $current_count } / { $max_count }</b>
+    Подключено: <b>{ $current_count } / { $max_count -> 
+    [0] { unlimited }
+    *[LIMIT] { $max_count }
+    }</b>
 
     { $has_devices ->
     [0] { empty }
-    *[HAS] Нажмите на устройство чтобы удалить его.
-    Если не хватает устройств — измените подписку.
+    *[HAS] { $device_single_enabled ->
+        [0] Для отвязки устройства обратитесь в техподдержку.
+        *[other] Нажмите на устройство чтобы удалить его.
+        }
+    }{ $max_count ->
+    [0] { space }
+    *[LIMIT] Если не хватает лимита устройств — измените подписку.
     }
 
 msg-menu-devices-confirm-reissue =
     🔄 <b>Перевыпуск подписки</b>
 
-    ⚠️ После сброса старая ссылка <b>перестанет работать</b>.
+    ⚠️ После сброса старая ссылка <b>перестанет работать</b> и все устройства придется заново переподключать.
 
     Вам потребуется:
     • Удалить старую подписку из приложения
-    • Добавить новую ссылку из раздела «Подключение»
+    • Добавить новую ссылку из раздела «{ btn-menu.connect }»
 
     Вы уверены, что хотите сбросить ссылку?
 
 msg-menu-devices-confirm-delete =
-    🗑 Удалить устройство <b>{ $selected_device_label }</b>?
+    🗑 <b>Подтвердите удаление устройства</b>
+
+    <b>{ $device_model }</b>
+    <blockquote>
+    • <b>Платформа</b>: { $platform_icon } { $platform }
+    • <b>Добавлено</b>: { $created_at }
+    </blockquote>
 
 msg-menu-devices-confirm-delete-all =
-    🗑 Удалить <b>все устройства</b>?
+    🗑 <b>Подтвердите удаление всех устройств</b>
 
 msg-menu-invite =
     <b>👥 Пригласить друзей</b>
@@ -85,7 +99,7 @@ msg-menu-invite =
         *[OTHER] { $reward_type }
     }!
 
-    <b>📊 Статистика:</b>
+    <b>📊 Статистика</b>:
     <blockquote>
     👥 Всего приглашенных: { $referrals }
     💳 Платежей по вашей ссылке: { $payments }
@@ -98,7 +112,7 @@ msg-menu-invite =
 msg-menu-invite-about =
     <b>🎁 Подробнее о вознаграждении</b>
 
-    <b>✨ Как получить награду:</b>
+    <b>✨ Как получить награду</b>:
     <blockquote>
     { $accrual_strategy ->
     [ON_FIRST_PAYMENT] Награда начисляется за первую покупку подписки приглашенным пользователем.
@@ -107,7 +121,7 @@ msg-menu-invite-about =
     }
     </blockquote>
 
-    <b>💎 Что вы получаете:</b>
+    <b>💎 Что вы получаете</b>:
     <blockquote>
     { $max_level -> 
     [1] За приглашенных друзей: { $reward_level_1 }
@@ -255,17 +269,30 @@ msg-statistics-promocodes =
     <b>🎁 Статистика по промокодам</b>
 
     <blockquote>
-    • <b>Общее кол-во активаций</b>: { $total_promo_activations }
-    • <b>Самый популярный промокод</b>: { $most_popular_promo ->
-    [0] { unknown }
-    *[HAS] { $most_popular_promo }
-    }
-    • <b>Выдано дней</b>: { $total_promo_days }
-    • <b>Выдано трафика</b>: { $total_promo_days }
-    • <b>Выдано подписок</b>: { $total_promo_subscriptions }
-    • <b>Выдано личных скидок</b>: { $total_promo_personal_discounts }
-    • <b>Выдано одноразовых скидок</b>: { $total_promo_purchase_discounts }
+    • <b>Всего промокодов</b>: { $total_promocodes }
+    • <b>Активных</b>: { $active_promocodes }
+    • <b>Всего активаций</b>: { $total_activations }
     </blockquote>
+
+    <blockquote>
+    • <b>Активаций за день</b>: { $activations_today }
+    • <b>Активаций за неделю</b>: { $activations_week }
+    • <b>Активаций за месяц</b>: { $activations_month }
+    </blockquote>
+
+    <blockquote>
+    • <b>Выдано дней</b>: { $issued_days }
+    • <b>Выдано трафика (ГБ)</b>: { $issued_traffic }
+    • <b>Выдано устройств</b>: { $issued_devices }
+    • <b>Выдано подписок</b>: { $issued_subscriptions }
+    • <b>Выдано личных скидок</b>: { $issued_personal_discounts }
+    • <b>Выдано одноразовых скидок</b>: { $issued_purchase_discounts }
+    </blockquote>
+
+    <b>🏆 Топ промокодов</b>
+    <blockquote>{ $top }</blockquote>
+
+msg-statistics-promocodes-top-item = { $index }. <code>{ $code }</code> — { $count }
 
 msg-statistics-referrals =
     <b>👪 Статистика по рефералам</b>
@@ -275,12 +302,15 @@ msg-statistics-referrals =
     • <b>Уровень 1</b>: { $level_1_count }
     • <b>Уровень 2</b>: { $level_2_count }
     • <b>Уникальных реферреров</b>: { $unique_referrers }
-    { $top_referrer_telegram_id ->
+    { $top_referrer_id ->
         [0] { empty }
-        *[HAS] • <b>Топ реферрер</b>: { $top_referrer_username ->
-            [0] { NUMBER($top_referrer_telegram_id, useGrouping: 0) }
-            *[HAS] <a href="tg://user?id={ $top_referrer_telegram_id }">@{ $top_referrer_username }</a> 
-            } ({ $top_referrer_referrals_count } приглашенных)
+        *[HAS] • <b>Топ реферрер</b>: { $top_referrer_telegram_id ->
+            [0] <code>{ $top_referrer_email }</code>
+            *[HAS] { $top_referrer_username ->
+                [0] { NUMBER($top_referrer_telegram_id, useGrouping: 0) }
+                *[HAS] <a href="tg://user?id={ $top_referrer_telegram_id }">@{ $top_referrer_username }</a>
+            }
+        } ({ $top_referrer_referrals_count } приглашенных)
     }
     </blockquote>
 
@@ -356,7 +386,7 @@ msg-broadcast-send = <b>📢 Отправить рассылку ({ audience-typ
 msg-broadcast-content =
     <b>✉️ Содержимое рассылки</b>
 
-    Отправьте любое сообщение: текст, изображение или все вместе (поддерживается HTML).
+    Отправьте сообщение (поддерживается HTML). Можно прикрепить фото, видео или файл. Лимит: до 4096 символов без медиа, до 1024 символов с медиа.
 
 msg-broadcast-buttons = <b>✳️ Кнопки рассылки</b>
 
@@ -387,7 +417,7 @@ msg-user-give-access = <b>🔑 Предоставить доступ к план
 msg-users-search =
     <b>🔍 Поиск пользователя</b>
 
-    Введите ID пользователя, часть имени или перешлите любое его сообщение.
+    Введите ID или Email пользователя, часть имени или перешлите любое его сообщение.
 
 msg-users-search-results =
     <b>🔍 Поиск пользователя</b>
@@ -407,7 +437,7 @@ msg-user-main =
     { hdr-user-profile }
     { frg-user-details }
 
-    <b>💸 Скидка:</b>
+    <b>💸 Скидка</b>:
     <blockquote>
     • <b>Персональная</b>: { $personal_discount }%
     • <b>На следующую покупку</b>: { $purchase_discount }%
@@ -416,7 +446,7 @@ msg-user-main =
     { hdr-subscription }
     { $status ->
     [ACTIVE]
-    { frg-subscription }
+    { frg-subscription-user-editor }
     [EXPIRED]
     <blockquote>
     • Срок действия истек.
@@ -455,11 +485,14 @@ msg-user-statistics =
 
     <blockquote>
     • <b>Приглашен</b>: { $referrer_telegram_id ->
-        [0] { unknown }
-        *[HAS] { $referrer_username -> 
+        [0] { $referrer_email ->
+            [0] { unknown }
+            *[HAS] <code>{ $referrer_email }</code>
+        }
+        *[HAS] { $referrer_username ->
             [0] { NUMBER($referrer_telegram_id, useGrouping: 0) }
             *[HAS] <a href="tg://user?id={ $referrer_telegram_id }">@{ $referrer_username }</a>
-            }
+        }
     }
     • <b>Приглашенных (ур. 1)</b>: { $referrals_level_1 }
     • <b>Приглашенных (ур. 2)</b>: { $referrals_level_2 }
@@ -474,7 +507,7 @@ msg-user-referrals = <b>👪 Рефералы пользователя</b>
 msg-user-sync = 
     <b>🌀 Синхронизировать пользователя</b>
 
-    <b>🛍 Remnashop:</b> { $bot_version }
+    <b>🛍 Remnashop</b>: { $bot_version }
     <blockquote>
     { $has_bot_subscription -> 
     [0] Данные отсутствуют
@@ -482,7 +515,7 @@ msg-user-sync =
     }
     </blockquote>
 
-    <b>🌊 Remnawave:</b> { $remna_version }
+    <b>🌊 Remnawave</b>: { $remna_version }
     <blockquote>
     { $has_remna_subscription -> 
     [0] Данные отсутствуют
@@ -490,7 +523,10 @@ msg-user-sync =
     }
     </blockquote>
 
-    Выберите актуальные данные для синхронизации.
+    Выберите источник данных для синхронизации.
+
+    • <b>Remnawave</b> — данные из панели перезапишут бот. Если пользователь отсутствует в панели — подписка в боте будет помечена как удаленная.
+    • <b>Remnashop</b> — данные из бота перезапишут панель. Если подписка в боте отсутствует — пользователь будет удален из панели.
 
 msg-user-sync-version = { $version ->
     [NEWER] (новее)
@@ -595,12 +631,12 @@ msg-user-subscription-squads =
 
     { $internal_squads ->
     [0] { empty }
-    *[HAS] <b>⏺️ Внутренние:</b> { $internal_squads }
+    *[HAS] <b>⏺️ Внутренние</b>: { $internal_squads }
     }
 
     { $external_squad ->
     [0] { empty }
-    *[HAS] <b>⏹️ Внешний:</b> { $external_squad }
+    *[HAS] <b>⏹️ Внешний</b>: { $external_squad }
     }
 
 msg-user-subscription-internal-squads =
@@ -669,7 +705,32 @@ msg-user-role =
 msg-users-blacklist =
     <b>🚫 Черный список</b>
 
+msg-users-blacklist-list =
+    <b>📋 Заблокированные пользователи</b>
+
     Заблокировано: <b>{ $count_blocked }</b> / <b>{ $count_users }</b> ({ $percent }%).
+
+msg-users-blacklist-block =
+    <b>⛔ Заблокировать по ID</b>
+
+    Поддерживаемые форматы
+    <blockquote>
+    • <b>Текст</b>: введите один или список ID
+    • <b>Ссылка</b>: отправьте URL со списком ID
+    • <b>Файл</b>: прикрепите .txt файл со списком ID
+    </blockquote>
+
+    Для списков: каждый ID должен быть с новой строки.
+
+    Блокировка действует даже если пользователь ни разу не использовал бота.
+
+msg-users-blacklist-sources =
+    <b>🔗 Автообновляемые черные списки</b>
+
+    Нажмите на список, чтобы удалить его.
+    Синхронизация запускается автоматически каждые 6 часов.
+
+    Чтобы добавить новый список — отправьте прямую ссылку на текстовый файл с Telegram ID.
 
 msg-user-message =
     <b>📩 Отправить сообщение пользователю</b>
@@ -681,7 +742,7 @@ msg-user-message =
 msg-remnawave-main =
     <b>🌊 RemnaWave v{ $version }</b>
     
-    <b>🖥️ Система:</b>
+    <b>🖥️ Система</b>:
     <blockquote>
     • <b>ЦПУ</b>: { $cpu_cores } { $cpu_cores ->
     [one] ядро
@@ -695,7 +756,7 @@ msg-remnawave-main =
 msg-remnawave-users =
     <b>👥 Пользователи</b>
 
-    <b>📊 Статистика:</b>
+    <b>📊 Статистика</b>:
     <blockquote>
     • <b>Всего</b>: { $users_total }
     • <b>Активные</b>: { $users_active }
@@ -704,7 +765,7 @@ msg-remnawave-users =
     • <b>Истекшие</b>: { $users_expired }
     </blockquote>
 
-    <b>🟢 Онлайн:</b>
+    <b>🟢 Онлайн</b>:
     <blockquote>
     • <b>За день</b>: { $online_last_day }
     • <b>За неделю</b>: { $online_last_week }
@@ -716,7 +777,7 @@ msg-remnawave-host-details =
     <b>{ $remark } ({ $is_disabled ->
     [1] выключен
     *[0] включен
-    }):</b>
+    })</b>:
     <blockquote>
     • <b>Адрес</b>: <code>{ $address }:{ $port }</code>
     { $inbound_uuid ->
@@ -729,7 +790,7 @@ msg-remnawave-node-details =
     <b>{ $country } { $name } ({ $is_connected ->
     [1] подключено
     *[0] отключено
-    }):</b>
+    })</b>:
     <blockquote>
     • <b>Адрес</b>: <code>{ $address }{ $port -> 
     [0] { empty }
@@ -760,18 +821,27 @@ msg-remnawave-inbound-details =
 
 msg-remnawave-hosts =
     <b>🌐 Хосты</b>
-    
-    { $host }
 
-msg-remnawave-nodes = 
+    { $is_empty ->
+    [1] <i>Нет хостов</i>
+    *[0] { $host }
+    }
+
+msg-remnawave-nodes =
     <b>🖥️ Ноды</b>
 
-    { $node }
+    { $is_empty ->
+    [1] <i>Нет нод</i>
+    *[0] { $node }
+    }
 
 msg-remnawave-inbounds =
     <b>🔌 Инбаунды</b>
 
-    { $inbound }
+    { $is_empty ->
+    [1] <i>Нет инбаундов</i>
+    *[0] { $inbound }
+    }
 
 
 # RemnaShop
@@ -779,6 +849,117 @@ msg-remnashop-main = <b>🛍 RemnaShop { $version ->
 [0] { space }
 *[HAS] { $version }
 }</b>
+
+msg-remnashop-transactions = <b>🧾 Последние транзакции</b>
+
+
+# Backup
+msg-backup-main =
+    <b>💾 Авто-бэкап базы данных</b>
+
+    <blockquote>
+    • <b>Статус</b>: { $enabled ->
+        [1] 🟢 Включен
+        *[0] 🔴 Выключен
+    }
+    • <b>Отправка в чат</b>: { $send_to_chat ->
+        [1] ✅ Включена
+        *[0] ❌ Выключена
+    }
+    • <b>Интервал</b>:  { $interval_hours ->
+    [one] каждый
+    *[OTHER] каждые
+    } { $interval_hours } ч.
+    • <b>Кол-во файлов</b>: { $max_files }
+    </blockquote>
+
+msg-backup-set-interval =
+    <b>🕐 Интервал бэкапа</b>
+
+    Текущее значение: <b>{ $interval_hours } ч.</b>
+
+    Введите интервал бэкапа в часах (от 1 до 720).
+
+msg-backup-set-max-files =
+    <b>📁 Количество файлов</b>
+
+    Текущее значение: <b>{ $max_files }</b>
+
+    Введите сколько файлов бэкапа хранить (от 1 до 30). Старые файлы будут удаляться автоматически.
+
+msg-extra-main = <b>⚙️ Дополнительные настройки</b>
+
+msg-extra-device-single =
+    ⚙️ <b>Удаление одного устройства</b>
+
+    Позволяет пользователю удалить конкретное устройство из списка.
+
+    <blockquote>
+    <b>Статус:</b> { $enabled -> 
+        [1] ✅ Включено
+        *[0] ❌ Выключено
+    }
+    <b>Кулдаун:</b> { $cooldown -> 
+        [0] { unknown }
+        *[other] { $cooldown }ч
+    }
+    </blockquote>
+
+    Введите число для изменения кулдауна (в часах. 0 — без ограничений).
+
+msg-extra-device-all =
+    ⚙️ <b>Удаление всех устройств</b>
+
+    Позволяет пользователям удалить все устройства одним нажатием.
+
+    <blockquote>
+    <b>Статус:</b> { $enabled -> 
+        [1] ✅ Включено
+        *[0] ❌ Выключено
+    }
+    <b>Кулдаун:</b> { $cooldown -> 
+        [0] { unknown }
+        *[other] { $cooldown }ч
+    }
+    </blockquote>
+
+    Введите число для изменения кулдауна (в часах. 0 — без ограничений).
+
+msg-extra-link-reset =
+    ⚙️ <b>Перевыпуск подписки</b>
+
+    Позволяет перевыпустить ссылку подключения (инвалидирует старую).
+
+    <blockquote>
+    <b>Статус:</b> { $enabled -> 
+        [1] ✅ Включено
+        *[0] ❌ Выключено
+    }
+    <b>Кулдаун:</b> { $cooldown -> 
+        [0] { unknown }
+        *[other] { $cooldown }ч
+    }
+    </blockquote>
+
+    Введите число для изменения кулдауна (в часах. 0 — без ограничений).
+
+msg-extra-referral-reset =
+    ⚙️ <b>Сброс реферальной ссылки</b>
+
+    Позволяет пользователям изменить свою реферальную ссылку.
+
+    <blockquote>
+    <b>Статус:</b> { $enabled -> 
+        [1] ✅ Включено
+        *[0] ❌ Выключено
+    }
+    <b>Кулдаун:</b> { $cooldown -> 
+        [0] { unknown }
+        *[other] { $cooldown }ч
+    }
+    </blockquote>
+
+    Введите число для изменения кулдауна (в часах. 0 — без ограничений).
 
 msg-admins-main = <b>👮‍♂️ Администраторы</b>
 
@@ -793,15 +974,27 @@ msg-menu-editor-button =
     <b>🎛 Конфигуратор кнопки</b>
 
     <blockquote>
-    • <b>Статус</b>: { $is_active -> 
+    • <b>Статус</b>: { $is_active ->
         [1] 🟢 Включена
         *[0] 🔴 Выключена
         }
     • <b>Текст</b>: { $text }
     • <b>Доступ</b>: { role }
+    • <b>Видимость</b>: { $subscribers_only ->
+        [1] 🔒 Только подписчики
+        *[0] 👥 Все пользователи
+        }
     • <b>Тип</b>: { button-type }
-    • <b>Данные</b>: { $payload }
-    
+    • <b>Цвет</b>: { $color ->
+        [primary] Основной
+        [success] Зеленый
+        [danger] Красный
+        *[OTHER] Без цвета
+        }
+    { $type ->
+        [TEXT] { empty }
+       *[OTHER] • <b>Данные</b>: { $payload }
+    }
     </blockquote>
 
     Выберите пункт для изменения.
@@ -824,8 +1017,17 @@ msg-menu-editor-button-type =
 msg-menu-editor-button-payload =
     <b>📄 Изменить данные кнопки</b>
 
-    Введите данные кнопки (для ссылок использовать https).
+    { $button_type ->
+        [URL] Введите ссылку. Должна начинаться с <code>https://</code>.
+        [COPY] Введите текст, который скопируется в буфер обмена при нажатии.
+        [WEB_APP] Введите ссылку на веб-приложение. Должна начинаться с <code>https://</code>, ссылки <code>t.me</code> не поддерживаются.
+        *[TEXT] Отправьте сообщение (поддерживается HTML). Можно прикрепить фото, видео, файл или стикер. Лимит: до 4096 символов без медиа, до 1024 символов с медиа.
+    }
 
+msg-menu-editor-button-color =
+    <b>🎨 Изменить цвет кнопки</b>
+
+    Выберите цвет кнопки.
 
 
 # Gateways
@@ -921,6 +1123,7 @@ msg-referral-reward =
         }
         *[OTHER] { $reward_strategy_type }
     } (в формате: уровень=значение)
+
 
 # Plans
 msg-plans-main = <b>📦 Планы</b>
@@ -1036,7 +1239,7 @@ msg-plan-duration =
 msg-plan-prices =
     <b>💰 Изменить цены длительности ({ $value ->
             [0] { unlimited }
-            *[other] { unit-day }
+            *[OTHER] { unit-day }
         })</b>
 
     Выберите валюту с ценой для изменения.
@@ -1044,7 +1247,7 @@ msg-plan-prices =
 msg-plan-price =
     <b>💰 Изменить цену для длительности ({ $value ->
             [0] { unlimited }
-            *[other] { unit-day }
+            *[OTHER] { unit-day }
         })</b>
 
     Введите новую цену для валюты { $currency }.
@@ -1052,19 +1255,19 @@ msg-plan-price =
 msg-plan-allowed-users = 
     <b>👥 Изменить список разрешенных пользователей</b>
 
-    Введите ID пользователя для добавления в список.
+    Введите ID пользователя или Email для добавления в список.
 
 msg-plan-squads =
     <b>🔗 Сквады</b>
 
     { $internal_squads ->
     [0] { space }
-    *[HAS] <b>⏺️ Внутренние:</b> { $internal_squads }
+    *[HAS] <b>⏺️ Внутренние</b>: { $internal_squads }
     }
 
     { $external_squad ->
     [0] { space }
-    *[HAS] <b>⏹️ Внешний:</b> { $external_squad }
+    *[HAS] <b>⏹️ Внешний</b>: { $external_squad }
     }
 
 msg-plan-internal-squads =
@@ -1082,6 +1285,52 @@ msg-plan-external-squads =
 msg-notifications-main = <b>🔔 Настройка уведомлений</b>
 msg-notifications-user = <b>👥 Пользовательские уведомления</b>
 msg-notifications-system = <b>⚙️ Системные уведомления</b>
+
+msg-notifications-system-type = 
+    <b>🔔 { notification-type }</b>
+
+    <blockquote>
+    • <b>Статус</b>: { $is_active -> 
+    [1] 🟢 Включено
+    *[0] 🔴 Выключено
+    }
+    • <b>Маршрут</b>: { $has_route -> 
+    [0] { unknown }
+    *[HAS] { NUMBER($chat_id, useGrouping: 0) }{ $thread_id ->
+        [0] { space }
+        *[HAS] :{ NUMBER($thread_id, useGrouping: 0) }
+        }
+    }
+    </blockquote>
+
+msg-notifications-system-route = 
+    <b>📡 Маршрут: { notification-type }</b>
+
+    <blockquote>
+    • <b>Чат ID</b>: { $chat_id ->
+        [0] { unknown }
+        *[HAS] <code>{ NUMBER($chat_id, useGrouping: 0) }</code>
+        }
+    • <b>Тред ID</b>: { $thread_id ->
+        [0] { unknown }
+        *[HAS] <code>{ NUMBER($thread_id, useGrouping: 0) }</code>
+        }
+    </blockquote>
+
+    Если чат ID не задан — уведомление будет отправлено в Личные сообщения.
+    
+    Если тред ID не задан — уведомление будет отправлено в чат.
+
+
+msg-notifications-system-route-chat-id =
+    <b>💬 Изменить Чат ID</b>
+
+    Введите ID группы (например: <code>-1001234567891</code>).
+
+msg-notifications-system-route-thread-id =
+    <b>📁 Изменить Тред ID</b>
+
+    Введите ID треда (введите <code>0</code> чтобы сбросить).
 
 
 # Subscription
@@ -1110,7 +1359,7 @@ msg-subscription-plan =
     }
     
 msg-subscription-details =
-    <b>{ $plan }:</b>
+    <b>{ $plan }</b>:
     <blockquote>
     { $description ->
     [0] { empty }
@@ -1141,15 +1390,25 @@ msg-subscription-details =
     }
     </blockquote>
 
-msg-subscription-duration = 
+msg-subscription-duration =
     <b>⏳ Выберите длительность</b>
 
     { msg-subscription-details }
+
+    { $plan_is_modified ->
+    [1] <i>ℹ️ Условия плана изменились с момента последней покупки — актуальные данные указаны выше.</i>
+    *[0] { "" }
+    }
 
 msg-subscription-payment-method =
     <b>💳 Выберите способ оплаты</b>
 
     { msg-subscription-details }
+
+    { $plan_is_modified ->
+    [0] { empty }
+    *[MODIFIED] <i>ℹ️ Условия плана изменились с момента последней покупки — актуальные данные указаны выше.</i>
+    }
 
 msg-subscription-confirm =
     <b>🛒 Подтверждение { $purchase_type ->
@@ -1164,6 +1423,11 @@ msg-subscription-confirm =
     [RENEW] <i>⚠️ Текущая подписка будет <u>продлена</u> на выбранный срок.</i>
     [CHANGE] <i>⚠️ Текущая подписка будет <u>заменена</u> выбранной без пересчета оставшегося срока.</i>
     *[OTHER] { empty }
+    }
+
+    { $plan_is_modified ->
+    [0] { empty }
+    *[MODIFIED] <i>ℹ️ Условия плана изменились с момента последней покупки — актуальные данные указаны выше.</i>
     }
 
 msg-subscription-trial =
@@ -1194,17 +1458,14 @@ msg-subscription-failed =
 
 
 # Importer
-msg-importer-main =
-    <b>📥 Импорт пользователей</b>
-
-    Запуск синхронизации: проверка всех пользователей в RemnaWave. Если пользователя нет в базе бота, он будет создан и получит временную подписку. Если данные пользователя отличаются, они будут автоматически обновлены (приоритет на данные из панели).
+msg-importer-main = <b>📥 Импорт пользователей</b>
 
 msg-importer-from-xui =
     <b>📥 Импорт пользователей (3X-UI)</b>
     
     { $has_exported -> 
     [1]
-    <b>🔍 Найдено:</b>
+    <b>🔍 Найдено</b>:
     <blockquote>
     Всего пользователей: { $total }
     С активной подпиской: { $active }
@@ -1226,57 +1487,234 @@ msg-importer-squads =
 msg-importer-import-completed =
     <b>📥 Импорт пользователей завершен</b>
     
-    <b>📃 Информация:</b>
+    <b>📃 Информация</b>:
     <blockquote>
     • <b>Всего пользователей</b>: { $total_count }
     • <b>Успешно импортированы</b>: { $success_count }
     • <b>Не удалось импортировать</b>: { $failed_count }
     </blockquote>
 
-msg-importer-sync-completed =
-    <b>📥 Синхронизация пользователей завершена</b>
+msg-importer-sync-panel =
+    <b>🌀 Синхронизация: панель → бот</b>
 
-    <b>📃 Информация:</b>
+    Проходит по всем пользователям в RemnaWave. Если пользователь отсутствует в боте — создает его и импортирует подписку. Если пользователь есть в боте без подписки — импортирует подписку из панели. Если пользователь есть в боте с подпиской — обновляет данные.
+
+msg-importer-sync-bot =
+    <b>🤖 Синхронизация: бот → панель</b>
+
+    Проходит по всем пользователям бота. Если у пользователя нет подписки в боте — пропускает его, панель не затрагивается. Если подписка есть, но пользователь отсутствует в панели — создает его. Если пользователь присутствует в панели — обновляет данные.
+
+msg-importer-sync-panel-completed =
+    <b>📥 Синхронизация панель → бот завершена</b>
+
+    <b>📃 Информация</b>:
     <blockquote>
     Всего пользователей в панели: { $total_panel_users }
     Всего пользователей в боте: { $total_bot_users }
 
     Новые пользователи: { $added_users }
     Добавлены подписки: { $added_subscription }
-    Обновлены подписки: { $updated}
+    Обновлены подписки: { $updated }
+
+    Ошибки при синхронизации: { $errors }
+    </blockquote>
+
+msg-importer-sync-bot-completed =
+    <b>🔄 Синхронизация бот → панель завершена</b>
+
+    <b>📃 Информация</b>:
+    <blockquote>
+    Всего пользователей в боте: { $total_bot_users }
+
+    Обновлены в панели: { $updated }
+    Пересозданы в панели: { $recreated }
     
-    Пользователи без Telegram ID: { $missing_telegram }
+    Без подписки (пропущены): { $skipped_no_subscription }
     Ошибки при синхронизации: { $errors }
     </blockquote>
 
 
 # Promocodes
 msg-promocodes-main = <b>🎟 Промокоды</b>
+frg-promocode-reward = { $promocode_type ->
+    [DURATION] { $reward ->
+        [0] { unlimited } дней
+        [one] { $reward } день
+        [few] { $reward } дня
+        *[more] { $reward } дней
+        } к текущей подписке
+    [TRAFFIC] { $reward } ГБ к текущей подписке
+    [DEVICES] { $reward ->
+        [0] { unlimited } устройств
+        [one] { $reward } устройство
+        [few] { $reward } устройства
+        *[more] { $reward } устройств
+        } к текущей подписке
+    [SUBSCRIPTION] подписка { $plan_name }
+    [PERSONAL_DISCOUNT] { $reward }% к персональной скидке
+    [PURCHASE_DISCOUNT] { $reward }% к скидке на следующую покупку
+    *[OTHER] { $reward }
+    }
+
 msg-promocode-configurator =
     <b>🎟 Конфигуратор промокода</b>
 
     <blockquote>
-    • <b>Код</b>: { $code }
+    • <b>Код</b>: <code>{ $code }</code>
     • <b>Тип</b>: { promocode-type }
     • <b>Доступ</b>: { availability-type }
-    • <b>Статус</b>: { $is_active -> 
+    • <b>Статус</b>: { $is_active ->
         [1] 🟢 Включен
         *[0] 🔴 Выключен
         }
     </blockquote>
 
     <blockquote>
-    { $promocode_type ->
-    [DURATION] • <b>Длительность</b>: { $reward }
-    [TRAFFIC] • <b>Трафик</b>: { $reward }
-    [DEVICES] • <b>Устройства</b>: { $reward }
-    [SUBSCRIPTION] • <b>Подписка</b>: { frg-plan-snapshot }
-    [PERSONAL_DISCOUNT] • <b>Персональная скидка</b>: { $reward }%
-    [PURCHASE_DISCOUNT] • <b>Скидка на покупку</b>: { $reward }%
-    *[OTHER] { $promocode_type }
-    }
-    • <b>Срок действия</b>: { $lifetime }
+    • <b>Награда</b>: { $reward }
+    • <b>Действует до</b>: { $expires }
     • <b>Лимит активаций</b>: { $max_activations }
     </blockquote>
 
     Выберите пункт для изменения.
+
+msg-promocode-input-code =
+    <b>🏷️ Изменить код</b>
+
+    { $code ->
+    [0] { space }
+    *[HAS]
+    <blockquote>
+    { $code }
+    </blockquote>
+    }
+
+    Отправьте свой уникальный код (от 3 до 16 символов).
+
+msg-promocode-select-type =
+    <b>🔖 Изменить тип награды</b>
+
+    Выберите тип награды.
+
+msg-promocode-input-reward =
+    <b>🎁 Изменить награду</b>
+
+    { $reward ->
+    [0] { space }
+    *[HAS]
+    <blockquote>
+    { $reward }
+    </blockquote>
+    }
+
+    { $promocode_type ->
+    [DURATION] Введите количество дней (0 — бесконечная подписка).
+    [DEVICES] Введите количество устройств (0 — безлимит).
+    *[OTHER] Введите значение награды (целое число).
+    }
+
+msg-promocode-select-plan =
+    <b>📦 Изменить план</b>
+
+    Выберите тарифный план.
+
+msg-promocode-select-plan-duration =
+    <b>⏳ Изменить длительность</b>
+
+    Выберите длительность плана.
+
+msg-promocode-select-availability =
+    <b>✴️ Изменить доступность</b>
+
+    Выберите доступность промокода.
+
+msg-promocode-input-expires =
+    <b>⌛ Действует до</b>
+
+    { $expires ->
+    [0] { space }
+    *[HAS]
+    <blockquote>
+    { $expires }
+    </blockquote>
+    }
+
+    Введите дату «ДД.ММ.ГГГГ» (или с временем «ДД.ММ.ГГГГ ЧЧ:ММ»), либо число — дни с момента создания.
+    Нажмите <b>Сбросить</b> для снятия ограничения.
+
+msg-promocode-input-max-activations =
+    <b>🔢 Изменить лимит активаций</b>
+
+    { $max_activations ->
+    [0] { space }
+    *[HAS]
+    <blockquote>
+    { $max_activations }
+    </blockquote>
+    }
+
+    Введите максимальное количество активаций.
+    Нажмите <b>Сбросить</b> для снятия ограничения.
+
+msg-promocode-allowed-ids =
+    <b>👥 Изменить список разрешённых пользователей</b>
+
+    Введите Telegram ID пользователя для добавления в список.
+
+msg-promocode-input =
+    <b>🎟 Промокод</b>
+
+    Введите код промокода.
+    После проверки нажмите <b>Подтвердить</b> для активации.
+
+
+# Ad Links
+msg-ad-links-main = <b>🎯 Рекламные ссылки</b>
+
+msg-ad-link-configurator =
+    <b>🎯 Конфигуратор рекламной ссылки</b>
+
+    <blockquote>
+    • <b>Название</b>: { $name ->
+        [0] не задано
+        *[HAS] { $name }
+    }
+    • <b>Код</b>: { $code ->
+        [0] не задан
+        *[HAS] <code>{ $code }</code>
+    }
+    • <b>Статус</b>: { $is_active ->
+        [1] 🟢 Включена
+        *[0] 🔴 Выключена
+    }
+    </blockquote>
+
+    Выберите пункт для изменения.
+
+msg-ad-link-name =
+    <b>🏷️ Название ссылки</b>
+
+    { $name ->
+    [0] { space }
+    *[HAS]
+    <blockquote>{ $name }</blockquote>
+    }
+
+    Введите название рекламной кампании.
+
+msg-ad-link-code =
+    <b>🔗 Код ссылки</b>
+
+    Текущий: <code>{ $code }</code>
+
+    Отправьте свой уникальный код или нажмите.
+
+msg-ad-link-stats =
+    <b>📊 Статистика: { $name }</b>
+
+    <blockquote>
+    • <b>Регистрации</b>: { $registrations }
+    • <b>Конверсия</b>: { $conversions } ({ $conversion_rate }%)
+    • <b>Пробники</b>: { $trials }
+    • <b>Выручка</b>:
+    { $revenue_lines }
+    </blockquote>

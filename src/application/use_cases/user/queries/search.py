@@ -1,13 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
+from uuid import UUID
 
 from loguru import logger
 
 from src.application.common import Interactor
-from src.application.common.dao import UserDao
+from src.application.common.dao import TransactionDao, UserDao
 from src.application.common.policy import Permission
-from src.application.dto import UserDto
-from src.core.constants import REMNASHOP_PREFIX
+from src.application.dto import TransactionDto, UserDto
+from src.core.constants import REMNASHOP_PREFIX, WEB_PREFIX
 
 
 @dataclass(frozen=True)
@@ -18,14 +19,29 @@ class SearchUsersDto:
     is_forwarded_from_bot: bool = False
 
 
+@dataclass(frozen=True)
+class SmartSearchResult:
+    users: list[UserDto] = field(default_factory=list)
+    transaction: Optional[TransactionDto] = None
+    transaction_searched: bool = False
+
+    @property
+    def found_transaction(self) -> bool:
+        return self.transaction is not None
+
+    @property
+    def found_users(self) -> bool:
+        return bool(self.users)
+
+
 class SearchUsers(Interactor[SearchUsersDto, list[UserDto]]):
     required_permission = Permission.USER_SEARCH
 
-    def __init__(self, user_dao: UserDao):
+    def __init__(self, user_dao: UserDao) -> None:
         self.user_dao = user_dao
 
     async def _execute(self, actor: UserDto, data: SearchUsersDto) -> list[UserDto]:  # noqa: C901
-        found_users = []
+        found_users: list[UserDto] = []
 
         if (data.forward_from_id or data.forward_sender_name) and not data.is_forwarded_from_bot:
             if data.forward_from_id:
@@ -60,16 +76,33 @@ class SearchUsers(Interactor[SearchUsersDto, list[UserDto]]):
                     logger.warning(f"Searched by Telegram ID '{telegram_id}', user not found")
 
             elif query.startswith(REMNASHOP_PREFIX):
+                remainder = query[len(REMNASHOP_PREFIX) :]
                 try:
-                    telegram_id = int(query.split("_", maxsplit=1)[1])
-                    user = await self.user_dao.get_by_telegram_id(telegram_id)
+                    if remainder.startswith(WEB_PREFIX):
+                        # Web-only user: remna_name is rs_web_{local_id}.
+                        user_id = int(remainder[len(WEB_PREFIX) :])
+                        user = await self.user_dao.get_by_id(user_id)
+                        log_target = f"web id '{user_id}'"
+                    else:
+                        telegram_id = int(remainder)
+                        user = await self.user_dao.get_by_telegram_id(telegram_id)
+                        log_target = f"telegram id '{telegram_id}'"
+
                     if user:
                         found_users.append(user)
-                        logger.info(f"Searched by Remnashop ID '{telegram_id}', user found")
+                        logger.info(f"Searched by Remnashop {log_target}, user found")
                     else:
-                        logger.warning(f"Searched by Remnashop ID '{telegram_id}', user not found")
-                except (IndexError, ValueError):
+                        logger.warning(f"Searched by Remnashop {log_target}, user not found")
+                except ValueError:
                     logger.warning(f"Failed to parse Remnashop ID from query '{query}'")
+
+            elif "@" in query:
+                user = await self.user_dao.get_by_email(query)
+                if user:
+                    found_users.append(user)
+                    logger.info(f"Searched by email '{query}', user found")
+                else:
+                    logger.warning(f"Searched by email '{query}', user not found")
 
             else:
                 found_users = await self.user_dao.get_by_partial_name(query)
@@ -78,3 +111,27 @@ class SearchUsers(Interactor[SearchUsersDto, list[UserDto]]):
                 )
 
         return found_users
+
+
+class SmartSearch(Interactor[SearchUsersDto, SmartSearchResult]):
+    required_permission = Permission.USER_SEARCH
+
+    def __init__(self, search_users: SearchUsers, transaction_dao: TransactionDao) -> None:
+        self.search_users = search_users
+        self.transaction_dao = transaction_dao
+
+    async def _execute(self, actor: UserDto, data: SearchUsersDto) -> SmartSearchResult:
+        if data.query:
+            try:
+                payment_id = UUID(data.query.strip())
+                transaction = await self.transaction_dao.get_by_payment_id(payment_id)
+                if transaction:
+                    logger.info(f"Smart search: found transaction '{payment_id}'")
+                    return SmartSearchResult(transaction=transaction, transaction_searched=True)
+                logger.warning(f"Smart search: transaction '{payment_id}' not found")
+                return SmartSearchResult(transaction_searched=True)
+            except ValueError:
+                pass
+
+        found_users = await self.search_users(actor, data)
+        return SmartSearchResult(users=found_users)

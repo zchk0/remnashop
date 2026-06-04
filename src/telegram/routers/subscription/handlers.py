@@ -10,7 +10,7 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
-from src.application.dto import PlanDto, PlanSnapshotDto, UserDto
+from src.application.dto import PlanDto, PlanSnapshotDto, SubscriptionDto, TelegramUserDto
 from src.application.services import PricingService
 from src.application.use_cases.gateways.commands.payment import (
     CreatePayment,
@@ -62,7 +62,7 @@ async def _create_payment_and_get_data(
     pricing_service: PricingService,
     create_payment: CreatePayment,
 ) -> Optional[CachedPaymentData]:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     duration = plan.get_duration(duration_days)
     payment_gateway = await payment_gateway_dao.get_by_type(gateway_type)
     purchase_type: PurchaseType = dialog_manager.dialog_data["purchase_type"]
@@ -93,9 +93,48 @@ async def _create_payment_and_get_data(
         )
 
     except Exception:
-        logger.error(f"{user.log} Failed to create paymen")
+        logger.error(f"{user.log} Failed to create payment")
         await notifier.notify_user(user, i18n_key="ntf-subscription.payment-creation-failed")
         raise
+
+
+async def _resolve_renew_plan(
+    user: TelegramUserDto,
+    dialog_manager: DialogManager,
+    current_subscription: Optional[SubscriptionDto],
+    plans: list[PlanDto],
+    match_plan: MatchPlan,
+    notifier: Notifier,
+    retort: Retort,
+) -> bool:
+    if not current_subscription:
+        return False
+
+    matched_plan = await match_plan.system(
+        MatchPlanDto(plan_snapshot=current_subscription.plan_snapshot, plans=plans)
+    )
+    if matched_plan:
+        dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(matched_plan)
+        dialog_manager.dialog_data["only_single_plan"] = True
+        dialog_manager.dialog_data["plan_is_modified"] = False
+        await dialog_manager.switch_to(state=Subscription.DURATION)
+        return True
+
+    snapshot_id = current_subscription.plan_snapshot.id
+    modified_plan = next((p for p in plans if p.id == snapshot_id), None)
+    if modified_plan:
+        logger.info(
+            f"{user.log} Plan '{snapshot_id}' was modified, allowing renewal with updated data"
+        )
+        dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(modified_plan)
+        dialog_manager.dialog_data["only_single_plan"] = True
+        dialog_manager.dialog_data["plan_is_modified"] = True
+        await dialog_manager.switch_to(state=Subscription.DURATION)
+        return True
+
+    logger.warning(f"{user.log} Tried to renew, but no matching plan found")
+    await notifier.notify_user(user, i18n_key="ntf-subscription.renew-plan-unavailable")
+    return True
 
 
 @inject
@@ -109,7 +148,7 @@ async def on_purchase_type_select(
     match_plan: FromDishka[MatchPlan],
     get_available_plans: FromDishka[GetAvailablePlans],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     plans: list[PlanDto] = await get_available_plans.system(user)
     gateways = await payment_gateway_dao.get_active()
     dialog_manager.dialog_data["purchase_type"] = purchase_type
@@ -125,22 +164,13 @@ async def on_purchase_type_select(
         await notifier.notify_user(user, i18n_key="ntf-subscription.gateways-unavailable")
         return
 
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
 
     if purchase_type == PurchaseType.RENEW:
-        if current_subscription:
-            matched_plan = await match_plan.system(
-                MatchPlanDto(plan_snapshot=current_subscription.plan_snapshot, plans=plans)
-            )
-            if matched_plan:
-                dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(matched_plan)
-                dialog_manager.dialog_data["only_single_plan"] = True
-                await dialog_manager.switch_to(state=Subscription.DURATION)
-                return
-            else:
-                logger.warning(f"{user.log} Tried to renew, but no matching plan found")
-                await notifier.notify_user(user, i18n_key="ntf-subscription.renew-plan-unavailable")
-                return
+        if await _resolve_renew_plan(
+            user, dialog_manager, current_subscription, plans, match_plan, notifier, retort
+        ):
+            return
 
     if len(plans) == 1:
         logger.info(f"{user.log} Auto-selected single plan '{plans[0].id}'")
@@ -167,7 +197,7 @@ async def on_subscription_plans(  # noqa: C901
     get_available_plans: FromDishka[GetAvailablePlans],
     create_payment: FromDishka[CreatePayment],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     logger.info(f"{user.log} Opened subscription plans menu")
 
     plans: list[PlanDto] = await get_available_plans.system(user)
@@ -191,22 +221,13 @@ async def on_subscription_plans(  # noqa: C901
         await notifier.notify_user(user, i18n_key="ntf-subscription.gateways-unavailable")
         return
 
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
 
     if purchase_type == PurchaseType.RENEW:
-        if current_subscription:
-            matched_plan = await match_plan.system(
-                MatchPlanDto(plan_snapshot=current_subscription.plan_snapshot, plans=plans)
-            )
-            if matched_plan:
-                dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(matched_plan)
-                dialog_manager.dialog_data["only_single_plan"] = True
-                await dialog_manager.switch_to(state=Subscription.DURATION)
-                return
-            else:
-                logger.warning(f"{user.log} Tried to renew, but no matching plan found")
-                await notifier.notify_user(user, i18n_key="ntf-subscription.renew-plan-unavailable")
-                return
+        if await _resolve_renew_plan(
+            user, dialog_manager, current_subscription, plans, match_plan, notifier, retort
+        ):
+            return
 
     if len(plans) == 1:
         logger.info(f"{user.log} Auto-selected single plan '{plans[0].id}'")
@@ -261,7 +282,7 @@ async def on_plan_select(
     retort: FromDishka[Retort],
     plan_dao: FromDishka[PlanDao],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     plan = await plan_dao.get_by_id(plan_id=selected_plan)
 
     if not plan:
@@ -299,7 +320,7 @@ async def on_duration_select(
     pricing_service: FromDishka[PricingService],
     create_payment: FromDishka[CreatePayment],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     logger.info(f"{user.log} Selected subscription duration '{selected_duration}' days")
     dialog_manager.dialog_data[CURRENT_DURATION_KEY] = selected_duration
 
@@ -311,12 +332,17 @@ async def on_duration_select(
         return
 
     plan = retort.load(raw_plan, PlanDto)
+    duration = plan.get_duration(selected_duration)
+    if duration is None:
+        logger.warning(f"{user.log} duration '{selected_duration}' missing (stale dialog data)")
+        await dialog_manager.start(state=Subscription.MAIN)
+        return
     settings = await settings_dao.get()
     gateways = await payment_gateway_dao.get_active()
     currency = settings.default_currency
     price = pricing_service.calculate(
         user,
-        price=plan.get_duration(selected_duration).get_price(currency),  # type: ignore[union-attr]
+        price=duration.get_price(currency),
         currency=currency,
     )
     dialog_manager.dialog_data["is_free"] = price.is_free
@@ -370,7 +396,7 @@ async def on_payment_method_select(
     pricing_service: FromDishka[PricingService],
     create_payment: FromDishka[CreatePayment],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     logger.info(f"{user.log} Selected payment method '{selected_payment_method}'")
 
     selected_duration = dialog_manager.dialog_data[CURRENT_DURATION_KEY]
@@ -421,7 +447,15 @@ async def on_get_subscription(
     dialog_manager: DialogManager,
     process_payment: FromDishka[ProcessPayment],
 ) -> None:
-    user: UserDto = dialog_manager.middleware_data[USER_KEY]
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     payment_id = dialog_manager.dialog_data["payment_id"]
+    gateway_type: PaymentGatewayType = dialog_manager.dialog_data[CURRENT_METHOD_KEY]
     logger.info(f"{user.log} Getted free subscription '{payment_id}'")
-    await process_payment.system(ProcessPaymentDto(payment_id, TransactionStatus.COMPLETED))
+    await process_payment(
+        user,
+        ProcessPaymentDto(
+            payment_id=payment_id,
+            new_transaction_status=TransactionStatus.COMPLETED,
+            gateway_type=gateway_type,
+        ),
+    )

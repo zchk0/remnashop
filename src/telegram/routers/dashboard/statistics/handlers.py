@@ -15,7 +15,7 @@ async def on_gateway_select(
     widget_scroll: Optional[ManagedScroll] = dialog_manager.find("scroll_transactions")
 
     if not widget_scroll:
-        raise ValueError()
+        raise ValueError("scroll_transactions widget not found")
 
     await widget_scroll.set_page(selected_page)
 
@@ -29,6 +29,6 @@ async def on_plan_select(
     widget_scroll: Optional[ManagedScroll] = dialog_manager.find("scroll_subscriptions")
 
     if not widget_scroll:
-        raise ValueError()
+        raise ValueError("scroll_subscriptions widget not found")
 
     await widget_scroll.set_page(selected_page)

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Iterable, Optional, cast
 from uuid import UUID
 
 from adaptix import Retort
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import TransactionDao
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto, UserPaymentStatsDto
-from src.core.enums import TransactionStatus
+from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Transaction
 
@@ -38,6 +38,7 @@ class TransactionDaoImpl(TransactionDao):
 
     async def create(self, transaction: TransactionDto) -> TransactionDto:
         transaction_data = self.retort.dump(transaction)
+        transaction_data.pop("id", None)
         db_transaction = Transaction(**transaction_data)
 
         self.session.add(db_transaction)
@@ -57,16 +58,16 @@ class TransactionDaoImpl(TransactionDao):
         logger.debug(f"Transaction '{payment_id}' not found")
         return None
 
-    async def get_by_user(self, telegram_id: int) -> list[TransactionDto]:
+    async def get_by_user(self, user_id: int) -> list[TransactionDto]:
         stmt = (
             select(Transaction)
-            .where(Transaction.user_telegram_id == telegram_id)
+            .where(Transaction.user_id == user_id)
             .order_by(Transaction.created_at.desc())
         )
         result = await self.session.scalars(stmt)
         db_transactions = cast(list, result.all())
 
-        logger.debug(f"Retrieved '{len(db_transactions)}' transactions for user '{telegram_id}'")
+        logger.debug(f"Retrieved '{len(db_transactions)}' transactions for user_id '{user_id}'")
         return self._convert_to_dto_list(db_transactions)
 
     async def get_all(self, limit: int = 100, offset: int = 0) -> list[TransactionDto]:
@@ -110,6 +111,28 @@ class TransactionDaoImpl(TransactionDao):
         logger.warning(f"Failed to update transaction '{payment_id}': not found")
         return None
 
+    async def transition_status(
+        self,
+        payment_id: UUID,
+        new_status: TransactionStatus,
+        allowed_current: Iterable[TransactionStatus],
+    ) -> Optional[TransactionDto]:
+        stmt = (
+            update(Transaction)
+            .where(
+                Transaction.payment_id == payment_id,
+                Transaction.status.in_(tuple(allowed_current)),
+            )
+            .values(status=new_status)
+            .returning(Transaction)
+        )
+        db_transaction = await self.session.scalar(stmt)
+        if db_transaction:
+            logger.debug(f"Transaction '{payment_id}' transitioned to '{new_status}'")
+            return self._convert_to_dto(db_transaction)
+        logger.info(f"Transaction '{payment_id}' transition to '{new_status}' did not match")
+        return None
+
     async def exists(self, payment_id: UUID) -> bool:
         stmt = select(select(Transaction).where(Transaction.payment_id == payment_id).exists())
         is_exists = await self.session.scalar(stmt) or False
@@ -144,7 +167,7 @@ class TransactionDaoImpl(TransactionDao):
         return total
 
     async def count_paying_users(self) -> int:
-        stmt = select(func.count(func.distinct(Transaction.user_telegram_id))).where(
+        stmt = select(func.count(func.distinct(Transaction.user_id))).where(
             Transaction.status == TransactionStatus.COMPLETED
         )
 
@@ -268,14 +291,50 @@ class TransactionDaoImpl(TransactionDao):
             for row in result.mappings()
         ]
 
+    async def get_recent_pending(
+        self,
+        user_id: int,
+        plan_id: int,
+        duration_days: int,
+        gateway_type: PaymentGatewayType,
+    ) -> Optional[TransactionDto]:
+        threshold = datetime_now() - timedelta(minutes=15)
+        stmt = (
+            select(Transaction)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.gateway_type == gateway_type,
+                Transaction.status == TransactionStatus.PENDING,
+                Transaction.plan_snapshot["id"].as_integer() == plan_id,
+                Transaction.plan_snapshot["duration"].as_integer() == duration_days,
+                Transaction.created_at >= threshold,
+            )
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        db_transaction = await self.session.scalar(stmt)
+
+        if db_transaction:
+            logger.debug(
+                f"Found recent pending transaction for user_id '{user_id}', "
+                f"plan_id '{plan_id}', duration '{duration_days}'"
+            )
+            return self._convert_to_dto(db_transaction)
+
+        logger.debug(
+            f"No recent pending transaction for user_id '{user_id}', "
+            f"plan_id '{plan_id}', duration '{duration_days}'"
+        )
+        return None
+
     async def get_user_payment_stats(
         self,
-        telegram_id: int,
+        user_id: int,
     ) -> tuple[Optional[datetime], list[UserPaymentStatsDto]]:
         last_payment_stmt = (
             select(Transaction.created_at)
             .where(
-                Transaction.user_telegram_id == telegram_id,
+                Transaction.user_id == user_id,
                 Transaction.status == TransactionStatus.COMPLETED,
             )
             .order_by(Transaction.created_at.desc())
@@ -288,7 +347,7 @@ class TransactionDaoImpl(TransactionDao):
                 func.sum(Transaction.pricing["final_amount"].as_float()).label("total_amount"),
             )
             .where(
-                Transaction.user_telegram_id == telegram_id,
+                Transaction.user_id == user_id,
                 Transaction.status == TransactionStatus.COMPLETED,
                 Transaction.pricing["final_amount"].as_float() > 0,
             )
