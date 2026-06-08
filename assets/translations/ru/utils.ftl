@@ -124,7 +124,9 @@ frg-subscription =
     • <b>Лимит устройств</b>: { $device_limit }
     • <b>Осталось</b>: { $expire_time }
     { $has_subscription_url ->
-    [1] • <b>URL</b>: <code>{ $subscription_url }</code>
+    [1] &#160;
+    ⬇️ ССЫЛКА ДЛЯ ПОДКЛЮЧЕНИЯ:
+    <b>URL</b>: <code>{ $subscription_url }</code>
     *[0] { empty }
     }
     </blockquote>
