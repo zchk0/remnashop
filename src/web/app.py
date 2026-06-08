@@ -6,7 +6,13 @@ from starlette.middleware.cors import CORSMiddleware
 from src.core.config import AppConfig
 from src.lifespan import lifespan
 
-from .endpoints import TelegramWebhookEndpoint, devices_router, payments_router, remnawave_router
+from .endpoints import (
+    TelegramWebhookEndpoint,
+    banners_router,
+    devices_router,
+    payments_router,
+    remnawave_router,
+)
 
 
 def get_app(config: AppConfig, dispatcher: Dispatcher) -> FastAPI:
@@ -28,6 +34,7 @@ def get_app(config: AppConfig, dispatcher: Dispatcher) -> FastAPI:
 
     app.include_router(payments_router)
     app.include_router(remnawave_router)
+    app.include_router(banners_router)
     if config.tobevpn.is_enabled:
         app.include_router(devices_router)
     else:

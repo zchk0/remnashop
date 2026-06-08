@@ -21,13 +21,14 @@ USERNAME_PATTERN: Pattern[str] = re.compile(r"^@[a-zA-Z0-9_]{5,32}$")
 REMNAWAVE_MIN_VERSION: Final[Version] = Version("2.7.0")
 REMNAWAVE_MAX_VERSION: Final[Version] = Version("2.8.0")
 
-REPOSITORY: Final[str] = "https://github.com/snoups/remnashop"
+REPOSITORY: Final[str] = "https://github.com/zchk0/remnashop"
 DOCS: Final[str] = "https://remnashop.mintlify.app"
 T_ME: Final[str] = "https://t.me/"
 API_V1: Final[str] = "/api/v1"
 BOT_WEBHOOK_PATH: Final[str] = "/telegram"
 PAYMENTS_WEBHOOK_PATH: Final[str] = "/payments"
 REMNAWAVE_WEBHOOK_PATH: Final[str] = "/remnawave"
+BANNERS_PATH: Final[str] = "/banners"
 
 IMPORTED_TAG: Final[str] = "IMPORTED"
 INLINE_QUERY_INVITE: Final[str] = "invite"

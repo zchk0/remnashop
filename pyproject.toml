@@ -38,8 +38,8 @@ dependencies = [
 remnapy = { git = "https://github.com/snoups/remnapy", rev = "b712d1d" }
 
 [project.urls]
-homepage = "https://t.me/@remna_shop"
-repository = "https://github.com/snoups/remnashop"
+homepage = "https://t.me/@meow_meow_vpn"
+repository = "https://github.com/zchk0/remnashop"
 
 [dependency-groups]
 dev = [

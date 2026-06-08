@@ -192,7 +192,7 @@ def get_remnashop_keyboard() -> InlineKeyboardMarkup:
 
     builder.row(
         InlineKeyboardButton(text="btn-remnashop-info.github", url=REPOSITORY),
-        InlineKeyboardButton(text="btn-remnashop-info.telegram", url=f"{T_ME}remna_shop"),
+        InlineKeyboardButton(text="btn-remnashop-info.telegram", url=f"{T_ME}meow_meow_vpn"),
     )
 
     builder.row(
