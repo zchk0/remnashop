@@ -38,7 +38,7 @@ def get_app(config: AppConfig, dispatcher: Dispatcher) -> FastAPI:
     if config.tobevpn.is_enabled:
         app.include_router(devices_router)
     else:
-        logger.info("ToBeVPN device endpoints are disabled: TOBEVPN_API_TOKEN is not configured")
+        logger.info("ToBeVPN device endpoints are disabled: TOBEVPN_ENABLED is false")
 
     telegram_webhook_endpoint = TelegramWebhookEndpoint(
         dispatcher=dispatcher,

@@ -64,7 +64,6 @@ from src.core.utils.device_description import (
 
 @dataclass(kw_only=True)
 class DeviceAuthContext:
-    is_legacy: bool = False
     device_id: Optional[str] = None
     telegram_id: Optional[int] = None
     panel_user_uuid: Optional[str] = None
@@ -164,28 +163,23 @@ def _merge_linked_device(
 
 
 def _resolve_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str:
-    if auth.device_id:
-        if device_id is not None and device_id != auth.device_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="device_id does not match current device session",
-            )
-        return auth.device_id
+    if auth.device_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current device session is missing device identity",
+        )
 
-    if device_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="device_id is required")
+    if device_id is not None and device_id != auth.device_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="device_id does not match current device session",
+        )
 
-    return device_id
+    return auth.device_id
 
 
 def _resolve_unlink_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str:
-    if device_id is not None:
-        return device_id
-
-    if auth.device_id:
-        return auth.device_id
-
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="device_id is required")
+    return _resolve_device_id(auth, device_id)
 
 
 def _resolve_telegram_id(auth: DeviceAuthContext, telegram_id: Optional[int]) -> int:
@@ -197,40 +191,10 @@ def _resolve_telegram_id(auth: DeviceAuthContext, telegram_id: Optional[int]) ->
             )
         return auth.telegram_id
 
-    if auth.device_id and not auth.is_legacy:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Current device session is not linked to a Telegram user",
-        )
-
-    if telegram_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="telegram_id is required")
-
-    return telegram_id
-
-
-def _resolve_panel_user_uuid(auth: DeviceAuthContext, panel_user_uuid: Optional[str]) -> str:
-    if auth.panel_user_uuid:
-        if panel_user_uuid is not None and panel_user_uuid != auth.panel_user_uuid:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="panel_user_uuid does not match current device session",
-            )
-        return auth.panel_user_uuid
-
-    if auth.device_id and not auth.is_legacy:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Current device session is not linked to a panel user",
-        )
-
-    if panel_user_uuid is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="panel_user_uuid is required",
-        )
-
-    return panel_user_uuid
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Current device session is not linked to a Telegram user",
+    )
 
 
 @inject
@@ -250,10 +214,6 @@ async def get_device_auth_context(
     token = _extract_bearer_token(authorization)
     if not token:
         raise _build_device_auth_unauthorized("Missing bearer token")
-
-    expected_legacy_token = config.tobevpn.api_token.get_secret_value()
-    if config.tobevpn.has_legacy_api_token and secrets.compare_digest(token, expected_legacy_token):
-        return DeviceAuthContext(is_legacy=True)
 
     token_hash = cryptographer.get_hash(token)
     session = await session_dao.get_by_access_token_hash(token_hash)
@@ -598,7 +558,13 @@ def _get_device_limit(panel_user: UserResponseDto) -> int:
 
 
 def _ensure_subscription_short_uuid_access(auth: DeviceAuthContext, short_uuid: str) -> None:
-    if auth.short_uuid and short_uuid != auth.short_uuid:
+    if auth.short_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current device session is not linked to a subscription",
+        )
+
+    if short_uuid != auth.short_uuid:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="short_uuid does not match current device session",
@@ -625,10 +591,18 @@ async def _get_panel_user_for_subscription_action(
 
     if auth.panel_user_uuid:
         try:
-            return await remnawave.get_user_by_uuid(UUID(auth.panel_user_uuid))
+            panel_user = await remnawave.get_user_by_uuid(UUID(auth.panel_user_uuid))
         except ValueError:
             logger.warning(f"Invalid panel_user_uuid in device session: '{auth.panel_user_uuid}'")
             return None
+
+        if panel_user and str(panel_user.short_uuid) != short_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="short_uuid does not match current device session",
+            )
+
+        return panel_user
 
     return await _get_panel_user_by_subscription_short_uuid(short_uuid, remnawave_sdk)
 
@@ -977,12 +951,6 @@ async def get_current_subscription_plan(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     subscription_dao: FromDishka[SubscriptionDao],
 ) -> dict:
-    if auth.is_legacy:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Legacy token is not supported for this endpoint",
-        )
-
     resolved_telegram_id = _resolve_telegram_id(auth, None)
     current_subscription = await subscription_dao.get_current(resolved_telegram_id)
 
@@ -1500,8 +1468,8 @@ async def save_email(
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
     """Update email on a panel user."""
-    panel_user_uuid = request.panel_user_uuid
-    if auth.device_id and not auth.is_legacy and panel_user_uuid is None:
+    panel_user_uuid = auth.panel_user_uuid
+    if auth.device_id and panel_user_uuid is None:
         linked_device = await device_dao.get_by_device_id(auth.device_id)
         if linked_device and linked_device.panel_user_uuid:
             panel_user_uuid = linked_device.panel_user_uuid
@@ -1509,7 +1477,18 @@ async def save_email(
             linked_user = await _get_panel_user_by_telegram_id(linked_device.telegram_id, remnawave)
             panel_user_uuid = str(linked_user.uuid) if linked_user else None
 
-    resolved_panel_user_uuid = _resolve_panel_user_uuid(auth, panel_user_uuid)
+    if panel_user_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current device session is not linked to a panel user",
+        )
+
+    if request.panel_user_uuid is not None and request.panel_user_uuid != panel_user_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="panel_user_uuid does not match current device session",
+        )
+    resolved_panel_user_uuid = panel_user_uuid
     try:
         await remnawave_sdk.users.update_user(
             UpdateUserRequestDto(
