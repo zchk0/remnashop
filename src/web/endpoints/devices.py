@@ -10,6 +10,7 @@ import secrets
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
+from uuid import UUID
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
@@ -37,6 +38,7 @@ from src.application.dto import (
     PaymentGatewayDto,
     PlanDto,
     PlanDurationDto,
+    RemnaSubscriptionDto,
     SubscriptionDto,
     UserDto,
 )
@@ -595,6 +597,107 @@ def _get_device_limit(panel_user: UserResponseDto) -> int:
     return panel_user.hwid_device_limit or 0
 
 
+def _ensure_subscription_short_uuid_access(auth: DeviceAuthContext, short_uuid: str) -> None:
+    if auth.short_uuid and short_uuid != auth.short_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="short_uuid does not match current device session",
+        )
+
+
+async def _get_panel_user_by_subscription_short_uuid(
+    short_uuid: str,
+    remnawave_sdk: RemnawaveSDK,
+) -> Optional[UserResponseDto]:
+    try:
+        return await remnawave_sdk.users.get_user_by_short_uuid(short_uuid)
+    except NotFoundError:
+        return None
+
+
+async def _get_panel_user_for_subscription_action(
+    auth: DeviceAuthContext,
+    short_uuid: str,
+    remnawave: Remnawave,
+    remnawave_sdk: RemnawaveSDK,
+) -> Optional[UserResponseDto]:
+    _ensure_subscription_short_uuid_access(auth, short_uuid)
+
+    if auth.panel_user_uuid:
+        try:
+            return await remnawave.get_user_by_uuid(UUID(auth.panel_user_uuid))
+        except ValueError:
+            logger.warning(f"Invalid panel_user_uuid in device session: '{auth.panel_user_uuid}'")
+            return None
+
+    return await _get_panel_user_by_subscription_short_uuid(short_uuid, remnawave_sdk)
+
+
+def _get_panel_user_telegram_id(panel_user: UserResponseDto) -> Optional[int]:
+    if panel_user.telegram_id is None:
+        return None
+
+    try:
+        return int(panel_user.telegram_id)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Invalid telegram_id '{panel_user.telegram_id}' for RemnaUser '{panel_user.uuid}'"
+        )
+        return None
+
+
+async def _sync_subscription_from_panel_user(
+    panel_user: UserResponseDto,
+    subscription_dao: SubscriptionDao,
+    remnawave: Remnawave,
+) -> tuple[Optional[SubscriptionDto], bool]:
+    telegram_id = _get_panel_user_telegram_id(panel_user)
+    if telegram_id is None:
+        return None, False
+
+    subscription = await subscription_dao.get_current(telegram_id)
+    if subscription is None:
+        logger.warning(
+            f"Current local subscription for telegram '{telegram_id}' not found during sync"
+        )
+        return None, False
+
+    remna_subscription = RemnaSubscriptionDto.from_remna_user(panel_user)
+    synced_subscription = remnawave.apply_sync(subscription, remna_subscription)
+    changed = bool(synced_subscription.changed_data)
+    updated_subscription = await subscription_dao.update(synced_subscription)
+    return updated_subscription, changed
+
+
+async def _sync_linked_devices_subscription_identity(
+    panel_user: UserResponseDto,
+    device_dao: LinkedDeviceDao,
+) -> int:
+    telegram_id = _get_panel_user_telegram_id(panel_user)
+    if telegram_id is None:
+        return 0
+
+    devices = await device_dao.get_by_telegram_id(telegram_id)
+    panel_user_uuid = str(panel_user.uuid)
+    short_uuid = str(panel_user.short_uuid)
+
+    updated_count = 0
+    for device in devices:
+        if device.panel_user_uuid == panel_user_uuid and device.short_uuid == short_uuid:
+            continue
+
+        await device_dao.upsert(
+            replace(
+                device,
+                panel_user_uuid=panel_user_uuid,
+                short_uuid=short_uuid,
+            )
+        )
+        updated_count += 1
+
+    return updated_count
+
+
 # ── Config endpoint ────────────────────────────────────────────
 @router.get("/config")
 @inject
@@ -1059,18 +1162,14 @@ async def proxy_nodes(
         return {"response": []}
 
 
-@router.get("/panel/sub/{short_uuid}/info")
+@router.get("/panel/sub/{short_uuid}/info", deprecated=True)
 @inject
 async def proxy_sub_info(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     short_uuid: str,
     remnawave_sdk: FromDishka[RemnawaveSDK],
 ) -> dict:
-    if auth.short_uuid and short_uuid != auth.short_uuid:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="short_uuid does not match current device session",
-        )
+    _ensure_subscription_short_uuid_access(auth, short_uuid)
     try:
         info = await remnawave_sdk.subscription.get_subscription_info_by_short_uuid(short_uuid)
         if info is None:
@@ -1093,6 +1192,53 @@ async def proxy_sub_info(
                 "subscription_url": None,
             }
         }
+
+
+# ── Panel subscription management (keeps panel logic server-side) ──
+@router.post("/panel/sub/{short_uuid}/revoke", include_in_schema=False)
+@router.post("/panel/sub/{short_uuid}/reset")
+@inject
+async def reset_panel_subscription(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    short_uuid: str,
+    remnawave: FromDishka[Remnawave],
+    remnawave_sdk: FromDishka[RemnawaveSDK],
+    subscription_dao: FromDishka[SubscriptionDao],
+    device_dao: FromDishka[LinkedDeviceDao],
+    uow: FromDishka[UnitOfWork],
+) -> dict:
+    panel_user = await _get_panel_user_for_subscription_action(
+        auth=auth,
+        short_uuid=short_uuid,
+        remnawave=remnawave,
+        remnawave_sdk=remnawave_sdk,
+    )
+    if panel_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Panel user not found")
+
+    revoked_user = await remnawave.revoke_subscription(panel_user.uuid)
+    if revoked_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Panel user not found")
+
+    updated_subscription, subscription_changed = await _sync_subscription_from_panel_user(
+        revoked_user,
+        subscription_dao,
+        remnawave,
+    )
+    updated_devices = await _sync_linked_devices_subscription_identity(revoked_user, device_dao)
+    await uow.commit()
+
+    data = {
+        **_build_panel_user_data(revoked_user),
+        "subscription_url": revoked_user.subscription_url,
+        "bot_subscription_updated": bool(updated_subscription),
+        "bot_subscription_changed": subscription_changed,
+        "linked_devices_updated": updated_devices,
+    }
+    if updated_subscription:
+        data.update(_build_current_plan_data(updated_subscription))
+
+    return {"success": True, "data": data}
 
 
 # ── Device user management (keeps panel logic server-side) ────────
