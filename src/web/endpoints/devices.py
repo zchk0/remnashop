@@ -22,7 +22,7 @@ from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
 from remnapy.models.hwid import HwidDeviceDto
 
-from src.application.common import Cryptographer, Remnawave
+from src.application.common import Cryptographer, Notifier, Remnawave
 from src.application.common.dao import (
     AuthTokenDao,
     DeviceSessionDao,
@@ -854,6 +854,8 @@ async def unlink_device(
     device_dao: FromDishka[LinkedDeviceDao],
     session_dao: FromDishka[DeviceSessionDao],
     subscription_dao: FromDishka[SubscriptionDao],
+    user_dao: FromDishka[UserDao],
+    notifier: FromDishka[Notifier],
     remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
@@ -886,11 +888,17 @@ async def unlink_device(
     await device_dao.unlink(device_id, telegram_id)
     await session_dao.revoke(device_id)
 
-    revoked_user = await remnawave.revoke_subscription(panel_user.uuid)
+    should_reset_subscription_link = device_id != auth.device_id
+    revoked_user = (
+        await remnawave.revoke_subscription(panel_user.uuid)
+        if should_reset_subscription_link
+        else None
+    )
     updated_subscription = None
     subscription_changed = False
     updated_devices = 0
     subscription_url = None
+    notification_sent = False
     if revoked_user is not None:
         subscription_url = revoked_user.subscription_url
         updated_subscription, subscription_changed = await _sync_subscription_from_panel_user(
@@ -905,12 +913,33 @@ async def unlink_device(
     data = {
         "remaining_devices": remaining_devices,
         "subscription_url": subscription_url,
+        "subscription_link_reset": should_reset_subscription_link and revoked_user is not None,
         "bot_subscription_updated": bool(updated_subscription),
         "bot_subscription_changed": subscription_changed,
         "linked_devices_updated": updated_devices,
+        "notification_sent": notification_sent,
     }
     if updated_subscription:
         data.update(_build_current_plan_data(updated_subscription))
+
+    if revoked_user is not None:
+        user = await user_dao.get_by_telegram_id(telegram_id)
+        if user is None:
+            logger.warning(
+                f"Subscription was reissued during device unlink, but user '{telegram_id}' "
+                "was not found for notification"
+            )
+        else:
+            try:
+                await notifier.notify_user(
+                    user=user,
+                    i18n_key="ntf-devices.subscription-link-reset",
+                )
+                data["notification_sent"] = True
+            except Exception as e:
+                logger.warning(
+                    f"Failed to notify user '{telegram_id}' about subscription reissue: {e}"
+                )
 
     return {"success": True, "data": data}
 
