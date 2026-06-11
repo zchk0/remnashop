@@ -6,6 +6,7 @@ sensitive credentials (Remnawave API token) server-side.
 """
 
 import hashlib
+import html
 import secrets
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,7 @@ from src.application.common.dao import (
 )
 from src.application.common.uow import UnitOfWork
 from src.application.dto import (
+    MessagePayloadDto,
     PaymentGatewayDto,
     PlanDto,
     PlanDurationDto,
@@ -933,7 +935,13 @@ async def unlink_device(
             try:
                 await notifier.notify_user(
                     user=user,
-                    i18n_key="ntf-devices.subscription-link-reset",
+                    payload=MessagePayloadDto(
+                        i18n_key="ntf-devices.subscription-link-reset",
+                        i18n_kwargs={
+                            "subscription_url": html.escape(subscription_url or "", quote=False)
+                        },
+                        delete_after=None,
+                    ),
                 )
                 data["notification_sent"] = True
             except Exception as e:
