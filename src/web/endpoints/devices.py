@@ -179,7 +179,16 @@ def _resolve_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str
 
 
 def _resolve_unlink_device_id(auth: DeviceAuthContext, device_id: Optional[str]) -> str:
-    return _resolve_device_id(auth, device_id)
+    if auth.device_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Current device session is missing device identity",
+        )
+
+    if device_id is not None:
+        return device_id
+
+    return auth.device_id
 
 
 def _resolve_telegram_id(auth: DeviceAuthContext, telegram_id: Optional[int]) -> int:
@@ -843,6 +852,8 @@ async def unlink_device(
     request: DeviceUnlinkRequest,
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
+    session_dao: FromDishka[DeviceSessionDao],
+    subscription_dao: FromDishka[SubscriptionDao],
     remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
@@ -856,16 +867,52 @@ async def unlink_device(
             detail="telegram_id not authenticated",
         )
 
+    devices = await remnawave.get_devices(panel_user.uuid)
+    if not any(device.hwid == device_id for device in devices):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device is not linked to current Telegram user",
+        )
+
+    await device_dao.lock_binding_by_telegram_id(telegram_id)
+    linked_device = await device_dao.get_by_device_id(device_id)
+    if linked_device and linked_device.telegram_id not in (None, telegram_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device is linked to another Telegram user",
+        )
+
     remaining_devices = await remnawave.delete_device(panel_user.uuid, device_id)
     await device_dao.unlink(device_id, telegram_id)
+    await session_dao.revoke(device_id)
+
+    revoked_user = await remnawave.revoke_subscription(panel_user.uuid)
+    updated_subscription = None
+    subscription_changed = False
+    updated_devices = 0
+    subscription_url = None
+    if revoked_user is not None:
+        subscription_url = revoked_user.subscription_url
+        updated_subscription, subscription_changed = await _sync_subscription_from_panel_user(
+            revoked_user,
+            subscription_dao,
+            remnawave,
+        )
+        updated_devices = await _sync_linked_devices_subscription_identity(revoked_user, device_dao)
+
     await uow.commit()
 
-    return {
-        "success": True,
-        "data": {
-            "remaining_devices": remaining_devices,
-        },
+    data = {
+        "remaining_devices": remaining_devices,
+        "subscription_url": subscription_url,
+        "bot_subscription_updated": bool(updated_subscription),
+        "bot_subscription_changed": subscription_changed,
+        "linked_devices_updated": updated_devices,
     }
+    if updated_subscription:
+        data.update(_build_current_plan_data(updated_subscription))
+
+    return {"success": True, "data": data}
 
 
 @router.get("/devices")
