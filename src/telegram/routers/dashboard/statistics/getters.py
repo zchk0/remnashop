@@ -28,7 +28,6 @@ PROMO_STAT_PAGE_SIZE = 10
 
 
 def remaining_activations(max_activations: Optional[int], used: int) -> Optional[int]:
-    """Remaining activations for a promocode, or ``None`` when it has no limit."""
     if max_activations is None:
         return None
     return max(0, max_activations - used)

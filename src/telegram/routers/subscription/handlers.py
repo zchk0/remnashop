@@ -26,7 +26,6 @@ from src.telegram.states import Subscription
 
 
 async def on_subscription_start(start_data: Any, manager: DialogManager) -> None:
-    """Handle dialog start with pre-selected trial plan (paid trial flow)."""
     if not start_data or "trial_plan" not in start_data:
         return
 

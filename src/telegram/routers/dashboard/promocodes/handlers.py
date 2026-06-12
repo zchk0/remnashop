@@ -334,12 +334,6 @@ async def on_availability_select(
 
 
 def _parse_expires_at(text: str, created_at: Optional[datetime]) -> Optional[datetime]:
-    """Absolute deactivation moment from a date/time string or a day count.
-
-    Accepts ``DD.MM.YYYY HH:MM`` (exact), ``DD.MM.YYYY`` (end of that day), or a plain
-    integer N meaning N days from the promocode's creation (or now, for a draft).
-    Returns ``None`` when the input is not a recognised date or number.
-    """
     if text.isdigit():
         return (created_at or datetime_now()) + timedelta(days=int(text))
     for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y"):

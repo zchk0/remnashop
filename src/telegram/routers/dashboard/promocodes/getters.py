@@ -103,12 +103,6 @@ def _format_plan_snapshot(snapshot: dict[str, Any] | None, i18n: TranslatorRunne
 
 
 def _reward_display(promo: PromocodeDto, i18n: TranslatorRunner) -> str:
-    """Render the reward via the shared ``frg-promocode-reward`` FTL fragment.
-
-    All formatting (unlimited symbol, pluralization, units, per-type wording) lives in
-    the fragment. Returns ``—`` for an unset reward on non-subscription drafts; the
-    ``None`` value cannot be passed to the fragment (Fluent raises on it).
-    """
     if promo.reward_type != PromocodeRewardType.SUBSCRIPTION and promo.reward is None:
         return "—"
     return i18n.get(
