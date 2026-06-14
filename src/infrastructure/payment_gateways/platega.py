@@ -1,6 +1,6 @@
 import hmac
 from decimal import Decimal
-from typing import Any, Final, Union, cast
+from typing import Any, Final, Optional, Union, cast
 from uuid import UUID
 
 import orjson
@@ -40,6 +40,7 @@ class PlategaGateway(BasePaymentGateway):
 
         self.merchant_id = self.settings.merchant_id
         self.api_key = self.settings.api_key.get_secret_value()
+
         self._client = self._make_client(
             base_url=self.API_BASE,
             headers={
@@ -49,7 +50,7 @@ class PlategaGateway(BasePaymentGateway):
                 "Accept": "application/json",
             },
         )
-        self.selected_payment_method: str | None = None
+        self.selected_payment_method: Optional[str] = None
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(amount, details)

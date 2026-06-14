@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, Integer
@@ -27,8 +27,8 @@ class Transaction(BaseSql, TimestampMixin):
 
     purchase_type: Mapped[PurchaseType]
     gateway_type: Mapped[PaymentGatewayType]
-    gateway_display_name: Mapped[str | None]
-    payment_method: Mapped[str | None]
+    gateway_display_name: Mapped[Optional[str]]
+    payment_method: Mapped[Optional[str]]
 
     pricing: Mapped[dict[str, Any]]
     currency: Mapped[Currency]

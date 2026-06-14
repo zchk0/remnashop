@@ -350,8 +350,6 @@ gateway-type = { $gateway_type ->
     *[OTHER] { $gateway_type }
 }
 
-gateway-display-name-platega = СБП / Крипта
-
 access-mode = { $access_mode ->
     [PUBLIC] 🟢 Разрешен для всех
     [INVITED] 🟡 Разрешен для приглашенных
