@@ -50,7 +50,9 @@ class CachedPaymentData(TypedDict):
     final_pricing: str
 
 
-def _get_cache_key(duration: int, gateway_type: PaymentGatewayType, purchase_type: PurchaseType) -> str:
+def _get_cache_key(
+    duration: int, gateway_type: PaymentGatewayType, purchase_type: PurchaseType
+) -> str:
     return f"{purchase_type}:{duration}:{gateway_type.value}"
 
 
