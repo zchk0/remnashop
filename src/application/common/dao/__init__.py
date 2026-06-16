@@ -1,3 +1,4 @@
+from .activity import RecentActivityDao
 from .ad_link import AdLinkDao
 from .auth import AuthSessionDao
 from .broadcast import BroadcastDao
@@ -14,6 +15,7 @@ from .waitlist import WaitlistDao
 from .webhook import WebhookDao
 
 __all__ = [
+    "RecentActivityDao",
     "AdLinkDao",
     "AuthSessionDao",
     "BroadcastDao",

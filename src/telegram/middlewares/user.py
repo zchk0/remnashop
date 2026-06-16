@@ -7,6 +7,7 @@ from dishka import AsyncContainer
 from loguru import logger
 
 from src.application.dto import TelegramUserDto
+from src.application.use_cases.user.commands.activity import TrackUserActivity
 from src.application.use_cases.user.commands.registration import (
     GetOrCreateUser,
     GetOrCreateUserDto,
@@ -49,6 +50,7 @@ class UserMiddleware(EventTypedMiddleware):
         container: AsyncContainer = data[CONTAINER_KEY]
         get_or_create_user = await container.get(GetOrCreateUser)
         update_user_profile = await container.get(UpdateUserProfile)
+        track_user_activity = await container.get(TrackUserActivity)
 
         user = await get_or_create_user.system(
             GetOrCreateUserDto(
@@ -72,6 +74,7 @@ class UserMiddleware(EventTypedMiddleware):
                     telegram_id=aiogram_user.id,
                 )
             )
+            await track_user_activity.system(user.id)
 
         if user is not None and not isinstance(user, TelegramUserDto):
             user = TelegramUserDto.from_user(user)

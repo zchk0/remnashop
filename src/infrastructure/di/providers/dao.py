@@ -7,6 +7,7 @@ from src.application.common.dao import (
     PaymentGatewayDao,
     PlanDao,
     PromocodeDao,
+    RecentActivityDao,
     ReferralDao,
     SettingsDao,
     SubscriptionDao,
@@ -31,6 +32,7 @@ from src.infrastructure.database.dao import (
     WaitlistDaoImpl,
     WebhookDaoImpl,
 )
+from src.infrastructure.redis.activity import RedisActivityRepository
 from src.infrastructure.redis.auth import RedisAuthRepository
 
 
@@ -52,3 +54,6 @@ class DaoProvider(Provider):
     webhook = provide(source=WebhookDaoImpl, provides=WebhookDao, scope=Scope.APP)
     waitlist = provide(source=WaitlistDaoImpl, provides=WaitlistDao, scope=Scope.APP)
     auth_session = provide(source=RedisAuthRepository, provides=AuthSessionDao, scope=Scope.APP)
+    recent_activity = provide(
+        source=RedisActivityRepository, provides=RecentActivityDao, scope=Scope.APP
+    )

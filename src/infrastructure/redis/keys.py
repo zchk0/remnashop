@@ -42,6 +42,9 @@ class WelcomedVersionKey(StorageKey, prefix="welcomed_version"):
 class PaymentWaitlistKey(StorageKey, prefix="payment_waitlist"): ...
 
 
+class RecentActivityKey(StorageKey, prefix="recent_activity"): ...
+
+
 class ImportRunningKey(StorageKey, prefix="import_running"): ...
 
 

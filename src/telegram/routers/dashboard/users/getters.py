@@ -7,6 +7,7 @@ from dishka.integrations.aiogram_dialog import inject
 
 from src.application.common.dao import SettingsDao, UserDao
 from src.application.dto import TelegramUserDto, UserDto
+from src.application.use_cases.user.queries.activity import GetRecentActivityUsers
 from src.core.constants import RECENT_REGISTERED_MAX_COUNT
 from src.core.utils.converters import percent
 
@@ -40,10 +41,10 @@ async def recent_registered_getter(
 async def recent_activity_getter(
     dialog_manager: DialogManager,
     user: TelegramUserDto,
-    user_dao: FromDishka[UserDao],
+    get_recent_activity_users: FromDishka[GetRecentActivityUsers],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    users = await user_dao.get_recent_activity_users(excluded_ids=[user.id])
+    users = await get_recent_activity_users.system([user.id])
     return {"recent_activity_users": users}
 
 
