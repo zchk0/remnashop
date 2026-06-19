@@ -69,6 +69,14 @@ class UserDto(BaseDto, TrackableMixin, TimestampMixin):
     referral_code_reset_at: Optional[datetime] = None
 
     @property
+    def contact_label(self) -> str:
+        if self.username:
+            return self.username
+        if self.telegram_id is not None:
+            return str(self.telegram_id)
+        return self.email or str(self.id)
+
+    @property
     def is_privileged(self) -> bool:
         return self.role.includes(Role.ADMIN)
 
