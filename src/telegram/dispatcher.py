@@ -11,6 +11,7 @@ from src.infrastructure.common import json
 from src.telegram.filters import setup_global_filters
 from src.telegram.message_manager import MessageManager
 from src.telegram.middlewares import setup_middlewares
+from src.telegram.middlewares.user import UserMiddleware
 from src.telegram.routers import setup_routers
 
 
@@ -50,5 +51,8 @@ def setup_dispatcher(dispatcher: Dispatcher) -> None:
 
 
 def setup_worker_dispatcher(dispatcher: Dispatcher) -> None:
+    # Background redirects (e.g. Subscription:SUCCESS) start dialogs via bg_manager, which
+    # emit AIOGD_UPDATE. Dialog getters rely on USER_KEY, so UserMiddleware must populate it.
+    UserMiddleware().setup_outer(dispatcher)
     setup_routers(dispatcher)
     logger.info("Worker dispatcher routers have been configured")

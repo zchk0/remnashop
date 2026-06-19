@@ -230,8 +230,7 @@ async def purchase_subscription(
 
     tx_status = TransactionStatus.PENDING
     if pricing.is_free:
-        await process_payment(
-            user,
+        await process_payment.system(
             ProcessPaymentDto(
                 payment_id=payment.id,
                 new_transaction_status=TransactionStatus.COMPLETED,
@@ -310,8 +309,7 @@ async def extend_subscription(
 
     tx_status = TransactionStatus.PENDING
     if pricing.is_free:
-        await process_payment(
-            user,
+        await process_payment.system(
             ProcessPaymentDto(
                 payment_id=payment.id,
                 new_transaction_status=TransactionStatus.COMPLETED,

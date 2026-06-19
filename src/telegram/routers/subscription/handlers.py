@@ -473,8 +473,7 @@ async def on_get_subscription(
     payment_id = dialog_manager.dialog_data["payment_id"]
     gateway_type: PaymentGatewayType = dialog_manager.dialog_data[CURRENT_METHOD_KEY]
     logger.info(f"{user.log} Getted free subscription '{payment_id}'")
-    await process_payment(
-        user,
+    await process_payment.system(
         ProcessPaymentDto(
             payment_id=payment_id,
             new_transaction_status=TransactionStatus.COMPLETED,

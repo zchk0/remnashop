@@ -207,14 +207,13 @@ async def on_payload_input(  # noqa: C901
             user, UpdateMenuButtonMediaDto(button, file_id, media_type)
         )
 
-        if text:
-            try:
-                button = await update_menu_button_payload(
-                    user, UpdateMenuButtonPayloadDto(button, text)
-                )
-            except ValueError:
-                await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
-                return
+        try:
+            button = await update_menu_button_payload(
+                user, UpdateMenuButtonPayloadDto(button, text)
+            )
+        except ValueError:
+            await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+            return
     else:
         if message.text is None:
             await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
