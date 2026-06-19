@@ -53,6 +53,10 @@ class PromocodeActivateResponse(BaseModel):
     reward_type: str
 
 
+class TrialActivateResponse(BaseModel):
+    success: bool
+
+
 class ReissueResponse(BaseModel):
     success: bool
 

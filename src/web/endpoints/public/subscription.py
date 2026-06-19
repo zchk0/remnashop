@@ -8,6 +8,7 @@ from remnapy.models.hwid import HwidDeviceDto
 from src.application.common import Remnawave
 from src.application.common.dao import (
     PaymentGatewayDao,
+    PlanDao,
     SubscriptionDao,
 )
 from src.application.dto import PlanDto, PlanSnapshotDto, UserDto
@@ -29,6 +30,10 @@ from src.application.use_cases.remnawave.commands.management import (
     DeleteUserDeviceDto,
     ReissueSubscription,
 )
+from src.application.use_cases.subscription.commands.purchase import (
+    ActivateTrialSubscription,
+    ActivateTrialSubscriptionDto,
+)
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.enums import (
     PaymentGatewayType,
@@ -41,6 +46,7 @@ from src.core.exceptions import (
     PromocodeExpiredError,
     PromocodeNotAvailableError,
     PromocodeNotFoundError,
+    TrialNotAvailableError,
 )
 from src.web.schemas import (
     DeviceDeleteResponse,
@@ -59,6 +65,7 @@ from src.web.schemas import (
     ReissueResponse,
     SubscriptionInfoResponse,
     SubscriptionOffersResponse,
+    TrialActivateResponse,
 )
 
 from ._common import CurrentUser
@@ -101,6 +108,11 @@ async def _get_available_plan_by_code(
 ) -> Optional[PlanDto]:
     plans = await get_available_plans.system(user)
     return next((plan for plan in plans if plan.public_code == plan_code), None)
+
+
+async def _resolve_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
+    trial_plans = await plan_dao.get_active_trial_plans()
+    return trial_plans[0] if trial_plans else None
 
 
 async def _validate_gateway_for_web(
@@ -235,6 +247,30 @@ async def activate_promocode_web(
     ) as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return PromocodeActivateResponse(success=True, reward_type=promo.reward_type.value)
+
+
+@router.post("/trial", response_model=TrialActivateResponse)
+@inject
+async def activate_trial_web(
+    user: CurrentUser,
+    plan_dao: FromDishka[PlanDao],
+    activate_trial: FromDishka[ActivateTrialSubscription],
+) -> TrialActivateResponse:
+    _assert_web_purchase_email_verified(user)
+
+    if not user.is_trial_available:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial is not available")
+
+    plan = await _resolve_trial_plan(plan_dao)
+    if not plan or not plan.durations:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active trial plan")
+
+    plan_snapshot = PlanSnapshotDto.from_plan(plan, plan.durations[0].days)
+    try:
+        await activate_trial.system(ActivateTrialSubscriptionDto(user=user, plan=plan_snapshot))
+    except TrialNotAvailableError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    return TrialActivateResponse(success=True)
 
 
 @router.post("/purchase", response_model=PaymentInitResponse)

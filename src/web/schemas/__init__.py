@@ -41,6 +41,7 @@ from .subscription import (
     ReissueResponse,
     SubscriptionInfoResponse,
     SubscriptionOffersResponse,
+    TrialActivateResponse,
 )
 
 __all__ = [
@@ -89,4 +90,5 @@ __all__ = [
     "ReissueResponse",
     "SubscriptionInfoResponse",
     "SubscriptionOffersResponse",
+    "TrialActivateResponse",
 ]
