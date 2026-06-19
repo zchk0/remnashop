@@ -1,14 +1,12 @@
-import base64
+import hashlib
+import hmac
 import uuid
 from decimal import Decimal
-from typing import Any, Final, Optional, Union
+from typing import Any, Final, Union
 from uuid import UUID
 
 import orjson
 from aiogram import Bot
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
 from fastapi import Request
 from httpx import AsyncClient, HTTPStatusError
 from loguru import logger
@@ -24,7 +22,6 @@ from .base import BasePaymentGateway
 # https://docs.panel.valutix.kz/ru/docs
 class ValutixGateway(BasePaymentGateway):
     _client: AsyncClient
-    _public_key_pem: Optional[str]
 
     API_BASE: Final[str] = "https://api.panel.valutix.kz"
 
@@ -37,7 +34,6 @@ class ValutixGateway(BasePaymentGateway):
                 f"got {type(self.data.settings).__name__}"
             )
 
-        self._public_key_pem = None
         self._client = self._make_client(
             base_url=self.API_BASE,
             headers={"X-Api-Token": self.data.settings.api_key.get_secret_value()},  # type: ignore[union-attr]
@@ -83,9 +79,9 @@ class ValutixGateway(BasePaymentGateway):
         webhook_data = orjson.loads(raw_body)
         logger.debug(f"Valutix webhook data: {webhook_data}")
 
-        payment_id_str = webhook_data.get("uuid")
+        payment_id_str = webhook_data.get("id")
         if not payment_id_str:
-            raise ValueError("Required field 'uuid' is missing")
+            raise ValueError("Required field 'id' is missing")
 
         status = webhook_data.get("status")
         payment_id = UUID(payment_id_str)
@@ -114,38 +110,17 @@ class ValutixGateway(BasePaymentGateway):
 
         return PaymentResultDto(id=UUID(valutix_id), url=str(payment_link))
 
-    async def _fetch_public_key(self) -> str:
-        response = await self._client.get("v1/orders/pubkey")
-        response.raise_for_status()
-        result: str = orjson.loads(response.content)
-        return result
-
-    async def _get_public_key(self) -> str:
-        if self._public_key_pem is None:
-            self._public_key_pem = await self._fetch_public_key()
-            logger.debug("Fetched Valutix RSA public key")
-        return self._public_key_pem
-
     async def _verify_webhook(self, request: Request, raw_body: bytes) -> None:
-        signature_b64 = request.headers.get("X-Signature")
-        if not signature_b64:
+        signature = request.headers.get("X-Signature")
+        if not signature:
             raise PermissionError("Valutix webhook missing X-Signature header")
 
-        try:
-            signature = base64.b64decode(signature_b64)
-        except Exception:
-            raise PermissionError("Valutix webhook X-Signature is not valid base64")
-
-        pubkey_pem = await self._get_public_key()
-        try:
-            public_key = serialization.load_pem_public_key(pubkey_pem.encode())
-            public_key.verify(signature, raw_body, padding.PKCS1v15(), hashes.SHA256())  # type: ignore[union-attr,arg-type,call-arg]
-        except InvalidSignature:
-            self._public_key_pem = None
-            logger.warning("Valutix webhook RSA signature verification failed")
-            raise PermissionError("Valutix webhook verification failed")
-        except PermissionError:
-            raise
-        except Exception as e:
-            logger.error(f"Valutix webhook verification error: {e}")
+        api_key = self.data.settings.api_key.get_secret_value()  # type: ignore[union-attr]
+        expected_signature = hmac.new(
+            api_key.encode(),
+            raw_body,
+            hashlib.sha512,
+        ).hexdigest()
+        if not hmac.compare_digest(signature.lower(), expected_signature):
+            logger.warning("Valutix webhook HMAC signature verification failed")
             raise PermissionError("Valutix webhook verification failed")
