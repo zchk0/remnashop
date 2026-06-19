@@ -8,6 +8,7 @@ from remnapy.models.hwid import HwidDeviceDto
 from src.application.common import Remnawave
 from src.application.common.dao import (
     PaymentGatewayDao,
+    PlanDao,
     SubscriptionDao,
 )
 from src.application.dto import PlanDto, PlanSnapshotDto, UserDto
@@ -19,9 +20,19 @@ from src.application.use_cases.gateways.commands.payment import (
     ProcessPaymentDto,
 )
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
+from src.application.use_cases.promocode.commands.activate import (
+    ActivatePromocode,
+    ActivatePromocodeDto,
+)
 from src.application.use_cases.remnawave.commands.management import (
+    DeleteUserAllDevices,
     DeleteUserDevice,
     DeleteUserDeviceDto,
+    ReissueSubscription,
+)
+from src.application.use_cases.subscription.commands.purchase import (
+    ActivateTrialSubscription,
+    ActivateTrialSubscriptionDto,
 )
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.enums import (
@@ -29,9 +40,18 @@ from src.core.enums import (
     PurchaseType,
     TransactionStatus,
 )
+from src.core.exceptions import (
+    CooldownError,
+    PromocodeAlreadyActivatedError,
+    PromocodeExpiredError,
+    PromocodeNotAvailableError,
+    PromocodeNotFoundError,
+    TrialNotAvailableError,
+)
 from src.web.schemas import (
     DeviceDeleteResponse,
     DeviceResponse,
+    DevicesDeleteAllResponse,
     DevicesResponse,
     DurationGatewayPriceResponse,
     DurationOfferResponse,
@@ -39,9 +59,13 @@ from src.web.schemas import (
     GatewayOfferResponse,
     PaymentInitResponse,
     PlanOfferResponse,
+    PromocodeActivateRequest,
+    PromocodeActivateResponse,
     PurchaseRequest,
+    ReissueResponse,
     SubscriptionInfoResponse,
     SubscriptionOffersResponse,
+    TrialActivateResponse,
 )
 
 from ._common import CurrentUser
@@ -84,6 +108,11 @@ async def _get_available_plan_by_code(
 ) -> Optional[PlanDto]:
     plans = await get_available_plans.system(user)
     return next((plan for plan in plans if plan.public_code == plan_code), None)
+
+
+async def _resolve_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
+    trial_plans = await plan_dao.get_active_trial_plans()
+    return trial_plans[0] if trial_plans else None
 
 
 async def _validate_gateway_for_web(
@@ -169,14 +198,79 @@ async def delete_subscription_device(
     return DeviceDeleteResponse(deleted=deleted)
 
 
-# @router.post("/reissue", response_model=ReissueResponse)
-# @inject
-# async def reissue_current_subscription(
-#     user: CurrentUser,
-#     reissue_subscription: FromDishka[ReissueSubscription],
-# ) -> ReissueResponse:
-#     await reissue_subscription(user)
-#     return ReissueResponse(success=True)
+@router.delete("/devices", response_model=DevicesDeleteAllResponse)
+@inject
+async def delete_all_subscription_devices(
+    user: CurrentUser,
+    delete_all_devices: FromDishka[DeleteUserAllDevices],
+) -> DevicesDeleteAllResponse:
+    try:
+        await delete_all_devices(user)
+    except CooldownError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    return DevicesDeleteAllResponse(success=True)
+
+
+@router.post("/reissue", response_model=ReissueResponse)
+@inject
+async def reissue_current_subscription(
+    user: CurrentUser,
+    reissue_subscription: FromDishka[ReissueSubscription],
+) -> ReissueResponse:
+    try:
+        await reissue_subscription(user)
+    except CooldownError as e:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    return ReissueResponse(success=True)
+
+
+@router.post("/promocode", response_model=PromocodeActivateResponse)
+@inject
+async def activate_promocode_web(
+    body: PromocodeActivateRequest,
+    user: CurrentUser,
+    activate_promocode: FromDishka[ActivatePromocode],
+) -> PromocodeActivateResponse:
+    _assert_web_purchase_email_verified(user)
+    try:
+        promo = await activate_promocode(user, ActivatePromocodeDto(code=body.code, user=user))
+    except PromocodeNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except (
+        PromocodeExpiredError,
+        PromocodeAlreadyActivatedError,
+        PromocodeNotAvailableError,
+    ) as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    return PromocodeActivateResponse(success=True, reward_type=promo.reward_type.value)
+
+
+@router.post("/trial", response_model=TrialActivateResponse)
+@inject
+async def activate_trial_web(
+    user: CurrentUser,
+    plan_dao: FromDishka[PlanDao],
+    activate_trial: FromDishka[ActivateTrialSubscription],
+) -> TrialActivateResponse:
+    _assert_web_purchase_email_verified(user)
+
+    if not user.is_trial_available:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial is not available")
+
+    plan = await _resolve_trial_plan(plan_dao)
+    if not plan or not plan.durations:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active trial plan")
+
+    plan_snapshot = PlanSnapshotDto.from_plan(plan, plan.durations[0].days)
+    try:
+        await activate_trial.system(ActivateTrialSubscriptionDto(user=user, plan=plan_snapshot))
+    except TrialNotAvailableError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    return TrialActivateResponse(success=True)
 
 
 @router.post("/purchase", response_model=PaymentInitResponse)
@@ -230,8 +324,7 @@ async def purchase_subscription(
 
     tx_status = TransactionStatus.PENDING
     if pricing.is_free:
-        await process_payment(
-            user,
+        await process_payment.system(
             ProcessPaymentDto(
                 payment_id=payment.id,
                 new_transaction_status=TransactionStatus.COMPLETED,
@@ -310,8 +403,7 @@ async def extend_subscription(
 
     tx_status = TransactionStatus.PENDING
     if pricing.is_free:
-        await process_payment(
-            user,
+        await process_payment.system(
             ProcessPaymentDto(
                 payment_id=payment.id,
                 new_transaction_status=TransactionStatus.COMPLETED,

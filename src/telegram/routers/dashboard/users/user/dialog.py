@@ -8,7 +8,7 @@ from magic_filter import F
 from src.core.enums import BannerName, SubscriptionStatus
 from src.telegram.keyboards import back_main_menu_button
 from src.telegram.routers.dashboard.broadcast.handlers import on_content_input, on_preview
-from src.telegram.states import DashboardRemnashop, DashboardUser, DashboardUsers
+from src.telegram.states import DashboardRemnashop, DashboardUser
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import (
     Button,
@@ -47,6 +47,7 @@ from .getters import (
 )
 from .handlers import (
     on_active_toggle,
+    on_back_to_list,
     on_back_to_referrals,
     on_block_toggle,
     on_current_subscription,
@@ -184,11 +185,10 @@ user = Window(
         ),
     ),
     Row(
-        Start(
+        Button(
             text=I18nFormat("btn-back.dashboard"),
             id="back",
-            state=DashboardUsers.MAIN,
-            mode=StartMode.RESET_STACK,
+            on_click=on_back_to_list,
         ),
     ),
     *back_main_menu_button,

@@ -14,6 +14,7 @@ from .auth import (
     RequestEmailVerificationCodeRequest,
     RequestEmailVerificationCodeResponse,
     TelegramAuthRequest,
+    TelegramWebAppAuthRequest,
 )
 from .health import (
     DatabaseStatusSchema,
@@ -27,6 +28,7 @@ from .referral import ReferralProgramResponse, ReferralRewardLevelResponse
 from .subscription import (
     DeviceDeleteResponse,
     DeviceResponse,
+    DevicesDeleteAllResponse,
     DevicesResponse,
     DurationGatewayPriceResponse,
     DurationOfferResponse,
@@ -34,10 +36,13 @@ from .subscription import (
     GatewayOfferResponse,
     PaymentInitResponse,
     PlanOfferResponse,
+    PromocodeActivateRequest,
+    PromocodeActivateResponse,
     PurchaseRequest,
     ReissueResponse,
     SubscriptionInfoResponse,
     SubscriptionOffersResponse,
+    TrialActivateResponse,
 )
 
 __all__ = [
@@ -63,6 +68,7 @@ __all__ = [
     "RequestEmailVerificationCodeRequest",
     "RequestEmailVerificationCodeResponse",
     "TelegramAuthRequest",
+    "TelegramWebAppAuthRequest",
     # plans
     "PublicPlanLandingListResponse",
     "PublicPlanLandingResponse",
@@ -72,6 +78,7 @@ __all__ = [
     # subscription
     "DeviceDeleteResponse",
     "DeviceResponse",
+    "DevicesDeleteAllResponse",
     "DevicesResponse",
     "DurationGatewayPriceResponse",
     "DurationOfferResponse",
@@ -79,8 +86,11 @@ __all__ = [
     "GatewayOfferResponse",
     "PaymentInitResponse",
     "PlanOfferResponse",
+    "PromocodeActivateRequest",
+    "PromocodeActivateResponse",
     "PurchaseRequest",
     "ReissueResponse",
     "SubscriptionInfoResponse",
     "SubscriptionOffersResponse",
+    "TrialActivateResponse",
 ]

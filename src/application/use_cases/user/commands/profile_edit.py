@@ -35,7 +35,7 @@ class SetUserPersonalDiscount(Interactor[SetUserPersonalDiscountDto, None]):
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
 
-            if not actor.role > target_user.role:
+            if actor.id != target_user.id and not actor.role > target_user.role:
                 logger.warning(
                     f"{actor.log} denied editing user '{target_user.id}': "
                     f"target role '{target_user.role}' >= actor role '{actor.role}'"
@@ -73,7 +73,7 @@ class SetUserPurchaseDiscount(Interactor[SetUserPurchaseDiscountDto, None]):
             if not target_user:
                 raise ValueError(f"User '{data.user_id}' not found")
 
-            if not actor.role > target_user.role:
+            if actor.id != target_user.id and not actor.role > target_user.role:
                 logger.warning(
                     f"{actor.log} denied editing user '{target_user.id}': "
                     f"target role '{target_user.role}' >= actor role '{actor.role}'"
@@ -102,7 +102,7 @@ class ToggleUserTrialAvailable(Interactor[int, None]):
             if not target_user:
                 raise ValueError(f"User '{user_id}' not found")
 
-            if not actor.role > target_user.role:
+            if actor.id != target_user.id and not actor.role > target_user.role:
                 logger.warning(
                     f"{actor.log} denied editing user '{target_user.id}': "
                     f"target role '{target_user.role}' >= actor role '{actor.role}'"
@@ -136,7 +136,7 @@ class ChangeUserPoints(Interactor[ChangeUserPointsDto, None]):
                 logger.error(f"{actor.log} User not found with id '{data.user_id}'")
                 raise ValueError(f"User '{data.user_id}' not found")
 
-            if not actor.role > target_user.role:
+            if actor.id != target_user.id and not actor.role > target_user.role:
                 logger.warning(
                     f"{actor.log} denied editing user '{target_user.id}': "
                     f"target role '{target_user.role}' >= actor role '{actor.role}'"
@@ -173,7 +173,7 @@ class ResetUserReferralCode(Interactor[int, None]):
             if not target_user:
                 raise ValueError(f"User '{user_id}' not found")
 
-            if not actor.role > target_user.role:
+            if actor.id != target_user.id and not actor.role > target_user.role:
                 logger.warning(
                     f"{actor.log} denied editing user '{target_user.id}': "
                     f"target role '{target_user.role}' >= actor role '{actor.role}'"

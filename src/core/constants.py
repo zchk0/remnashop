@@ -55,6 +55,8 @@ USER_KEY: Final[str] = "user"
 TARGET_TELEGRAM_ID: Final[str] = "target_telegram_id"
 TARGET_USER_ID: Final[str] = "target_user_id"
 FROM_REFERRAL_USER_ID: Final[str] = "from_referral_user_id"
+USER_LIST_ORIGIN: Final[str] = "user_list_origin"
+USER_LIST_PAYLOAD: Final[str] = "user_list_payload"
 
 INT32_MAX: Final[int] = 2_147_483_647
 

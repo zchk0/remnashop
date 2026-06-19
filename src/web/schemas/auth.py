@@ -132,5 +132,9 @@ class TelegramAuthRequest(BaseModel):
     hash: str
 
 
+class TelegramWebAppAuthRequest(BaseModel):
+    init_data: str
+
+
 class LogoutResponse(BaseModel):
     success: bool

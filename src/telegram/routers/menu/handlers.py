@@ -289,7 +289,7 @@ async def on_text_button_click(
     settings = await settings_dao.get()
     button = next((b for b in settings.menu.buttons if b.index == button_index), None)
 
-    if not button or not button.payload:
+    if not button or not (button.payload or button.media_file_id):
         return
 
     await notifier.notify_user(

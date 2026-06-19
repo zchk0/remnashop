@@ -21,6 +21,7 @@ from src.application.use_cases.auth.commands.register import (
 from src.application.use_cases.auth.commands.session import RefreshSession, RefreshSessionDto
 from src.application.use_cases.auth.commands.telegram import (
     AuthenticateTelegram,
+    AuthenticateTelegramWebApp,
     LinkTelegram,
     LinkTelegramData,
     TelegramAuthData,
@@ -42,6 +43,7 @@ from src.web.schemas import (
     RequestEmailVerificationCodeRequest,
     RequestEmailVerificationCodeResponse,
     TelegramAuthRequest,
+    TelegramWebAppAuthRequest,
 )
 
 from ._common import (
@@ -162,6 +164,19 @@ async def telegram_login(
             payload=body.model_dump(exclude_none=True),
         )
     )
+    return await _issue_and_set(user, response, config, auth_session)
+
+
+@router.post("/telegram/webapp", response_model=AuthResponse)
+@inject
+async def telegram_webapp_login(
+    body: TelegramWebAppAuthRequest,
+    response: Response,
+    config: FromDishka[AppConfig],
+    authenticate_webapp: FromDishka[AuthenticateTelegramWebApp],
+    auth_session: FromDishka[AuthSessionDao],
+) -> AuthResponse:
+    user = await authenticate_webapp.system(body.init_data)
     return await _issue_and_set(user, response, config, auth_session)
 
 

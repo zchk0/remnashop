@@ -64,27 +64,70 @@ from src.application.use_cases.user.commands.profile_edit import (
 from src.application.use_cases.user.commands.roles import SetUserRole, SetUserRoleDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.application.use_cases.user.queries.profile import GetUserDevices
-from src.core.constants import FROM_REFERRAL_USER_ID, TARGET_TELEGRAM_ID, TARGET_USER_ID, USER_KEY
+from src.core.constants import (
+    FROM_REFERRAL_USER_ID,
+    TARGET_TELEGRAM_ID,
+    TARGET_USER_ID,
+    USER_KEY,
+    USER_LIST_ORIGIN,
+    USER_LIST_PAYLOAD,
+)
 from src.core.enums import Role
 from src.core.utils.validators import is_positive_int, parse_int
 from src.telegram.keyboards import get_contact_support_keyboard
-from src.telegram.states import DashboardUser
+from src.telegram.states import DashboardUser, DashboardUsers
 from src.telegram.utils import is_double_click
+
+_USER_LIST_STATES = {
+    DashboardUsers.RECENT_REGISTERED.state: DashboardUsers.RECENT_REGISTERED,
+    DashboardUsers.RECENT_ACTIVITY.state: DashboardUsers.RECENT_ACTIVITY,
+    DashboardUsers.BLACKLIST_USERS.state: DashboardUsers.BLACKLIST_USERS,
+    DashboardUsers.SEARCH_RESULTS.state: DashboardUsers.SEARCH_RESULTS,
+}
 
 
 async def start_user_window(
     manager: DialogManager,
     target_user_id: int,
     from_referral_user_id: Optional[int] = None,
+    list_origin: Optional[str] = None,
+    list_payload: Optional[list] = None,
 ) -> None:
     data: dict = {TARGET_USER_ID: target_user_id}
     if from_referral_user_id is not None:
         data[FROM_REFERRAL_USER_ID] = from_referral_user_id
+    if list_origin is not None:
+        data[USER_LIST_ORIGIN] = list_origin
+    if list_payload is not None:
+        data[USER_LIST_PAYLOAD] = list_payload
     await manager.start(
         state=DashboardUser.MAIN,
         data=data,
         mode=StartMode.RESET_STACK,
     )
+
+
+async def on_back_to_list(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+) -> None:
+    origin = dialog_manager.start_data.get(USER_LIST_ORIGIN)  # type: ignore[union-attr]
+    state = _USER_LIST_STATES.get(origin) if origin else None
+
+    if state is None:
+        await dialog_manager.start(state=DashboardUsers.MAIN, mode=StartMode.RESET_STACK)
+        return
+
+    data: dict = {}
+    if state == DashboardUsers.SEARCH_RESULTS:
+        payload = dialog_manager.start_data.get(USER_LIST_PAYLOAD)  # type: ignore[union-attr]
+        if not payload:
+            await dialog_manager.start(state=DashboardUsers.MAIN, mode=StartMode.RESET_STACK)
+            return
+        data["found_users"] = payload
+
+    await dialog_manager.start(state=state, data=data, mode=StartMode.RESET_STACK)
 
 
 async def start_user_transaction_window(

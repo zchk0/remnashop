@@ -81,7 +81,17 @@ async def on_user_select(
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     logger.info(f"{user.log} User id '{selected_user}' selected")
-    await start_user_window(manager=dialog_manager, target_user_id=selected_user)
+
+    context = dialog_manager.current_context()
+    origin = context.state
+    payload = context.start_data.get("found_users") if context.start_data else None  # type: ignore[union-attr]
+
+    await start_user_window(
+        manager=dialog_manager,
+        target_user_id=selected_user,
+        list_origin=origin.state,
+        list_payload=payload,
+    )
 
 
 @inject
