@@ -324,6 +324,7 @@ async def success_payment_getter(
     user: TelegramUserDto,
     subscription_dao: FromDishka[SubscriptionDao],
     settings_dao: FromDishka[SettingsDao],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     start_data = cast(dict[str, Any], dialog_manager.start_data)
@@ -337,7 +338,7 @@ async def success_payment_getter(
 
     return {
         "purchase_type": purchase_type,
-        "plan_name": subscription.plan_snapshot.name,
+        "plan_name": i18n.get(subscription.plan_snapshot.name),
         "traffic_limit": i18n_format_traffic_limit(subscription.traffic_limit),
         "device_limit": i18n_format_device_limit(subscription.device_limit),
         "expire_time": i18n_format_expire_time(subscription.expire_at),
