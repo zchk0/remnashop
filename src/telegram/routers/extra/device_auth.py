@@ -171,7 +171,7 @@ async def on_device_auth(  # noqa: C901
 
     anon_uuid = token_record.panel_user_uuid
 
-    existing_users = await remnawave.get_user_by_telegram_id(telegram_id)
+    existing_users = await remnawave.get_users_by_telegram_id(telegram_id)
     existing_user = existing_users[0] if existing_users else None
 
     panel_user = None
@@ -204,7 +204,7 @@ async def on_device_auth(  # noqa: C901
             logger.warning(f"{user.log} ToBeVPN trial activation failed: {e}")
             return
 
-        existing_users = await remnawave.get_user_by_telegram_id(telegram_id)
+        existing_users = await remnawave.get_users_by_telegram_id(telegram_id)
         panel_user = existing_users[0] if existing_users else None
 
     if not panel_user:

@@ -203,7 +203,7 @@ class RemnawaveImpl(Remnawave):
         logger.debug(f"Fetched {len(response.users)} RemnaUsers (limit={limit}, offset={offset})")
         return response.users
 
-    async def get_user_by_email(self, email: str) -> list[UserResponseDto]:
+    async def get_users_by_email(self, email: str) -> list[UserResponseDto]:
         response = await self.sdk.users.get_users_by_email(email)
         logger.debug(f"Fetched {len(response.root)} RemnaUsers for email '{email}'")
         return response.root

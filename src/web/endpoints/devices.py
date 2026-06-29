@@ -497,7 +497,7 @@ async def _get_panel_user_by_telegram_id(
     telegram_id: int,
     remnawave: Remnawave,
 ) -> Optional[UserResponseDto]:
-    panel_users = await remnawave.get_user_by_telegram_id(telegram_id)
+    panel_users = await remnawave.get_users_by_telegram_id(telegram_id)
     return panel_users[0] if panel_users else None
 
 
@@ -1181,7 +1181,7 @@ async def tv_pair_status(
         panel_user = None
         if pairing.telegram_id is not None:
             try:
-                panel_users = await remnawave.get_user_by_telegram_id(pairing.telegram_id)
+                panel_users = await remnawave.get_users_by_telegram_id(pairing.telegram_id)
                 if panel_users:
                     panel_user = panel_users[0]
             except Exception:
@@ -1221,7 +1221,7 @@ async def proxy_user_by_telegram(
 ) -> dict:
     _resolve_telegram_id(auth, telegram_id)
     try:
-        users = await remnawave.get_user_by_telegram_id(telegram_id)
+        users = await remnawave.get_users_by_telegram_id(telegram_id)
         if not users:
             return {"response": []}
         return {"response": [u.model_dump(mode="json", by_alias=False) for u in users]}
