@@ -21,6 +21,10 @@ from src.core.utils.i18n_helpers import (
 from src.core.utils.time import datetime_now
 
 
+def _should_reset_traffic_on_purchase(duration: int) -> bool:
+    return duration == 0 or duration >= 7
+
+
 @dataclass(frozen=True)
 class ActivateTrialSubscriptionDto:
     user: UserDto
@@ -140,6 +144,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
         plan = transaction.plan_snapshot
         purchase_type = transaction.purchase_type
         has_trial = subscription.is_trial if subscription else False
+        reset_traffic = _should_reset_traffic_on_purchase(plan.duration)
 
         if not user or not plan:
             logger.error(f"{actor.log} User or plan not found for transaction '{transaction.id}'")
@@ -193,7 +198,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                         user=user,
                         uuid=subscription.user_remna_id,
                         subscription=subscription,
-                        reset_traffic=True,
+                        reset_traffic=reset_traffic,
                     )
 
                     subscription.plan_snapshot = plan
@@ -221,7 +226,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                         user=user,
                         uuid=subscription.user_remna_id,
                         plan=plan,
-                        reset_traffic=True,
+                        reset_traffic=reset_traffic,
                     )
 
                     new_sub = self._build_subscription_dto(updated_user, plan)
