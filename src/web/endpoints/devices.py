@@ -1035,6 +1035,9 @@ async def get_current_subscription_plan(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
+    get_available_plans: FromDishka[GetAvailablePlans],
+    match_plan: FromDishka[MatchPlan],
+    bot_service: FromDishka[BotService],
 ) -> dict:
     resolved_telegram_id = _resolve_telegram_id(auth, None)
     user = await user_dao.get_by_telegram_id(resolved_telegram_id)
@@ -1049,16 +1052,32 @@ async def get_current_subscription_plan(
             "data": {
                 "telegram_id": resolved_telegram_id,
                 "is_admin": user.is_privileged,
+                "renewal_url": None,
                 "current_plan": None,
                 "subscription": None,
             },
         }
+
+    renewal_url = None
+    if not current_subscription.is_unlimited:
+        plans = await get_available_plans.system(user)
+        renewable_plan = await match_plan.system(
+            MatchPlanDto(plan_snapshot=current_subscription.plan_snapshot, plans=plans)
+        )
+        duration_days = current_subscription.plan_snapshot.duration
+        if (
+            renewable_plan
+            and renewable_plan.id is not None
+            and renewable_plan.get_duration(duration_days)
+        ):
+            renewal_url = await bot_service.get_purchase_url(renewable_plan.id, duration_days)
 
     return {
         "success": True,
         "data": {
             "telegram_id": resolved_telegram_id,
             "is_admin": user.is_privileged,
+            "renewal_url": renewal_url,
             **_build_current_plan_data(current_subscription),
         },
     }
