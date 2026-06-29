@@ -1033,9 +1033,14 @@ async def get_available_purchase_plans(
 @inject
 async def get_current_subscription_plan(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
 ) -> dict:
     resolved_telegram_id = _resolve_telegram_id(auth, None)
+    user = await user_dao.get_by_telegram_id(resolved_telegram_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     current_subscription = await subscription_dao.get_current(resolved_telegram_id)
 
     if not current_subscription:
@@ -1043,6 +1048,7 @@ async def get_current_subscription_plan(
             "success": True,
             "data": {
                 "telegram_id": resolved_telegram_id,
+                "is_admin": user.is_privileged,
                 "current_plan": None,
                 "subscription": None,
             },
@@ -1052,6 +1058,7 @@ async def get_current_subscription_plan(
         "success": True,
         "data": {
             "telegram_id": resolved_telegram_id,
+            "is_admin": user.is_privileged,
             **_build_current_plan_data(current_subscription),
         },
     }
