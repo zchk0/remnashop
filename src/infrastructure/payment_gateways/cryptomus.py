@@ -51,11 +51,14 @@ class CryptomusGateway(BasePaymentGateway):
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(str(amount), str(uuid.uuid4()))
-        headers = {"sign": self._generate_signature(json.dumps(payload))}
+        body = json.dumps(payload)
+        headers = {"sign": self._generate_signature(body), "Content-Type": "application/json"}
         logger.debug(f"Creating payment payload: {payload}")
 
         try:
-            response = await self._client.post("v1/payment", json=payload, headers=headers)
+            response = await self._client.post(
+                "v1/payment", content=body.encode("utf-8"), headers=headers
+            )
             response.raise_for_status()
             data = orjson.loads(response.content).get("result", {})
             return self._get_payment_data(data)
@@ -80,12 +83,12 @@ class CryptomusGateway(BasePaymentGateway):
         if not self._verify_webhook(request, webhook_data):
             raise PermissionError("Webhook verification failed")
 
+        status = webhook_data.get("status")
         payment_id_str = webhook_data.get("order_id")
 
         if not payment_id_str:
             raise ValueError("Required field 'order_id' is missing")
 
-        status = webhook_data.get("status")
         payment_id = UUID(payment_id_str)
 
         match status:

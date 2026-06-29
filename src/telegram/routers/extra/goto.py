@@ -10,11 +10,21 @@ from loguru import logger
 
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao, SubscriptionDao
-from src.application.dto import PlanPriceDto, UserDto
+from src.application.dto import PlanPriceDto, TelegramUserDto
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
+from src.application.use_cases.promocode.queries.validate import (
+    ValidatePromocode,
+    ValidatePromocodeDto,
+)
 from src.application.use_cases.user.queries.plans import GetAvailablePlanByCode, GetAvailablePlans
-from src.core.constants import GOTO_PREFIX, PAYMENT_PREFIX, TARGET_TELEGRAM_ID
-from src.core.enums import Currency, Deeplink, PurchaseType
+from src.core.constants import GOTO_PREFIX, PAYMENT_PREFIX, TARGET_USER_ID
+from src.core.enums import Currency, Deeplink, PromocodeRewardType, PurchaseType
+from src.core.exceptions import (
+    PromocodeAlreadyActivatedError,
+    PromocodeExpiredError,
+    PromocodeNotAvailableError,
+    PromocodeNotFoundError,
+)
 from src.telegram.states import DashboardUser, MainMenu, Subscription, state_from_string
 
 router = Router(name=__name__)
@@ -34,7 +44,9 @@ def _has_gateway_price(duration_prices: list[PlanPriceDto], gateway_currency: Cu
 
 
 @router.callback_query(F.data.startswith(GOTO_PREFIX))
-async def on_goto(callback: CallbackQuery, dialog_manager: DialogManager, user: UserDto) -> None:
+async def on_goto(
+    callback: CallbackQuery, dialog_manager: DialogManager, user: TelegramUserDto
+) -> None:
     logger.info(f"{user.log} Try go to '{callback.data}'")
     data = callback.data.removeprefix(GOTO_PREFIX)  # type: ignore[union-attr]
 
@@ -63,20 +75,22 @@ async def on_goto(callback: CallbackQuery, dialog_manager: DialogManager, user: 
         parts = data.split(":")
 
         try:
-            target_telegram_id = int(parts[2])
+            target_user_id = int(parts[2])
         except ValueError:
-            logger.warning(f"{user.log} Invalid target_telegram_id in callback: {parts[2]}")
+            logger.warning(f"{user.log} Invalid target_user_id in callback: {parts[2]}")
+            await callback.answer()
+            return
 
         await dialog_manager.bg(
             user_id=user.telegram_id,
             chat_id=user.telegram_id,
         ).start(
             state=DashboardUser.MAIN,
-            data={TARGET_TELEGRAM_ID: target_telegram_id},
+            data={TARGET_USER_ID: target_user_id},
             mode=StartMode.RESET_STACK,
             show_mode=ShowMode.DELETE_AND_SEND,
         )
-        logger.debug(f"{user.log} Redirected to user '{target_telegram_id}'")
+        logger.debug(f"{user.log} Redirected to user '{target_user_id}'")
         await callback.answer()
         return
 
@@ -101,7 +115,7 @@ async def on_goto_buy(
     message: Message,
     command: CommandObject,
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     get_available_plans: FromDishka[GetAvailablePlans],
     subscription_dao: FromDishka[SubscriptionDao],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
@@ -129,8 +143,7 @@ async def on_goto_buy(
 
     if not duration:
         logger.warning(
-            f"{user.log} ToBeVPN buy duration '{duration_days}' not found "
-            f"for plan '{plan_id}'"
+            f"{user.log} ToBeVPN buy duration '{duration_days}' not found for plan '{plan_id}'"
         )
         await notifier.notify_user(user=user, i18n_key="ntf-common.plan-not-found")
         return
@@ -148,7 +161,7 @@ async def on_goto_buy(
         await notifier.notify_user(user=user, i18n_key="ntf-subscription.gateways-unavailable")
         return
 
-    current_subscription = await subscription_dao.get_current(user.telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
     purchase_type = PurchaseType.NEW
 
     if current_subscription:
@@ -160,10 +173,7 @@ async def on_goto_buy(
         else:
             purchase_type = PurchaseType.CHANGE
 
-    logger.info(
-        f"{user.log} Redirected to ToBeVPN buy plan '{plan_id}' "
-        f"for '{duration_days}' days"
-    )
+    logger.info(f"{user.log} Redirected to ToBeVPN buy plan '{plan_id}' for '{duration_days}' days")
 
     await dialog_manager.bg(
         user_id=user.telegram_id,
@@ -188,7 +198,7 @@ async def on_goto_plan(
     message: Message,
     command: CommandObject,
     dialog_manager: DialogManager,
-    user: UserDto,
+    user: TelegramUserDto,
     get_available_plan_by_code: FromDishka[GetAvailablePlanByCode],
     notifier: FromDishka[Notifier],
 ) -> None:
@@ -220,7 +230,7 @@ async def on_goto_plan(
 async def on_goto_invite(
     message: Message,
     command: CommandObject,
-    user: UserDto,
+    user: TelegramUserDto,
     dialog_manager: DialogManager,
 ) -> None:
     if command.args == Deeplink.INVITE:
@@ -230,3 +240,71 @@ async def on_goto_invite(
             mode=StartMode.RESET_STACK,
             show_mode=ShowMode.DELETE_AND_SEND,
         )
+
+
+@inject
+@router.message(
+    CommandStart(deep_link=True, ignore_case=True),
+    F.text.contains(Deeplink.PROMOCODE),
+)
+async def on_goto_promocode(
+    message: Message,
+    command: CommandObject,
+    dialog_manager: DialogManager,
+    user: TelegramUserDto,
+    validate_promocode: FromDishka[ValidatePromocode],
+    subscription_dao: FromDishka[SubscriptionDao],
+    notifier: FromDishka[Notifier],
+) -> None:
+    args = command.args or ""
+    prefix = Deeplink.PROMOCODE.with_underscore
+    code = args.removeprefix(prefix).strip().upper() if args.startswith(prefix) else ""
+
+    if not code:
+        # Bare `promo` deeplink: open the manual-input dialog.
+        logger.info(f"{user.log} Deeplink promocode without code, opening input")
+        await dialog_manager.bg(
+            user_id=user.telegram_id,
+            chat_id=user.telegram_id,
+        ).start(
+            state=Subscription.PROMOCODE,
+            mode=StartMode.RESET_STACK,
+            show_mode=ShowMode.DELETE_AND_SEND,
+        )
+        return
+
+    try:
+        promo = await validate_promocode(user, ValidatePromocodeDto(code=code, user=user))
+    except PromocodeAlreadyActivatedError:
+        await notifier.notify_user(user=user, i18n_key="ntf-promocode.already-activated")
+        return
+    except PromocodeExpiredError:
+        await notifier.notify_user(user=user, i18n_key="ntf-promocode.expired")
+        return
+    except (PromocodeNotFoundError, PromocodeNotAvailableError):
+        await notifier.notify_user(user=user, i18n_key="ntf-promocode.not-found")
+        return
+
+    will_replace = False
+    if promo.reward_type == PromocodeRewardType.SUBSCRIPTION:
+        current = await subscription_dao.get_current(user.id)
+        will_replace = current is not None
+
+    logger.info(f"{user.log} Deeplink promocode '{code}' validated, redirecting")
+
+    await dialog_manager.bg(
+        user_id=user.telegram_id,
+        chat_id=user.telegram_id,
+    ).start(
+        state=Subscription.PROMOCODE,
+        data={
+            "prefill_dto": {
+                "code": promo.code,
+                "reward_type": promo.reward_type.value,
+                "reward": promo.reward,
+            },
+            "prefill_replace": will_replace,
+        },
+        mode=StartMode.RESET_STACK,
+        show_mode=ShowMode.DELETE_AND_SEND,
+    )

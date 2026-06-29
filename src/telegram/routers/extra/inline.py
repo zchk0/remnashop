@@ -15,9 +15,8 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import TranslatorRunner
+from src.application.common import BotService, TranslatorRunner
 from src.application.common.dao import UserDao
-from src.application.services import BotService
 from src.core.config import AppConfig
 from src.core.constants import API_V1, BANNERS_PATH, INLINE_QUERY_INVITE
 from src.core.enums import BannerName, Locale
@@ -33,6 +32,7 @@ def get_public_banner_url(config: AppConfig, user_language: Locale) -> str | Non
     try:
         banner_path, _ = get_banner(
             banners_dir=config.banners_dir,
+            default_banners_dir=config.default_banners_dir,
             name=BannerName.MENU,
             locale=user_language,
             default_locale=config.default_locale,

@@ -42,6 +42,8 @@ def _is_auth_token(args: str) -> bool:
         Deeplink.REFERRAL.value,
         Deeplink.PLAN.value,
         Deeplink.INVITE.value,
+        Deeplink.ADVERTISING.value,
+        Deeplink.PROMOCODE.value,
     )
     return bool(args) and not any(args.startswith(p) for p in known_prefixes)
 
@@ -77,9 +79,10 @@ async def _transfer_anon_subscription_and_delete(
     except Exception as e:
         logger.warning(f"Failed to fetch anon user '{anon_uuid}': {e}")
 
-    comment_device_id = extract_device_id_from_description(
-        anon_user.description if anon_user else None
-    ) or device_id
+    comment_device_id = (
+        extract_device_id_from_description(anon_user.description if anon_user else None)
+        or device_id
+    )
 
     try:
         await _update_panel_user_device_comment(
@@ -134,9 +137,11 @@ async def _apply_anon_traffic_to_trial_limit(
     ~F.text.contains(Deeplink.PLAN),
     ~F.text.contains(Deeplink.INVITE),
     ~F.text.contains(Deeplink.REFERRAL),
+    ~F.text.contains(Deeplink.ADVERTISING),
+    ~F.text.contains(Deeplink.PROMOCODE),
     ~F.text.contains(Deeplink.BUY.with_underscore),
 )
-async def on_device_auth(
+async def on_device_auth(  # noqa: C901
     message: Message,
     command: CommandObject,
     user: UserDto,

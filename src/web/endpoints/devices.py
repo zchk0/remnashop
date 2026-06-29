@@ -23,7 +23,7 @@ from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
 from remnapy.models.hwid import HwidDeviceDto
 
-from src.application.common import Cryptographer, Notifier, Remnawave
+from src.application.common import BotService, Cryptographer, Notifier, Remnawave
 from src.application.common.dao import (
     AuthTokenDao,
     DeviceSessionDao,
@@ -50,7 +50,7 @@ from src.application.dto.device import (
     LinkedDeviceDto,
     TvPairingCodeDto,
 )
-from src.application.services import BotService, PricingService
+from src.application.services import PricingService
 from src.application.services.device_binding import bind_linked_device
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
@@ -115,7 +115,8 @@ def _build_session_response(
         "panel_user_uuid": linked_device.panel_user_uuid if linked_device else None,
         "short_uuid": linked_device.short_uuid if linked_device else None,
         "is_linked": bool(
-            linked_device and (linked_device.telegram_id is not None or linked_device.panel_user_uuid)
+            linked_device
+            and (linked_device.telegram_id is not None or linked_device.panel_user_uuid)
         ),
     }
 
@@ -290,9 +291,7 @@ async def _get_anonymous_trial_plan(plan_dao: PlanDao) -> Optional[PlanDto]:
 
     eligible_plans.sort(key=lambda item: (-item[0], item[1]))
     plan = eligible_plans[0][2]
-    logger.info(
-        f"Selected ToBeVPN trial plan '{plan.id}' with availability '{plan.availability}'"
-    )
+    logger.info(f"Selected ToBeVPN trial plan '{plan.id}' with availability '{plan.availability}'")
     return plan
 
 
@@ -536,8 +535,7 @@ def _build_panel_user_data(
         "traffic_limit_bytes": traffic_limit_bytes
         if traffic_limit_bytes is not None
         else user.traffic_limit_bytes or 0,
-        "traffic_used_bytes": int(user.used_traffic_bytes or 0)
-        + extra_traffic_used_bytes,
+        "traffic_used_bytes": int(user.used_traffic_bytes or 0) + extra_traffic_used_bytes,
         "anon_traffic_bytes": anon_traffic_bytes,
         "max_devices": user.hwid_device_limit or 0,
         "is_anonymous": is_anonymous,
@@ -633,6 +631,7 @@ def _get_panel_user_telegram_id(panel_user: UserResponseDto) -> Optional[int]:
 
 async def _sync_subscription_from_panel_user(
     panel_user: UserResponseDto,
+    user_dao: UserDao,
     subscription_dao: SubscriptionDao,
     remnawave: Remnawave,
 ) -> tuple[Optional[SubscriptionDto], bool]:
@@ -640,7 +639,12 @@ async def _sync_subscription_from_panel_user(
     if telegram_id is None:
         return None, False
 
-    subscription = await subscription_dao.get_current(telegram_id)
+    user = await user_dao.get_by_telegram_id(telegram_id)
+    if user is None:
+        logger.warning(f"Local user for telegram '{telegram_id}' not found during sync")
+        return None, False
+
+    subscription = await subscription_dao.get_current(user.id)
     if subscription is None:
         logger.warning(
             f"Current local subscription for telegram '{telegram_id}' not found during sync"
@@ -905,6 +909,7 @@ async def unlink_device(
         subscription_url = revoked_user.subscription_url
         updated_subscription, subscription_changed = await _sync_subscription_from_panel_user(
             revoked_user,
+            user_dao,
             subscription_dao,
             remnawave,
         )
@@ -998,7 +1003,7 @@ async def get_available_purchase_plans(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     plans = await get_available_plans.system(user)
-    current_subscription = await subscription_dao.get_current(resolved_telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
     gateways = await payment_gateway_dao.get_active()
     renewable_plan_id = None
 
@@ -1044,7 +1049,7 @@ async def get_current_subscription_plan(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    current_subscription = await subscription_dao.get_current(resolved_telegram_id)
+    current_subscription = await subscription_dao.get_current(user.id)
 
     if not current_subscription:
         return {
@@ -1281,6 +1286,7 @@ async def reset_panel_subscription(
     short_uuid: str,
     remnawave: FromDishka[Remnawave],
     remnawave_sdk: FromDishka[RemnawaveSDK],
+    user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
     device_dao: FromDishka[LinkedDeviceDao],
     uow: FromDishka[UnitOfWork],
@@ -1300,6 +1306,7 @@ async def reset_panel_subscription(
 
     updated_subscription, subscription_changed = await _sync_subscription_from_panel_user(
         revoked_user,
+        user_dao,
         subscription_dao,
         remnawave,
     )
@@ -1432,7 +1439,7 @@ async def logout_device_session(
 
 @router.post("/device/ensure-user")
 @inject
-async def ensure_user(
+async def ensure_user(  # noqa: C901
     request: EnsureUserRequest,
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     config: FromDishka[AppConfig],

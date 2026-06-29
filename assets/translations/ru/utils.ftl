@@ -25,16 +25,28 @@ msg-device-auth-success =
     tobevpn.meowbot.ru
 
 development-promocode = Промокоды еще не реализованы, для мотивации и ускорения разработки можете закинуть монет.
+raw-message = { $content }
 
 payment-invoice-description = { purchase-type } подписки { $name } на { $duration }
+
+ad-link-default-name = Новая ссылка
+plan-default-name = Новый план
+
+platform-icon =
+    .ios = 🍎
+    .android = 🤖
+    .windows = 🖥️
+    .macos = 💻
+    .linux = 🐧
+    .default = 📱
 
 inline-invite =
     .title = Пригласить друга
     .description = Нажмите, чтобы отправить пригласительную ссылку!
     .message =
         Привет! Хочешь стабильный и быстрый VPN?
-        
-        { $bot_name } - поможет тебе с этим!
+
+        { $bot_name } — поможет тебе с этим!
 
         ↘️ ЖМИ КНОПКУ И ПОПРОБУЙ БЕСПЛАТНО!
     .start = 🚀 Присоединиться
@@ -53,26 +65,29 @@ command =
     .rules = Условия использования
     .help = Помощь
 
-hdr-user = <b>👤 Пользователь:</b>
-hdr-user-profile = <b>👤 Профиль:</b>
-hdr-payment = <b>💰 Платеж:</b>
-hdr-error = <b>⚠️ Ошибка:</b>
-hdr-node = <b>🖥 Нода:</b>
-hdr-hwid = <b>📱 Устройство:</b>
+hdr-user = <b>👤 Пользователь</b>:
+hdr-user-profile = <b>👤 Профиль</b>:
+hdr-payment = <b>💰 Платеж</b>:
+hdr-error = <b>⚠️ Ошибка</b>:
+hdr-node = <b>🖥 Нода</b>:
+hdr-hwid = <b>📱 Устройство</b>:
 
 hdr-subscription = { $is_trial ->
-    [1] <b>🎁 Пробная подписка:</b>
-    *[0] <b>💳 Подписка:</b>
+    [1] <b>🎁 Пробная подписка</b>:
+    *[0] <b>💳 Подписка</b>:
 }
 
 hdr-plan = { $is_trial_plan ->
-    [1] <b>🎁 Пробный план:</b>
-    *[0] <b>📦 План:</b>
+    [1] <b>🎁 Пробный план</b>:
+    *[0] <b>📦 План</b>:
 }
 
 frg-user =
     <blockquote>
-    • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+    { $telegram_id ->
+        [0] • <b>Почта</b>: <code>{ $email }</code>
+        *[HAS] • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+    }
     • <b>Имя</b>: { $name }
     { $show_personal_discount ->
     [1] • <b>Персональная скидка</b>: { $personal_discount }%
@@ -86,8 +101,11 @@ frg-user =
 
 frg-user-info =
     <blockquote>
-    • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code> 
-    • <b>Имя</b>: { $name } { $username -> 
+    { $telegram_id ->
+        [0] • <b>Почта</b>: <code>{ $email }</code>
+        *[HAS] • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+    }
+    • <b>Имя</b>: { $name } { $username ->
         [0] { empty }
         *[HAS] (<a href="tg://user?id={ $telegram_id }">@{ $username }</a>)
     }
@@ -95,8 +113,11 @@ frg-user-info =
 
 frg-user-details =
     <blockquote>
-    • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
-    • <b>Имя</b>: { $name } { $username -> 
+    { $telegram_id ->
+        [0] • <b>Почта</b>: <code>{ $email }</code>
+        *[HAS] • <b>ID</b>: <code>{ NUMBER($telegram_id, useGrouping: 0) }</code>
+    }
+    • <b>Имя</b>: { $name } { $username ->
         [0] { space }
         *[HAS] (<a href="tg://user?id={ $telegram_id }">@{ $username }</a>)
     }
@@ -112,12 +133,6 @@ frg-user-details =
     }
     </blockquote>
 
-frg-user-discounts-details =
-    <blockquote>
-    • <b>Персональная</b>: { $personal_discount }%
-    • <b>На следующую покупку</b>: { $purchase_discount }%
-    </blockquote>
-
 frg-subscription =
     <blockquote>
     • <b>Лимит трафика</b>: { $traffic_limit }
@@ -129,6 +144,14 @@ frg-subscription =
     <b>URL</b>: <code>{ $subscription_url }</code>
     *[0] { empty }
     }
+    </blockquote>
+
+frg-subscription-user-editor =
+    <blockquote>
+    • <b>План</b>: { $plan_name }
+    • <b>Лимит трафика</b>: { $traffic_limit }
+    • <b>Лимит устройств</b>: { $device_limit }
+    • <b>Осталось</b>: { $expire_time }
     </blockquote>
 
 frg-subscription-details =
@@ -147,7 +170,7 @@ frg-payment-info =
     • <b>Сумма</b>: { frg-payment-amount }
     </blockquote>
 
-frg-payment-amount = { $final_amount }{ $currency } { $discount_percent -> 
+frg-payment-amount = { $final_amount }{ $currency } { $discount_percent ->
     [0] { space }
     *[more] { space } <strike>{ $original_amount }{ $currency }</strike> (-{ $discount_percent }%)
     }
@@ -155,7 +178,7 @@ frg-payment-amount = { $final_amount }{ $currency } { $discount_percent ->
 frg-plan-snapshot =
     <blockquote>
     • <b>План</b>: <code>{ $plan_name }</code>
-    • <b>Тип</b>: { plan-type } 
+    • <b>Тип</b>: { plan-type }
     • <b>Лимит трафика</b>: { $plan_traffic_limit }
     • <b>Лимит устройств</b>: { $plan_device_limit }
     • <b>Длительность</b>: { $plan_duration }
@@ -175,14 +198,14 @@ frg-node-info =
     • <b>Название</b>: { $country } { $name }
     • <b>Адрес</b>: <code>{ $address }{ $port ->
     [0] { space }
-    *[HAS] :{ $port }</code>
-    }
+    *[HAS] :{ $port }
+    }</code>
     • <b>Трафик</b>: { $traffic_used } / { $traffic_limit }
-    { $last_status_message -> 
+    { $last_status_message ->
     [0] { empty }
     *[HAS] • <b>Последний статус</b>: { $last_status_message }
     }
-    { $last_status_change -> 
+    { $last_status_change ->
     [0] { empty }
     *[HAS] • <b>Статус изменен</b>: { $last_status_change }
     }
@@ -213,7 +236,7 @@ frg-build-info =
     { $has_build ->
     [0] { space }
     *[HAS]
-    <b>🏗️ Информация о сборке:</b>
+    <b>🏗️ Информация о сборке</b>:
     <blockquote>
     Время сборки: { $time }
     Ветка: { $branch } ({ $tag })
@@ -221,12 +244,35 @@ frg-build-info =
     </blockquote>
     }
 
+frg-promocode-reward = { $promocode_type ->
+    [DURATION] { $reward ->
+        [0] { unlimited } дней
+        [one] { $reward } день
+        [few] { $reward } дня
+        *[more] { $reward } дней
+        } к текущей подписке
+    [TRAFFIC] { $reward ->
+        [0] { unlimited } ГБ
+        *[OTHER] { $reward } ГБ
+        } к текущей подписке
+    [DEVICES] { $reward ->
+        [0] { unlimited } устройств
+        [one] { $reward } устройство
+        [few] { $reward } устройства
+        *[more] { $reward } устройств
+        } к текущей подписке
+    [SUBSCRIPTION] подписка { $plan_name }
+    [PERSONAL_DISCOUNT] { $reward }% к персональной скидке
+    [PURCHASE_DISCOUNT] { $reward }% к скидке на следующую покупку
+    *[OTHER] { $reward }
+    }
+
 role-owner = Владелец
 role-dev = Разработчик
 role-admin = Администратор
 role-preview = Наблюдатель
 role-user = Пользователь
-role = 
+role =
     { $role ->
     [5] { role-owner }
     [4] { role-dev }
@@ -239,17 +285,17 @@ unlimited = ∞
 
 unit-unlimited = { $value ->
     [0] { unlimited }
-    *[other] { $value }
+    *[OTHER] { $value }
 }
 
-unit-device = { $value -> 
+unit-device = { $value ->
     [0] { unlimited }
-    *[other] { $value } 
+    *[OTHER] { $value }
 } { $value ->
     [0] { space }
     [one] устройство
     [few] устройства
-    *[other] устройств
+    *[OTHER] устройств
 }
 
 unit-byte = { $value } Б
@@ -261,41 +307,41 @@ unit-terabyte = { $value } ТБ
 unit-second = { $value } { $value ->
     [one] секунда
     [few] секунды
-    *[other] секунд
+    *[OTHER] секунд
 }
 
 unit-minute = { $value } { $value ->
     [one] минута
     [few] минуты
-    *[other] минут
+    *[OTHER] минут
 }
 
 unit-hour = { $value } { $value ->
     [one] час
     [few] часа
-    *[other] часов
+    *[OTHER] часов
 }
 
 unit-day = { $value } { $value ->
     [one] день
     [few] дня
-    *[other] дней
+    *[OTHER] дней
 }
 
 unit-month = { $value } { $value ->
     [one] месяц
     [few] месяца
-    *[other] месяцев
+    *[OTHER] месяцев
 }
 
 unit-year = { $value } { $value ->
     [one] год
     [few] года
-    *[other] лет
+    *[OTHER] лет
 }
 
 
-plan-type = { $plan_type -> 
+plan-type = { $plan_type ->
     [TRAFFIC] Трафик
     [DEVICES] Устройства
     [BOTH] Трафик + устройства
@@ -303,7 +349,7 @@ plan-type = { $plan_type ->
     *[OTHER] { $plan_type }
 }
 
-promocode-type = { $promocode_type -> 
+promocode-type = { $promocode_type ->
     [DURATION] Длительность
     [TRAFFIC] Трафик
     [DEVICES] Устройства
@@ -313,7 +359,7 @@ promocode-type = { $promocode_type ->
     *[OTHER] { $promocode_type }
 }
 
-availability-type = { $availability_type -> 
+availability-type = { $availability_type ->
     [ALL] Для всех
     [NEW] Для новых
     [EXISTING] Для существующих
@@ -324,7 +370,7 @@ availability-type = { $availability_type ->
 }
 
 gateway-type = { $gateway_type ->
-    [TELEGRAM_STARS] Telegram Stars 
+    [TELEGRAM_STARS] Telegram Stars
     [YOOKASSA] ЮKassa
     [YOOMONEY] ЮMoney
     [CRYPTOMUS] Криптовалюта (Cryptomus)
@@ -337,6 +383,7 @@ gateway-type = { $gateway_type ->
     [ROBOKASSA] RoboKassa
     [URLPAY] UrlPay
     [WATA] WATA
+    [VALUTIX] Valutix
     *[OTHER] { $gateway_type }
 }
 
@@ -391,7 +438,7 @@ purchase-type = { $purchase_type ->
     *[OTHER] { $purchase_type }
 }
 
-traffic-strategy = { $strategy_type -> 
+traffic-strategy = { $strategy_type ->
     [NO_RESET] При оплате
     [DAY] Каждый день
     [WEEK] Каждую неделю
@@ -400,19 +447,19 @@ traffic-strategy = { $strategy_type ->
     *[OTHER] { $strategy_type }
     }
 
-reward-type = { $reward_type -> 
+reward-type = { $reward_type ->
     [POINTS] Баллы
     [EXTRA_DAYS] Дни
     *[OTHER] { $reward_type }
     }
 
-accrual-strategy = { $accrual_strategy_type -> 
+accrual-strategy = { $accrual_strategy_type ->
     [ON_FIRST_PAYMENT] Первый платеж
     [ON_EACH_PAYMENT] Каждый платеж
     *[OTHER] { $accrual_strategy_type }
     }
 
-reward-strategy = { $reward_strategy_type -> 
+reward-strategy = { $reward_strategy_type ->
     [AMOUNT] Фиксированная
     [PERCENT] Процентная
     *[OTHER] { $reward_strategy_type }
@@ -422,8 +469,38 @@ button-type = { $button_type ->
     [URL] Открыть ссылку
     [COPY] Скопировать текст
     [WEB_APP] Открыть веб-приложение
+    [TEXT] Отправить сообщение
     *[OTHER] { $button_type }
 }
+
+notification-type = { $notification_type ->
+    [SYSTEM] Система
+    [EXPIRES_IN_3_DAYS] Подписка истекает (3 дня)
+    [EXPIRES_IN_2_DAYS] Подписка истекает (2 дня)
+    [EXPIRES_IN_1_DAY] Подписка истекает (1 день)
+    [EXPIRED] Подписка истекла
+    [EXPIRED_1_DAY_AGO] Подписка истекла (1 день)
+    [LIMITED] Трафик исчерпан
+    [REFERRAL_ATTACHED] Реферал закреплен
+    [REFERRAL_REWARD_RECEIVED] Вознаграждение за реферала
+    [REFERRAL_REWARD_FAILED] Ошибка начисления вознаграждения
+    [BOT_LIFECYCLE] Жизненный цикл бота
+    [BOT_UPDATE] Обновления бота
+    [USER_REGISTERED] Регистрация пользователя
+    [SUBSCRIPTION] Оформление подписки
+    [PROMOCODE_ACTIVATED] Активация промокода
+    [TRIAL_ACTIVATED] Активация пробника
+    [NODE_STATUS_CHANGED] Статус узла
+    [NODE_TRAFFIC_REACHED] Трафик узла
+    [TORRENT_BLOCKER] Обнаружение Torrent
+    [USER_FIRST_CONNECTION] Первое подключение
+    [USER_DEVICES_UPDATED] Устройства пользователя
+    [USER_REVOKED_SUBSCRIPTION] Сброс подписки
+    [NOT_CONNECTED] Нет подключения
+    [TORRENT_BLOCKED] Ограничение Torrent
+    [BLACKLIST_ATTEMPT] Регистрация пользователя (из ЧС)
+    *[OTHER] { $notification_type }
+    }
 
 language = { $language ->
     [ar] Арабский

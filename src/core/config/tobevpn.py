@@ -18,5 +18,7 @@ class ToBeVpnConfig(BaseConfig, env_prefix="TOBEVPN_"):
     @classmethod
     def validate_anonymous_trial_traffic_gb(cls, field: int) -> int:
         if field < 0:
-            raise ValueError("TOBEVPN_ANONYMOUS_TRIAL_TRAFFIC_GB must be greater than or equal to 0")
+            raise ValueError(
+                "TOBEVPN_ANONYMOUS_TRIAL_TRAFFIC_GB must be greater than or equal to 0"
+            )
         return field

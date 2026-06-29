@@ -1,9 +1,10 @@
 import html
 import re
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import quote
 
 from aiogram import Bot
+from aiogram.utils.chat_member import ChatMemberUnion
 
 from src.core.config import AppConfig
 from src.core.constants import T_ME
@@ -88,3 +89,10 @@ class BotService:
 
         separator = "&" if "?" in base_url else "?"
         return f"{base_url}{separator}text={encoded_text}"
+
+    async def get_ad_link_url(self, code: str) -> str:
+        base_url = await self._get_bot_redirect_url()
+        return Deeplink.ADVERTISING.build_url(base_url, code)
+
+    async def get_chat_member(self, chat_id: Union[str, int], user_id: int) -> ChatMemberUnion:
+        return await self.bot.get_chat_member(chat_id=chat_id, user_id=user_id)

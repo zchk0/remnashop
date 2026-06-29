@@ -34,6 +34,7 @@ async def banner(
     try:
         banner_path, _ = get_banner(
             banners_dir=config.banners_dir,
+            default_banners_dir=config.default_banners_dir,
             name=banner_name,
             locale=user_locale,
             default_locale=config.default_locale,

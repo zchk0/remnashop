@@ -130,8 +130,7 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
             update(LinkedDevice)
             .where(LinkedDevice.device_id == device_id)
             .values(
-                anon_traffic_bytes=func.coalesce(LinkedDevice.anon_traffic_bytes, 0)
-                + traffic_bytes
+                anon_traffic_bytes=func.coalesce(LinkedDevice.anon_traffic_bytes, 0) + traffic_bytes
             )
         )
         await self.session.execute(stmt)

@@ -5,8 +5,8 @@ event-error =
     <b>🔅 Событие: Произошла ошибка!</b>
 
     { frg-build-info }
-    
-    { $telegram_id -> 
+
+    { $telegram_id ->
     [0] { space }
     *[HAS]
     { hdr-user }
@@ -28,7 +28,7 @@ event-error =
     </blockquote>
 
     { frg-build-info }
-    
+
     .remnawave =
     #RemnawaveErrorEvent
 
@@ -55,6 +55,35 @@ event-error =
     { $error }
     </blockquote>
 
+    .channel-check =
+    #ChannelCheckErrorEvent
+
+    <b>⚠️ Событие: Ошибка проверки подписки на канал/группу!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <blockquote>
+    • <b>Причина</b>: <code>{ $reason }</code>
+    </blockquote>
+
+    Проверьте, что бот является администратором канала/группы с правом просмотра участников.
+
+    .notification =
+    #NotificationErrorEvent
+
+    <b>⚠️ Событие: Ошибка доставки системного уведомления!</b>
+
+    <blockquote>
+    • <b>Маршрут</b>: { NUMBER($chat_id, useGrouping: 0) }{ $thread_id ->
+        [0] { space }
+        *[HAS] :{ NUMBER($thread_id, useGrouping: 0) }
+    }
+    • <b>Причина</b>: <code>{ $reason }</code>
+    </blockquote>
+
+    Проверьте маршрут уведомлений и убедитесь, что бот является участником группы с правами на отправку сообщений.
+
 
 event-bot =
     .startup =
@@ -64,7 +93,7 @@ event-bot =
 
     { frg-build-info }
 
-    <b>🔓 Доступность:</b>
+    <b>🔓 Доступность</b>:
     <blockquote>
     • <b>Режим</b>: { access-mode }
     • <b>Платежи</b>: { $payments_allowed ->
@@ -75,6 +104,17 @@ event-bot =
     [0] запрещена
     *[1] разрешена
     }
+    </blockquote>
+
+    .inline-mode-disabled =
+    #BotInlineModeDisabledEvent
+
+    <b>⚠️ Событие: Inline-режим отключен в BotFather!</b>
+
+    <blockquote>
+    Бот не настроен для работы в inline-режиме. Некоторые функции бота могут работать некорректно.
+
+    Включите Inline Mode в BotFather: <b>@BotFather → /mybots → Bot Settings → Inline Mode → Enable</b>
     </blockquote>
 
     .shutdown =
@@ -93,7 +133,7 @@ event-bot =
 
     <b>🔅 Событие: Обнаружено обновление Remnashop!</b>
 
-    <b>📑 Версии:</b>
+    <b>📑 Версии</b>:
     <blockquote>
     • <b>Текущая</b>: { $local_version }
     • <b>Последняя</b>: { $remote_version }
@@ -109,16 +149,29 @@ event-user =
     { hdr-user }
     { frg-user-info }
 
-    { $referrer_telegram_id ->
+    { $referrer_user_id ->
     [0] { empty }
     *[HAS]
-    <b>🤝 Пригласитель:</b>
+    <b>🤝 Пригласитель</b>:
     <blockquote>
-    • <b>ID</b>: <code>{ NUMBER($referrer_telegram_id, useGrouping: 0) }</code>
-    • <b>Имя</b>: { $referrer_name } { $referrer_username -> 
+    { $referrer_telegram_id ->
+        [0] • <b>Почта</b>: <code>{ $referrer_email }</code>
+        *[HAS] • <b>ID</b>: <code>{ NUMBER($referrer_telegram_id, useGrouping: 0) }</code>
+    }
+    • <b>Имя</b>: { $referrer_name } { $referrer_username ->
         [0] { empty }
         *[HAS] (<a href="tg://user?id={ $referrer_telegram_id }">@{ $referrer_username }</a>)
     }
+    </blockquote>
+    }
+
+    { $ad_link_id ->
+    [0] { empty }
+    *[HAS]
+    <b>🎯 Рекламная ссылка</b>:
+    <blockquote>
+    • <b>Название</b>: { $ad_link_name }
+    • <b>Код</b>: <code>{ $ad_link_code }</code>
     </blockquote>
     }
 
@@ -154,7 +207,17 @@ event-user =
 
     { hdr-hwid }
     { frg-user-hwid }
-    
+
+
+event-blacklist =
+    .registration-attempt =
+    #BlacklistRegistrationAttemptEvent
+
+    <b>🔅 Событие: Попытка регистрации из черного списка!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
 
 event-subscription =
     .trial =
@@ -164,10 +227,10 @@ event-subscription =
 
     { hdr-user }
     { frg-user-info }
-    
+
     { hdr-plan }
     { frg-plan-snapshot }
-    
+
     .new =
     #SubscriptionNewEvent
 
@@ -186,7 +249,7 @@ event-subscription =
     #SubscriptionRenewEvent
 
     <b>🔅 Событие: Продление подписки!</b>
-    
+
     { hdr-payment }
     { frg-payment-info }
 
@@ -214,12 +277,12 @@ event-subscription =
     { $is_trial ->
     [0]
     <b>⚠️ Внимание! Ваша подписка закончится через { unit-day }.</b>
-    
-    Продлите ее заранее, чтобы не терять доступ к сервису! 
+
+    Продлите ее заранее, чтобы не терять доступ к сервису!
     *[1]
     <b>⚠️ Внимание! Ваш бесплатный пробник закончится через { unit-day }.</b>
 
-    Оформите подписку, чтобы не терять доступ к сервису! 
+    Оформите подписку, чтобы не терять доступ к сервису!
     }
 
     .expired =
@@ -252,6 +315,11 @@ event-subscription =
         }
     }
 
+    .not-connected =
+    <b>🔌 Не получилось подключиться?</b>
+
+    Если у вас возникли сложности с настройкой VPN — мы готовы помочь! Напишите в поддержку, и мы разберемся вместе.
+
     .revoked =
     #SubscriptionRevokedEvent
 
@@ -267,7 +335,7 @@ event-subscription =
 event-node =
     .connection-lost =
     #NodeConnectionLostEvent
-    
+
     <b>🔅 Событие: Соединение с узлом потеряно!</b>
 
     { hdr-node }
@@ -276,7 +344,7 @@ event-node =
     .connection-restored =
     #NodeConnectionRestoredEvent
 
-    <b>🔅 Событие: Cоединение с узлом восстановлено!</b>
+    <b>🔅 Событие: Соединение с узлом восстановлено!</b>
 
     { hdr-node }
     { frg-node-info }
@@ -290,55 +358,135 @@ event-node =
     { frg-node-info }
 
 
+event-torrent-blocker =
+    .user-blocked =
+    <b>⛔ Доступ на сервере временно ограничен.</b>
+
+    На ноде <b>{ $node_name }</b> зафиксирован BitTorrent трафик.
+    Ограничение будет действовать еще <b>{ $block_duration }</b>.
+
+    Если нужна помощь с настройкой подключения, обратитесь в поддержку.
+
+    .report =
+    #TorrentBlockedEvent
+
+    <b>⚠️ Событие: Обнаружен BitTorrent трафик!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <blockquote>
+    • <b>Нода</b>: { $node_name }
+    • <b>IP</b>: <code>{ $blocked_ip }</code>
+    • <b>Длительность блока</b>: { $block_duration }
+    • <b>Разблокировка</b>: { $will_unblock_at }
+    • <b>Протокол</b>: <code>{ $protocol }</code>
+    • <b>Источник</b>: <code>{ $source }</code>
+    • <b>Назначение</b>: <code>{ $destination }</code>
+    </blockquote>
+
+
 event-referral =
     .attached =
     <b>🎉 Вы пригласили друга!</b>
-    
+
     <blockquote>
     Пользователь <b>{ $name }</b> присоединился по вашей пригласительной ссылке! Чтобы получить награду, убедитесь, что он совершит покупку подписки.
     </blockquote>
 
     .reward =
     <b>💰 Вам начислена награда!</b>
-    
+
     <blockquote>
-    Пользователь <b>{ $name }</b> совершил платеж. Вы получили <b>{ $value } { $reward_type ->
-    [POINTS] { $value -> 
+    Пользователь <b>{ $name }</b> совершил платеж. Вы получили { $reward_type ->
+    [POINTS] <b>{ $value } { $value ->
         [one] балл
         [few] балла
-        *[more] баллов 
-        }
+        *[more] баллов
+        }</b>
 
     <i>Для использования баллов перейдите в раздел "Пригласить" в боте, чтобы узнать о доступных наградах и способах их использования.</i>
-    [EXTRA_DAYS] доп. { $value -> 
+    [EXTRA_DAYS] <b>{ $value } доп. { $value ->
         [one] день
         [few] дня
         *[more] дней
-        } </b> к вашей подписке!
-    *[OTHER] { $reward_type }
+        }</b> к вашей подписке!
+    *[OTHER] <b>{ $value } { $reward_type }</b>
     }
     </blockquote>
 
     .reward-failed =
     <b>❌ Не получилось выдать награду!</b>
-    
+
     <blockquote>
-    Пользователь <b>{ $name }</b> совершил платеж, но мы не смогли начислить вам вознаграждение из-за того что <b>у вас нет купленной подписки</b>, к которой можно было бы добавить {$value} { $reward_type ->
-    [POINTS] { $value -> 
+    Пользователь <b>{ $name }</b> совершил платеж, но мы не смогли начислить вам вознаграждение из-за того что <b>у вас нет купленной подписки</b>, к которой можно было бы добавить { $value } { $reward_type ->
+    [POINTS] { $value ->
         [one] балл
         [few] балла
-        *[more] баллов 
+        *[more] баллов
         }
-    [EXTRA_DAYS] доп. { $value -> 
+    [EXTRA_DAYS] доп. { $value ->
         [one] день
         [few] дня
         *[more] дней
         }
     *[OTHER] { $reward_type }
     }.
-    
+
     <i>Купите подписку, чтобы получать бонусы за приглашенных друзей!</i>
     </blockquote>
+
+event-promocode =
+    .activated =
+    #PromocodeActivatedEvent
+
+    <b>🔅 Событие: Активация промокода!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <b>🎟 Промокод</b>:
+    <blockquote>
+    • <b>Код</b>: <code>{ $promocode_code }</code>
+    • <b>Тип</b>: { promocode-type }
+    • <b>Награда</b>: { frg-promocode-reward }
+    </blockquote>
+
+event-payment =
+    .refunded =
+    #PaymentRefundedEvent
+
+    <b>⚠️ Событие: Платеж возвращен!</b>
+
+    { hdr-payment }
+    { frg-payment-info }
+
+    { hdr-user }
+    { frg-user-info }
+
+    Требуется ручная проверка — подписка пользователя могла остаться активной.
+
+    .referral-failed =
+    <b>⚠️ Не удалось начислить реферальную награду</b>
+
+    { hdr-payment }
+    { frg-payment-info }
+
+    { hdr-user }
+    { frg-user-info }
+
+    Покупка завершена успешно, но при начислении реферальной награды произошла ошибка. Требуется ручная проверка.
+
+    .purchase-failed =
+    <b>⚠️ Событие: Ошибка обработки платежа!</b>
+
+    { hdr-payment }
+    { frg-payment-info }
+
+    { hdr-user }
+    { frg-user-info }
+
+    Платеж получен, но не удалось выдать подписку. Транзакция помечена как FAILED. Требуется ручная проверка.
 
 event-remnashop-welcome =
     <b>💎 Meow VPN (ToBeVPN) v{ $version }</b>

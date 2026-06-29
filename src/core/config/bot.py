@@ -3,7 +3,8 @@ from typing import Optional, Self, Union
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_core.core_schema import FieldValidationInfo
 
-from src.core.constants import API_V1, BOT_WEBHOOK_PATH, URL_PATTERN
+from src.core.constants import API_V1, BOT_WEBHOOK_PATH
+from src.core.utils.validators import is_valid_url
 
 from .base import BaseConfig
 from .validators import validate_not_change_me, validate_username
@@ -37,7 +38,7 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
     def mini_app_url(self) -> Union[bool, str]:
         if isinstance(self.mini_app, SecretStr):
             value = self.mini_app.get_secret_value().strip()
-            if value and URL_PATTERN.match(value):
+            if value and is_valid_url(value):
                 return value
         return False
 
@@ -94,7 +95,7 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
         if value.lower() == "change_me":
             raise ValueError("BOT_SUPPORT_URL must be set and not equal to 'change_me'")
 
-        if not URL_PATTERN.match(value):
+        if not is_valid_url(value):
             raise ValueError("BOT_SUPPORT_URL must be a valid HTTPS URL")
 
         return field
@@ -118,7 +119,7 @@ class BotConfig(BaseConfig, env_prefix="BOT_"):
                 return True
             if value.lower() == "false" or not value:
                 return False
-            if URL_PATTERN.match(value):
+            if is_valid_url(value):
                 return SecretStr(value)
             raise ValueError("BOT_MINI_APP must be empty, True, False or a valid URL")
         return field

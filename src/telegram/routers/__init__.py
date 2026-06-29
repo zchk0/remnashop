@@ -12,6 +12,7 @@ def setup_routers(router: Router) -> None:
         extra.commands.router,
         extra.member.router,
         extra.device_auth.router,
+        extra.channel_member.router,
         extra.goto.router,
         extra.inline.router,
         #
@@ -24,6 +25,7 @@ def setup_routers(router: Router) -> None:
         dashboard.statistics.dialog.router,
         dashboard.access.dialog.router,
         dashboard.broadcast.dialog.router,
+        dashboard.promocodes.dialog.router,
         dashboard.remnawave.dialog.router,
         #
         dashboard.remnashop.dialog.router,
@@ -32,6 +34,9 @@ def setup_routers(router: Router) -> None:
         dashboard.remnashop.notifications.dialog.router,
         dashboard.remnashop.plans.dialog.router,
         dashboard.remnashop.menu_editor.dialog.router,
+        dashboard.remnashop.backup.dialog.router,
+        dashboard.remnashop.advertising.dialog.router,
+        dashboard.remnashop.extra.dialog.router,
         #
         dashboard.users.dialog.router,
         dashboard.users.user.dialog.router,

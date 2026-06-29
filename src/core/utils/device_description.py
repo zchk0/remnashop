@@ -1,6 +1,5 @@
 from typing import Optional
 
-
 DEVICE_ID_DESCRIPTION_KEY = "device_id"
 SAVED_ANON_TRAFFIC_FLAG_DESCRIPTION_KEY = "created_with_saved_anon_traffic"
 SAVED_ANON_TRAFFIC_BYTES_DESCRIPTION_KEY = "saved_anon_traffic_bytes"

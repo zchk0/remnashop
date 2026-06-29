@@ -1,7 +1,10 @@
+from .ad_link import AdLinkDaoImpl
 from .broadcast import BroadcastDaoImpl
 from .device import AuthTokenDaoImpl, DeviceSessionDaoImpl, LinkedDeviceDaoImpl, TvPairingDaoImpl
+from .oauth_provider import UserOAuthProviderDaoImpl
 from .payment_gateway import PaymentGatewayDaoImpl
 from .plan import PlanDaoImpl
+from .promocode import PromocodeDaoImpl
 from .referral import ReferralDaoImpl
 from .settings import SettingsDaoImpl
 from .subscription import SubscriptionDaoImpl
@@ -12,12 +15,15 @@ from .webhook import WebhookDaoImpl
 
 __all__ = [
     "AuthTokenDaoImpl",
-    "BroadcastDaoImpl",
     "DeviceSessionDaoImpl",
     "LinkedDeviceDaoImpl",
+    "AdLinkDaoImpl",
+    "BroadcastDaoImpl",
+    "UserOAuthProviderDaoImpl",
     "PaymentGatewayDaoImpl",
     "TvPairingDaoImpl",
     "PlanDaoImpl",
+    "PromocodeDaoImpl",
     "ReferralDaoImpl",
     "SettingsDaoImpl",
     "SubscriptionDaoImpl",

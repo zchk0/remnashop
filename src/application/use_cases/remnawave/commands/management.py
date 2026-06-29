@@ -1,67 +1,124 @@
 import asyncio
 from dataclasses import dataclass
+from datetime import timedelta
 from uuid import UUID
 
 from loguru import logger
-from remnapy import RemnawaveSDK
-from remnapy.models import DeleteUserAllHwidDeviceRequestDto
 
 from src.application.common import Interactor
-from src.application.common.dao import SubscriptionDao
-from src.application.common.policy import Permission
+from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
+from src.application.common.policy import Permission, PermissionPolicy
 from src.application.common.remnawave import Remnawave
 from src.application.common.uow import UnitOfWork
 from src.application.dto import RemnaSubscriptionDto, UserDto
+from src.core.exceptions import CooldownError, PermissionDeniedError
+from src.core.utils.time import datetime_now
 
 
 @dataclass(frozen=True)
 class DeleteUserDeviceDto:
-    telegram_id: int
+    user_id: int
     hwid: str
 
 
 class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
     required_permission = Permission.PUBLIC
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave: Remnawave):
+    def __init__(
+        self,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+        settings_dao: SettingsDao,
+        uow: UnitOfWork,
+    ) -> None:
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
+        self.settings_dao = settings_dao
+        self.uow = uow
 
     async def _execute(self, actor: UserDto, data: DeleteUserDeviceDto) -> bool:
-        current_subscription = await self.subscription_dao.get_current(data.telegram_id)
+        is_self = data.user_id == actor.id
+        if not is_self and not PermissionPolicy.has_permission(actor, Permission.USER_EDITOR):
+            logger.warning(
+                f"{actor.log} denied deleting device of foreign user '{data.user_id}' "
+                f"without USER_EDITOR"
+            )
+            raise PermissionDeniedError()
 
+        settings = await self.settings_dao.get()
+        extra = settings.extra.device_single_reset
+
+        if not extra.enabled:
+            raise ValueError("Single device reset is disabled")
+
+        current_subscription = await self.subscription_dao.get_current(data.user_id)
         if not current_subscription:
-            raise ValueError(f"Subscription for user '{data.telegram_id}' not found")
+            raise ValueError(f"Subscription for user_id '{data.user_id}' not found")
 
-        remaining_devices = await self.remnawave.delete_device(
-            current_subscription.user_remna_id,
-            data.hwid,
-        )
+        if extra.cooldown_hours > 0 and current_subscription.device_single_reset_at:
+            available_at = current_subscription.device_single_reset_at + timedelta(
+                hours=extra.cooldown_hours
+            )
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
 
-        logger.info(f"{actor.log} Deleted device '{data.hwid}' for user '{data.telegram_id}'")
+        async with self.uow:
+            remaining_devices = await self.remnawave.delete_device(
+                current_subscription.user_remna_id,
+                data.hwid,
+            )
+            await self.remnawave.drop_connections(current_subscription.user_remna_id)
+            current_subscription.device_single_reset_at = datetime_now()
+            await self.subscription_dao.update(current_subscription)
+            await self.uow.commit()
+
+        logger.info(f"{actor.log} Deleted device '{data.hwid}' for user_id '{data.user_id}'")
         return bool(remaining_devices)
 
 
 class DeleteUserAllDevices(Interactor[None, None]):
     required_permission = Permission.PUBLIC
 
-    def __init__(self, subscription_dao: SubscriptionDao, remnawave_sdk: RemnawaveSDK) -> None:
+    def __init__(
+        self,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+        settings_dao: SettingsDao,
+        uow: UnitOfWork,
+    ) -> None:
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
+        self.settings_dao = settings_dao
+        self.uow = uow
 
     async def _execute(self, actor: UserDto, data: None) -> None:
-        current_subscription = await self.subscription_dao.get_current(actor.telegram_id)
+        settings = await self.settings_dao.get()
+        extra = settings.extra.device_all_reset
 
+        if not extra.enabled:
+            raise ValueError("All devices reset is disabled")
+
+        current_subscription = await self.subscription_dao.get_current(actor.id)
         if not current_subscription:
             raise ValueError(
-                f"User '{actor.telegram_id}' has no active subscription or device limit unlimited"
+                f"User '{actor.remna_name}' has no active subscription or device limit unlimited"
             )
 
-        result = await self.remnawave_sdk.hwid.delete_all_hwid_user(
-            DeleteUserAllHwidDeviceRequestDto(user_uuid=current_subscription.user_remna_id)
-        )
+        if extra.cooldown_hours > 0 and current_subscription.device_all_reset_at:
+            available_at = current_subscription.device_all_reset_at + timedelta(
+                hours=extra.cooldown_hours
+            )
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
 
-        logger.info(f"{actor.log} Deleted all devices ({result.total})")
+        async with self.uow:
+            await self.remnawave.delete_all_devices(current_subscription.user_remna_id)
+            await self.remnawave.drop_connections(current_subscription.user_remna_id)
+            current_subscription.device_all_reset_at = datetime_now()
+            await self.subscription_dao.update(current_subscription)
+            await self.uow.commit()
+
+        logger.info(f"{actor.log} Deleted all devices and dropped connections")
 
 
 class ResetUserTraffic(Interactor[int, None]):
@@ -69,90 +126,154 @@ class ResetUserTraffic(Interactor[int, None]):
 
     def __init__(
         self,
+        user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
-    ):
+        remnawave: Remnawave,
+    ) -> None:
+        self.user_dao = user_dao
         self.subscription_dao = subscription_dao
-        self.remnawave_sdk = remnawave_sdk
+        self.remnawave = remnawave
 
-    async def _execute(self, actor: UserDto, telegram_id: int) -> None:
-        subscription = await self.subscription_dao.get_current(telegram_id)
+    async def _execute(self, actor: UserDto, user_id: int) -> None:
+        target_user = await self.user_dao.get_by_id(user_id)
+        if not target_user:
+            raise ValueError(f"User '{user_id}' not found")
+
+        subscription = await self.subscription_dao.get_current(target_user.id)
         if not subscription:
-            raise ValueError(f"Subscription for user '{telegram_id}' not found")
+            raise ValueError(f"Subscription for user '{target_user.remna_name}' not found")
 
         try:
-            await self.remnawave_sdk.users.reset_user_traffic(subscription.user_remna_id)
+            await self.remnawave.reset_traffic(subscription.user_remna_id)
         except Exception as e:
-            logger.error(f"Failed to reset traffic in Remnawave for user '{telegram_id}': {e}")
+            logger.error(
+                f"Failed to reset traffic in Remnawave for user '{target_user.remna_name}': {e}"
+            )
             raise
 
-        logger.info(f"{actor.log} Reset traffic for user '{telegram_id}'")
+        logger.info(f"{actor.log} Reset traffic for user '{target_user.id}'")
+
+
+async def _fetch_reissued_subscription(
+    remnawave: Remnawave,
+    user_remna_id: UUID,
+    previous_url: str,
+    attempts: int = 5,
+    delay_seconds: int = 1,
+) -> RemnaSubscriptionDto | None:
+    for attempt in range(1, attempts + 1):
+        remna_user = await remnawave.get_user_by_uuid(user_remna_id)
+        if remna_user:
+            subscription = RemnaSubscriptionDto.from_remna_user(remna_user)
+            if subscription.url != previous_url:
+                return subscription
+
+        if attempt < attempts:
+            await asyncio.sleep(delay_seconds)
+
+    return None
 
 
 class ReissueSubscription(Interactor[None, None]):
     required_permission = Permission.PUBLIC
-    FETCH_ATTEMPTS = 5
-    FETCH_DELAY_SECONDS = 1
 
     def __init__(
         self,
-        uow: UnitOfWork,
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
+        settings_dao: SettingsDao,
+        uow: UnitOfWork,
     ) -> None:
-        self.uow = uow
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
+        self.settings_dao = settings_dao
+        self.uow = uow
 
     async def _execute(self, actor: UserDto, data: None) -> None:
-        current_subscription = await self.subscription_dao.get_current(actor.telegram_id)
+        settings = await self.settings_dao.get()
+        extra = settings.extra.link_reset
 
+        if not extra.enabled:
+            raise ValueError("Subscription link reset is disabled")
+
+        current_subscription = await self.subscription_dao.get_current(actor.id)
         if not current_subscription:
-            raise ValueError(f"No active subscription for user '{actor.telegram_id}'")
+            raise ValueError(f"No active subscription for user '{actor.remna_name}'")
+
+        if extra.cooldown_hours > 0 and current_subscription.link_reset_at:
+            available_at = current_subscription.link_reset_at + timedelta(
+                hours=extra.cooldown_hours
+            )
+            if datetime_now() < available_at:
+                raise CooldownError(available_at)
 
         previous_url = current_subscription.url
         await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
-        synced = await self._sync_reissued_subscription(
-            telegram_id=actor.telegram_id,
-            user_remna_id=current_subscription.user_remna_id,
-            previous_url=previous_url,
+        reissued = await _fetch_reissued_subscription(
+            self.remnawave,
+            current_subscription.user_remna_id,
+            previous_url,
         )
 
-        if not synced:
+        async with self.uow:
+            current_subscription = await self.subscription_dao.get_current(actor.id)
+            if not current_subscription:
+                raise ValueError(f"No active subscription for user '{actor.remna_name}'")
+            if reissued:
+                current_subscription = self.remnawave.apply_sync(current_subscription, reissued)
+            current_subscription.link_reset_at = datetime_now()
+            await self.subscription_dao.update(current_subscription)
+            await self.uow.commit()
+
+        if not reissued:
+            logger.warning(
+                f"{actor.log} Subscription was reissued, but updated URL was not synced immediately"
+            )
+        logger.info(f"{actor.log} Reissued subscription")
+
+
+class ReissueUserSubscription(Interactor[int, None]):
+    required_permission = Permission.USER_EDITOR
+
+    def __init__(
+        self,
+        user_dao: UserDao,
+        subscription_dao: SubscriptionDao,
+        remnawave: Remnawave,
+        uow: UnitOfWork,
+    ) -> None:
+        self.user_dao = user_dao
+        self.subscription_dao = subscription_dao
+        self.remnawave = remnawave
+        self.uow = uow
+
+    async def _execute(self, actor: UserDto, user_id: int) -> None:
+        target_user = await self.user_dao.get_by_id(user_id)
+        if not target_user:
+            raise ValueError(f"User '{user_id}' not found")
+
+        current_subscription = await self.subscription_dao.get_current(target_user.id)
+        if not current_subscription:
+            raise ValueError(f"No active subscription for user '{target_user.remna_name}'")
+
+        previous_url = current_subscription.url
+        await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
+        reissued = await _fetch_reissued_subscription(
+            self.remnawave,
+            current_subscription.user_remna_id,
+            previous_url,
+        )
+
+        if reissued:
+            async with self.uow:
+                current_subscription = await self.subscription_dao.get_current(target_user.id)
+                if current_subscription:
+                    current_subscription = self.remnawave.apply_sync(current_subscription, reissued)
+                    await self.subscription_dao.update(current_subscription)
+                    await self.uow.commit()
+        else:
             logger.warning(
                 f"{actor.log} Subscription was reissued, but updated URL was not synced immediately"
             )
 
-        logger.info(f"{actor.log} Reissued subscription")
-
-    async def _sync_reissued_subscription(
-        self,
-        telegram_id: int,
-        user_remna_id: UUID,
-        previous_url: str,
-    ) -> bool:
-        for attempt in range(1, self.FETCH_ATTEMPTS + 1):
-            remna_user = await self.remnawave.get_user_by_uuid(user_remna_id)
-
-            if remna_user:
-                remna_subscription = RemnaSubscriptionDto.from_remna_user(remna_user)
-
-                if remna_subscription.url != previous_url:
-                    async with self.uow:
-                        subscription = await self.subscription_dao.get_current(telegram_id)
-
-                        if not subscription:
-                            logger.warning(
-                                f"Current subscription for user '{telegram_id}' disappeared during reissue sync"
-                            )
-                            return False
-
-                        subscription = self.remnawave.apply_sync(subscription, remna_subscription)
-                        await self.subscription_dao.update(subscription)
-                        await self.uow.commit()
-                    return True
-
-            if attempt < self.FETCH_ATTEMPTS:
-                await asyncio.sleep(self.FETCH_DELAY_SECONDS)
-
-        return False
+        logger.info(f"{actor.log} Reissued subscription for user '{target_user.id}'")

@@ -1,7 +1,12 @@
+from .activity import RecentActivityDao
+from .ad_link import AdLinkDao
+from .auth import AuthSessionDao
 from .broadcast import BroadcastDao
 from .device import AuthTokenDao, DeviceSessionDao, LinkedDeviceDao, TvPairingDao
+from .oauth_provider import UserOAuthProviderDao
 from .payment_gateway import PaymentGatewayDao
 from .plan import PlanDao
+from .promocode import PromocodeDao
 from .referral import ReferralDao
 from .settings import SettingsDao
 from .subscription import SubscriptionDao
@@ -12,12 +17,17 @@ from .webhook import WebhookDao
 
 __all__ = [
     "AuthTokenDao",
-    "BroadcastDao",
     "DeviceSessionDao",
     "LinkedDeviceDao",
+    "RecentActivityDao",
+    "AdLinkDao",
+    "AuthSessionDao",
+    "BroadcastDao",
+    "UserOAuthProviderDao",
     "PaymentGatewayDao",
     "TvPairingDao",
     "PlanDao",
+    "PromocodeDao",
     "ReferralDao",
     "SettingsDao",
     "SubscriptionDao",
