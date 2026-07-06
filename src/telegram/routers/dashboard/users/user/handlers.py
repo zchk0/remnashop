@@ -10,7 +10,7 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import BotService, Notifier, Redirect, TranslatorRunner
+from src.application.common import Notifier, Redirect
 from src.application.common.dao import PlanDao, SubscriptionDao, TransactionDao, UserDao
 from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.application.use_cases.plan.commands.access import (
@@ -74,7 +74,6 @@ from src.core.constants import (
 )
 from src.core.enums import Role
 from src.core.utils.validators import is_positive_int, parse_int
-from src.telegram.keyboards import get_contact_support_keyboard
 from src.telegram.states import DashboardUser, DashboardUsers
 from src.telegram.utils import is_double_click
 
@@ -750,8 +749,6 @@ async def on_send(
     retort: FromDishka[Retort],
     notifier: FromDishka[Notifier],
     send_message_to_user: FromDishka[SendMessageToUser],
-    bot_service: FromDishka[BotService],
-    i18n: FromDishka[TranslatorRunner],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
@@ -762,8 +759,6 @@ async def on_send(
         return
 
     payload = retort.load(payload, MessagePayloadDto)
-    support_url = bot_service.get_support_url(text=i18n.get("message.help"))
-    payload.reply_markup = get_contact_support_keyboard(support_url)
 
     if is_double_click(dialog_manager, key="message_confirm", cooldown=5):
         success = await send_message_to_user(

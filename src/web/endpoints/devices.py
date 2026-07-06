@@ -10,14 +10,19 @@ import html
 import secrets
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from typing import Annotated, Optional
 from uuid import UUID
 
+from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError
+from cachetools import TTLCache
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from loguru import logger
 from pydantic import BaseModel, EmailStr
+from redis.asyncio import Redis
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
 from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
@@ -55,7 +60,7 @@ from src.application.services.device_binding import bind_linked_device
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
-from src.core.constants import TV_PAIRING_TTL_SECONDS
+from src.core.constants import TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
 from src.core.enums import Deeplink, PlanAvailability, PurchaseType
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 from src.core.utils.device_description import (
@@ -244,6 +249,43 @@ async def get_device_auth_context(
 
 
 router = APIRouter(prefix="/api")
+
+
+_AVATAR_CACHE_MAX_BYTES = 64 * 1024 * 1024
+_AVATAR_CACHE_CONTROL = f"private, max-age={TTL_5M}"
+_AVATAR_RATE_LIMIT = 20
+_AVATAR_RATE_LIMIT_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('TTL', KEYS[1])
+return {count, ttl}
+"""
+_avatar_cache: TTLCache[int, bytes] = TTLCache(
+    maxsize=_AVATAR_CACHE_MAX_BYTES,
+    ttl=TTL_5M,
+    getsizeof=len,
+)
+
+
+async def _enforce_avatar_rate_limit(redis: Redis, device_id: str) -> None:
+    key = f"rate_limit:tobevpn:avatar:{device_id}"
+    count, ttl = await redis.eval(
+        _AVATAR_RATE_LIMIT_SCRIPT,
+        1,
+        key,
+        TIME_1M,
+    )
+    if int(count) <= _AVATAR_RATE_LIMIT:
+        return
+
+    retry_after = max(1, int(ttl))
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Avatar request rate limit exceeded",
+        headers={"Retry-After": str(retry_after)},
+    )
 
 
 ANONYMOUS_TRIAL_PRIORITY: dict[PlanAvailability, int] = {
@@ -1056,6 +1098,8 @@ async def get_current_subscription_plan(
             "success": True,
             "data": {
                 "telegram_id": resolved_telegram_id,
+                "name": user.name,
+                "username": user.username,
                 "is_admin": user.is_privileged,
                 "renewal_url": None,
                 "current_plan": None,
@@ -1081,11 +1125,78 @@ async def get_current_subscription_plan(
         "success": True,
         "data": {
             "telegram_id": resolved_telegram_id,
+            "name": user.name,
+            "username": user.username,
             "is_admin": user.is_privileged,
             "renewal_url": renewal_url,
             **_build_current_plan_data(current_subscription),
         },
     }
+
+
+@router.get(
+    "/user/avatar",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/jpeg": {}}, "description": "Telegram profile photo"},
+        404: {"description": "Telegram profile photo not found"},
+        429: {"description": "Avatar request rate limit exceeded"},
+    },
+)
+@inject
+async def get_user_avatar(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    bot: FromDishka[Bot],
+    redis: FromDishka[Redis],
+) -> Response:
+    telegram_id = _resolve_telegram_id(auth, None)
+    device_id = _resolve_device_id(auth, None)
+    await _enforce_avatar_rate_limit(redis, device_id)
+
+    cached_avatar = _avatar_cache.get(telegram_id)
+    if cached_avatar is not None:
+        return Response(
+            content=cached_avatar,
+            media_type="image/jpeg",
+            headers={"Cache-Control": _AVATAR_CACHE_CONTROL},
+        )
+
+    try:
+        profile_photos = await bot.get_user_profile_photos(telegram_id, limit=1)
+        if not profile_photos.photos:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Telegram profile photo not found",
+            )
+
+        photo = profile_photos.photos[0][-1]
+        file = await bot.get_file(photo.file_id)
+        if not file.file_path:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Telegram profile photo is unavailable",
+            )
+
+        destination = BytesIO()
+        await bot.download_file(file.file_path, destination=destination)
+        avatar = destination.getvalue()
+    except TelegramAPIError as e:
+        logger.warning(f"Failed to fetch Telegram avatar for user '{telegram_id}': {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to fetch Telegram profile photo",
+        ) from e
+
+    try:
+        _avatar_cache[telegram_id] = avatar
+    except ValueError:
+        logger.warning(f"Telegram avatar for user '{telegram_id}' exceeds avatar cache limit")
+
+    return Response(
+        content=avatar,
+        media_type="image/jpeg",
+        headers={"Cache-Control": _AVATAR_CACHE_CONTROL},
+    )
 
 
 # TV pairing endpoints
