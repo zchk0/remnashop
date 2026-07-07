@@ -1,17 +1,17 @@
 import asyncio
 from dataclasses import fields, is_dataclass
 from datetime import timedelta
-from typing import Optional, Union
+from typing import Any, Optional, Union
 from uuid import UUID
 
+import httpx
 from loguru import logger
 from packaging.version import Version
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import AuthenticationError, ConflictError, NotFoundError
+from remnapy.exceptions.handler import handle_api_error
 from remnapy.models import (
     CreateUserRequestDto,
-    DeleteUserAllHwidDeviceRequestDto,
-    DeleteUserHwidDeviceRequestDto,
     DropByUserUuids,
     DropConnectionsRequestDto,
     GetMetadataResponseDto,
@@ -39,6 +39,45 @@ from src.core.utils.time import datetime_now
 class RemnawaveImpl(Remnawave):
     def __init__(self, sdk: RemnawaveSDK) -> None:
         self.sdk = sdk
+
+    @staticmethod
+    def _extract_response_data(payload: Any) -> dict[str, Any]:
+        if isinstance(payload, dict) and isinstance(payload.get("response"), dict):
+            return payload["response"]
+        if isinstance(payload, dict):
+            return payload
+
+        return {}
+
+    @staticmethod
+    def _normalize_hwid_devices_response(
+        payload: Any,
+        user_uuid: UUID,
+    ) -> tuple[int, list[HwidDeviceDto]]:
+        data = RemnawaveImpl._extract_response_data(payload)
+        raw_devices = data.get("devices", [])
+        if not isinstance(raw_devices, list):
+            raw_devices = []
+
+        total = int(data.get("total") or len(raw_devices))
+
+        devices: list[HwidDeviceDto] = []
+        for raw_device in raw_devices:
+            if not isinstance(raw_device, dict):
+                continue
+
+            device_data = dict(raw_device)
+            device_data.setdefault("userUuid", str(user_uuid))
+            devices.append(HwidDeviceDto.model_validate(device_data))
+
+        return total, devices
+
+    @staticmethod
+    def _raise_remnawave_error(response: httpx.Response) -> None:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            handle_api_error(e.response)
 
     async def try_connection(self) -> Version:
         for attempt in range(1, 4):
@@ -209,34 +248,43 @@ class RemnawaveImpl(Remnawave):
         return response.root
 
     async def get_devices(self, user_uuid: UUID) -> list[HwidDeviceDto]:
-        response = await self.sdk.hwid.get_hwid_user(user_uuid)
-        logger.debug(f"Fetched {response.total} devices for RemnaUser '{user_uuid}'")
-        return response.devices if response.total else []
+        response = await self.sdk._client.get(f"/hwid/devices/{user_uuid}")  # noqa: SLF001
+        self._raise_remnawave_error(response)
+
+        total, devices = self._normalize_hwid_devices_response(response.json(), user_uuid)
+        logger.debug(f"Fetched {total} devices for RemnaUser '{user_uuid}'")
+        return devices if total else []
 
     async def delete_device(self, user_uuid: UUID, hwid_uuid: str) -> Optional[int]:
         try:
-            response = await self.sdk.hwid.delete_hwid_to_user(
-                DeleteUserHwidDeviceRequestDto(user_uuid=user_uuid, hwid=hwid_uuid)
+            response = await self.sdk._client.post(  # noqa: SLF001
+                "/hwid/devices/delete",
+                json={"userUuid": str(user_uuid), "hwid": hwid_uuid},
             )
+            self._raise_remnawave_error(response)
+            total, _ = self._normalize_hwid_devices_response(response.json(), user_uuid)
             logger.info(
                 f"Deleted HWID device '{hwid_uuid}' for RemnaUser '{user_uuid}'. "
-                f"Total devices now: {response.total}"
+                f"Total devices now: {total}"
             )
         except NotFoundError:
             logger.debug(f"RemnaUser '{user_uuid}' not found in panel")
             return None
 
-        return int(response.total)
+        return total
 
     async def delete_all_devices(self, user_uuid: UUID) -> None:
         try:
-            result = await self.sdk.hwid.delete_all_hwid_user(
-                DeleteUserAllHwidDeviceRequestDto(user_uuid=user_uuid)
+            response = await self.sdk._client.post(  # noqa: SLF001
+                "/hwid/devices/delete-all",
+                json={"userUuid": str(user_uuid)},
             )
+            self._raise_remnawave_error(response)
+            total, _ = self._normalize_hwid_devices_response(response.json(), user_uuid)
         except NotFoundError:
             logger.debug(f"RemnaUser '{user_uuid}' not found in panel")
             return
-        logger.info(f"Deleted all HWID devices ({result.total}) for RemnaUser '{user_uuid}'")
+        logger.info(f"Deleted all HWID devices ({total}) for RemnaUser '{user_uuid}'")
 
     async def drop_connections(self, user_uuid: UUID) -> None:
         try:
