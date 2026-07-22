@@ -21,7 +21,7 @@ from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from loguru import logger
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from redis.asyncio import Redis
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
@@ -35,6 +35,8 @@ from src.application.common.dao import (
     LinkedDeviceDao,
     PaymentGatewayDao,
     PlanDao,
+    ReferralDao,
+    SettingsDao,
     SubscriptionDao,
     TvPairingDao,
     UserDao,
@@ -58,6 +60,10 @@ from src.application.dto.device import (
 from src.application.services import PricingService
 from src.application.services.device_binding import bind_linked_device
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
+from src.application.use_cases.referral.commands.attachment import (
+    AttachReferral,
+    AttachReferralDto,
+)
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
 from src.core.constants import TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
@@ -771,6 +777,10 @@ class DeviceRegisterRequest(BaseModel):
     platform: Optional[str] = None
 
 
+class SetReferrerRequest(BaseModel):
+    referrer_id: int = Field(gt=0, description="Telegram ID of the referrer")
+
+
 class DeviceUnlinkRequest(BaseModel):
     device_id: Optional[str] = None
     telegram_id: Optional[int] = None
@@ -892,6 +902,120 @@ async def register_device(
     await uow.commit()
 
     return {"success": True, "data": None}
+
+
+async def _would_create_referral_cycle(
+    referral_dao: ReferralDao,
+    referred_user_id: int,
+    referrer_user_id: int,
+) -> bool:
+    current_user_id = referrer_user_id
+    visited: set[int] = set()
+
+    while current_user_id not in visited:
+        if current_user_id == referred_user_id:
+            return True
+
+        visited.add(current_user_id)
+        referral = await referral_dao.get_by_referred_id(current_user_id)
+        if referral is None:
+            return False
+        current_user_id = referral.referrer.id
+
+    # Do not attach a new user to an already corrupted cyclic chain.
+    return True
+
+
+async def _set_device_referrer(
+    request: SetReferrerRequest,
+    auth: DeviceAuthContext,
+    user_dao: UserDao,
+    referral_dao: ReferralDao,
+    settings_dao: SettingsDao,
+    attach_referral: AttachReferral,
+) -> dict:
+    referred_telegram_id = _resolve_telegram_id(auth, None)
+    referred = await user_dao.get_by_telegram_id(referred_telegram_id)
+    if referred is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current Remnashop user not found",
+        )
+
+    referrer = await user_dao.get_by_telegram_id(request.referrer_id)
+    if referrer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Referrer not found",
+        )
+
+    if referrer.id == referred.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user cannot refer themselves",
+        )
+
+    existing_referral = await referral_dao.get_by_referred_id(referred.id)
+    if existing_referral is not None:
+        if existing_referral.referrer.id == referrer.id:
+            return {
+                "success": True,
+                "data": {"referrer_id": request.referrer_id, "created": False},
+            }
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A different referrer is already assigned",
+        )
+
+    settings = await settings_dao.get()
+    if not settings.referral.enable:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Referral program is disabled",
+        )
+
+    if await _would_create_referral_cycle(referral_dao, referred.id, referrer.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The referrer would create a referral cycle",
+        )
+
+    attached_referrer = await attach_referral.system(
+        AttachReferralDto(
+            user_id=referred.id,
+            referral_code=referrer.referral_code,
+        )
+    )
+    if attached_referrer is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unable to assign referrer",
+        )
+
+    return {
+        "success": True,
+        "data": {"referrer_id": request.referrer_id, "created": True},
+    }
+
+
+@router.post("/device/referrer")
+@inject
+async def set_device_referrer(
+    request: SetReferrerRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    user_dao: FromDishka[UserDao],
+    referral_dao: FromDishka[ReferralDao],
+    settings_dao: FromDishka[SettingsDao],
+    attach_referral: FromDishka[AttachReferral],
+) -> dict:
+    return await _set_device_referrer(
+        request=request,
+        auth=auth,
+        user_dao=user_dao,
+        referral_dao=referral_dao,
+        settings_dao=settings_dao,
+        attach_referral=attach_referral,
+    )
 
 
 @router.post("/device/unlink")
