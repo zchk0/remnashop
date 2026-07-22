@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -16,3 +19,28 @@ class ReferralProgramResponse(BaseModel):
     accrual_strategy: str
     max_level: int
     reward_levels: list[ReferralRewardLevelResponse]
+
+
+class ToBeVpnReferralUserResponse(BaseModel):
+    telegram_id: Optional[int]
+    display_name: str
+
+
+class ToBeVpnReferralListItemResponse(ToBeVpnReferralUserResponse):
+    level: int
+    created_at: Optional[datetime]
+
+
+class ToBeVpnReferralDataResponse(BaseModel):
+    referral_code: str
+    referral_url: str
+    referrer: Optional[ToBeVpnReferralUserResponse]
+    total: int
+    referals: list[ToBeVpnReferralListItemResponse]
+    limit: int
+    offset: int
+
+
+class ToBeVpnReferralsResponse(BaseModel):
+    success: bool = True
+    data: ToBeVpnReferralDataResponse

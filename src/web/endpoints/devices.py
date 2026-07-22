@@ -73,6 +73,12 @@ from src.core.utils.device_description import (
     append_device_id_to_description,
     append_saved_anon_traffic_to_description,
 )
+from src.web.schemas import (
+    ToBeVpnReferralDataResponse,
+    ToBeVpnReferralListItemResponse,
+    ToBeVpnReferralsResponse,
+    ToBeVpnReferralUserResponse,
+)
 
 
 @dataclass(kw_only=True)
@@ -1015,6 +1021,80 @@ async def set_device_referrer(
         referral_dao=referral_dao,
         settings_dao=settings_dao,
         attach_referral=attach_referral,
+    )
+
+
+async def _get_user_referrals(
+    auth: DeviceAuthContext,
+    user_dao: UserDao,
+    referral_dao: ReferralDao,
+    bot_service: BotService,
+    limit: int,
+    offset: int,
+) -> ToBeVpnReferralsResponse:
+    telegram_id = _resolve_telegram_id(auth, None)
+    user = await user_dao.get_by_telegram_id(telegram_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current Remnashop user not found",
+        )
+
+    total = await referral_dao.get_referrals_count(user.id)
+    current_referral = await referral_dao.get_by_referred_id(user.id)
+    referrals = await referral_dao.get_referrals_list(
+        user.id,
+        limit=limit,
+        offset=offset,
+    )
+    referral_url = await bot_service.get_referral_url(user.referral_code)
+
+    referrer = None
+    if current_referral is not None:
+        referrer = ToBeVpnReferralUserResponse(
+            telegram_id=current_referral.referrer.telegram_id,
+            display_name=current_referral.referrer.name,
+        )
+
+    return ToBeVpnReferralsResponse(
+        data=ToBeVpnReferralDataResponse(
+            referral_code=user.referral_code,
+            referral_url=referral_url,
+            referrer=referrer,
+            total=total,
+            referals=[
+                ToBeVpnReferralListItemResponse(
+                    telegram_id=referral.referred.telegram_id,
+                    display_name=referral.referred.name,
+                    level=int(referral.level),
+                    created_at=referral.created_at,
+                )
+                for referral in referrals
+            ],
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@router.get("/referrals", response_model=ToBeVpnReferralsResponse)
+@inject
+async def get_user_referrals(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    user_dao: FromDishka[UserDao],
+    referral_dao: FromDishka[ReferralDao],
+    bot_service: FromDishka[BotService],
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> ToBeVpnReferralsResponse:
+    """Return the current authenticated user's referrals."""
+    return await _get_user_referrals(
+        auth=auth,
+        user_dao=user_dao,
+        referral_dao=referral_dao,
+        bot_service=bot_service,
+        limit=limit,
+        offset=offset,
     )
 
 

@@ -24,7 +24,14 @@ from .health import (
     PoolMetricsSchema,
 )
 from .plans import PublicPlanLandingListResponse, PublicPlanLandingResponse
-from .referral import ReferralProgramResponse, ReferralRewardLevelResponse
+from .referral import (
+    ReferralProgramResponse,
+    ReferralRewardLevelResponse,
+    ToBeVpnReferralDataResponse,
+    ToBeVpnReferralListItemResponse,
+    ToBeVpnReferralsResponse,
+    ToBeVpnReferralUserResponse,
+)
 from .subscription import (
     DeviceDeleteResponse,
     DeviceResponse,
@@ -76,6 +83,10 @@ __all__ = [
     # referral
     "ReferralProgramResponse",
     "ReferralRewardLevelResponse",
+    "ToBeVpnReferralDataResponse",
+    "ToBeVpnReferralListItemResponse",
+    "ToBeVpnReferralsResponse",
+    "ToBeVpnReferralUserResponse",
     # subscription
     "DeviceDeleteResponse",
     "DeviceResponse",
