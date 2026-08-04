@@ -6,19 +6,19 @@ from uuid import UUID, uuid4
 from adaptix import Retort
 from loguru import logger
 
-from src.application.common import EventPublisher, Interactor
+from src.application.common import Interactor
 from src.application.common.dao import PromocodeDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.common.remnawave import Remnawave
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, PromocodeDto, SubscriptionDto, UserDto
 from src.application.dto.promocode import PromocodeActivationDto
-from src.application.events.system import PromocodeActivatedEvent
 from src.application.use_cases.promocode.queries.validate import (
     ValidatePromocode,
     ValidatePromocodeDto,
 )
 from src.core.enums import (
+    PromocodeActivationEventStatus,
     PromocodeActivationStatus,
     PromocodeRemoteAction,
     PromocodeRewardType,
@@ -31,6 +31,22 @@ from src.core.exceptions import (
 )
 from src.core.utils.converters import days_to_datetime
 from src.core.utils.time import datetime_now
+
+PROMOCODE_ACTIVATION_MAX_ATTEMPTS = 8
+PROMOCODE_RETRY_DELAYS_SECONDS = (60, 120, 300, 900, 1800, 3600, 7200, 21600)
+
+
+class _ActivationDeferredError(Exception):
+    pass
+
+
+class _PermanentActivationError(RuntimeError):
+    pass
+
+
+def get_promocode_retry_delay(attempt_count: int) -> timedelta:
+    index = min(max(attempt_count, 1), len(PROMOCODE_RETRY_DELAYS_SECONDS)) - 1
+    return timedelta(seconds=PROMOCODE_RETRY_DELAYS_SECONDS[index])
 
 
 @dataclass(frozen=True)
@@ -65,7 +81,6 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
         validate_promocode: ValidatePromocode,
-        event_publisher: EventPublisher,
         retort: Retort,
     ) -> None:
         self.uow = uow
@@ -74,7 +89,6 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         self.subscription_dao = subscription_dao
         self.remnawave = remnawave
         self.validate_promocode = validate_promocode
-        self.event_publisher = event_publisher
         self.retort = retort
 
     async def _execute(self, actor: UserDto, data: ActivatePromocodeDto) -> PromocodeDto:
@@ -82,24 +96,29 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         activation = await self.promocode_dao.get_activation_by_request_id(request_id)
 
         if activation is None:
-            activation, promo, newly_applied = await self._reserve_activation(
+            activation, promo = await self._reserve_activation(
                 actor,
                 data,
                 request_id,
             )
         else:
             promo = await self._get_matching_promo(activation, data)
-            newly_applied = False
+
+        if activation.status == PromocodeActivationStatus.APPLIED:
+            return promo
+        if activation.status == PromocodeActivationStatus.FAILED:
+            raise PromocodeNotAvailableError("Promocode activation failed")
+        if activation.status == PromocodeActivationStatus.REQUIRES_REVIEW:
+            raise PromocodeNotAvailableError("Promocode activation requires manual review")
 
         if activation.status == PromocodeActivationStatus.PENDING:
-            promo, newly_applied = await self._apply_reserved_activation(
+            if activation.next_retry_at and activation.next_retry_at > datetime_now():
+                raise PromocodeNotAvailableError("Promocode activation retry is scheduled")
+            promo = await self._apply_reserved_activation(
                 data.user,
                 request_id,
                 data.code,
             )
-
-        if newly_applied:
-            await self._publish_activation_event(data.user, promo)
 
         return promo
 
@@ -108,7 +127,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         actor: UserDto,
         data: ActivatePromocodeDto,
         request_id: UUID,
-    ) -> tuple[PromocodeActivationDto, PromocodeDto, bool]:
+    ) -> tuple[PromocodeActivationDto, PromocodeDto]:
         user = data.user
 
         async with self.uow:
@@ -118,7 +137,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             if existing is not None:
                 promo = await self._get_matching_promo(existing, data)
                 await self.uow.rollback()
-                return existing, promo, False
+                return existing, promo
 
             locked_promo = await self.promocode_dao.get_by_code_for_update(data.code)
             if locked_promo is None:
@@ -128,7 +147,9 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
 
             pending = await self.promocode_dao.get_pending_activation_by_user(user.id)
             if pending is not None:
-                raise PromocodeNotAvailableError("Another promocode activation is in progress")
+                raise PromocodeNotAvailableError(
+                    "Another promocode activation is pending or requires review"
+                )
 
             promo = await self.validate_promocode(
                 actor,
@@ -157,6 +178,11 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
                     remote_action=reward.remote_action,
                     target_remna_id=reward.target_remna_id,
                     reset_traffic=reward.reset_traffic,
+                    event_status=(
+                        PromocodeActivationEventStatus.PENDING
+                        if status == PromocodeActivationStatus.APPLIED
+                        else None
+                    ),
                 ),
                 max_activations=promo.max_activations,
                 is_reusable=promo.is_reusable,
@@ -164,11 +190,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             await self._persist_reward(user, reward)
             await self.uow.commit()
 
-        return (
-            activation,
-            self._promo_from_snapshot(activation, promo),
-            status == PromocodeActivationStatus.APPLIED,
-        )
+        return activation, self._promo_from_snapshot(activation, promo)
 
     async def _get_matching_promo(
         self,
@@ -205,7 +227,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         user: UserDto,
         request_id: UUID,
         code: str,
-    ) -> tuple[PromocodeDto, bool]:
+    ) -> PromocodeDto:
         try:
             async with self.uow:
                 activation = await self.promocode_dao.get_activation_by_request_id(
@@ -221,16 +243,24 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
                 )
                 if activation.status == PromocodeActivationStatus.APPLIED:
                     await self.uow.rollback()
-                    return promo, False
+                    return promo
+                if activation.status != PromocodeActivationStatus.PENDING:
+                    raise _ActivationDeferredError(
+                        f"Promocode activation is in terminal state '{activation.status}'"
+                    )
+                if activation.next_retry_at and activation.next_retry_at > datetime_now():
+                    raise _ActivationDeferredError("Promocode activation retry is scheduled")
 
                 persisted_user = await self.user_dao.get_by_id(user.id)
                 if persisted_user is None:
-                    raise RuntimeError(f"User '{user.id}' not found")
+                    raise _PermanentActivationError(f"User '{user.id}' not found")
 
                 await self._apply_remote_action(persisted_user, activation)
                 await self.promocode_dao.mark_activation_applied(request_id)
                 await self.uow.commit()
-                return promo, True
+                return promo
+        except _ActivationDeferredError as error:
+            raise PromocodeNotAvailableError(str(error)) from error
         except Exception as error:
             await self._record_activation_error(request_id, error)
             raise
@@ -242,11 +272,13 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
     ) -> None:
         target_remna_id = activation.target_remna_id
         if target_remna_id is None:
-            raise RuntimeError("Promocode activation has no target Remnawave user")
+            raise _PermanentActivationError(
+                "Promocode activation has no target Remnawave user"
+            )
 
         subscription = await self.subscription_dao.get_by_remna_id(target_remna_id)
         if subscription is None:
-            raise RuntimeError(
+            raise _PermanentActivationError(
                 f"Subscription for Remnawave user '{target_remna_id}' not found"
             )
 
@@ -275,8 +307,43 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
     async def _record_activation_error(self, request_id: UUID, error: Exception) -> None:
         try:
             async with self.uow:
-                await self.promocode_dao.set_activation_error(request_id, str(error))
+                activation = await self.promocode_dao.get_activation_by_request_id(
+                    request_id,
+                    for_update=True,
+                )
+                if (
+                    activation is None
+                    or activation.status != PromocodeActivationStatus.PENDING
+                ):
+                    await self.uow.rollback()
+                    return
+
+                attempt_count = activation.attempt_count + 1
+                if isinstance(error, _PermanentActivationError):
+                    status = PromocodeActivationStatus.FAILED
+                    next_retry_at = None
+                elif activation.reset_traffic:
+                    status = PromocodeActivationStatus.REQUIRES_REVIEW
+                    next_retry_at = None
+                elif attempt_count >= PROMOCODE_ACTIVATION_MAX_ATTEMPTS:
+                    status = PromocodeActivationStatus.REQUIRES_REVIEW
+                    next_retry_at = None
+                else:
+                    status = PromocodeActivationStatus.PENDING
+                    next_retry_at = datetime_now() + get_promocode_retry_delay(attempt_count)
+
+                await self.promocode_dao.record_activation_failure(
+                    request_id=request_id,
+                    error=str(error),
+                    status=status,
+                    attempt_count=attempt_count,
+                    next_retry_at=next_retry_at,
+                )
                 await self.uow.commit()
+                logger.warning(
+                    f"Promocode activation '{request_id}' failed on attempt "
+                    f"'{attempt_count}', status set to '{status}'"
+                )
         except Exception:
             logger.exception(
                 f"Failed to persist error for promocode activation request '{request_id}'"
@@ -418,19 +485,3 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             )
         if reward.user_update is not None:
             await self.user_dao.update(reward.user_update)
-
-    async def _publish_activation_event(self, user: UserDto, promo: PromocodeDto) -> None:
-        logger.info(f"{user.log} Activated promocode '{promo.code}'")
-        event = PromocodeActivatedEvent(
-            user_id=user.id,
-            telegram_id=user.telegram_id,
-            username=user.username,
-            name=user.name,
-            promocode_code=promo.code,
-            reward_type=promo.reward_type.value,
-            reward=promo.reward,
-            plan_name=(str(promo.plan_snapshot.get("name")), {})
-            if promo.plan_snapshot and promo.plan_snapshot.get("name")
-            else "",
-        )
-        await self.event_publisher.publish(event)

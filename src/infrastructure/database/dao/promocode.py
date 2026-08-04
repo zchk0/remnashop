@@ -1,10 +1,10 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
 from adaptix.conversion import ConversionRetort
 from loguru import logger
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,11 @@ from src.application.dto import (
     PromocodeDto,
     PromocodeStatisticsDto,
 )
-from src.core.enums import PromocodeActivationStatus, PromocodeRewardType
+from src.core.enums import (
+    PromocodeActivationEventStatus,
+    PromocodeActivationStatus,
+    PromocodeRewardType,
+)
 from src.core.exceptions import PromocodeAlreadyActivatedError, PromocodeNotAvailableError
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import User
@@ -300,7 +304,13 @@ class PromocodeDaoImpl(PromocodeDao):
     ) -> Optional[PromocodeActivationDto]:
         stmt = select(PromocodeActivation).where(
             PromocodeActivation.user_id == user_id,
-            PromocodeActivation.status == PromocodeActivationStatus.PENDING,
+            PromocodeActivation.status.in_(
+                (
+                    PromocodeActivationStatus.PENDING,
+                    PromocodeActivationStatus.FAILED,
+                    PromocodeActivationStatus.REQUIRES_REVIEW,
+                )
+            ),
         )
         db = await self.session.scalar(stmt)
         return self._act_to_dto(db) if db else None
@@ -311,11 +321,56 @@ class PromocodeDaoImpl(PromocodeDao):
     ) -> list[PromocodeActivationDto]:
         stmt = (
             select(PromocodeActivation)
-            .where(PromocodeActivation.status == PromocodeActivationStatus.PENDING)
-            .order_by(PromocodeActivation.activated_at, PromocodeActivation.id)
+            .where(
+                PromocodeActivation.status == PromocodeActivationStatus.PENDING,
+                or_(
+                    PromocodeActivation.next_retry_at.is_(None),
+                    PromocodeActivation.next_retry_at <= datetime_now(),
+                ),
+            )
+            .order_by(
+                func.coalesce(
+                    PromocodeActivation.next_retry_at,
+                    PromocodeActivation.activated_at,
+                ),
+                PromocodeActivation.id,
+            )
             .limit(limit)
         )
         rows = await self.session.scalars(stmt)
+        return [self._act_to_dto(row) for row in rows.all()]
+
+    async def claim_pending_activation_events(
+        self,
+        lease_until: datetime,
+        limit: int = 100,
+    ) -> list[PromocodeActivationDto]:
+        due_ids = (
+            select(PromocodeActivation.id)
+            .where(
+                PromocodeActivation.event_status
+                == PromocodeActivationEventStatus.PENDING,
+                or_(
+                    PromocodeActivation.event_next_retry_at.is_(None),
+                    PromocodeActivation.event_next_retry_at <= datetime_now(),
+                ),
+            )
+            .order_by(
+                func.coalesce(
+                    PromocodeActivation.event_next_retry_at,
+                    PromocodeActivation.activated_at,
+                ),
+                PromocodeActivation.id,
+            )
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        rows = await self.session.scalars(
+            update(PromocodeActivation)
+            .where(PromocodeActivation.id.in_(due_ids))
+            .values(event_next_retry_at=lease_until)
+            .returning(PromocodeActivation)
+        )
         return [self._act_to_dto(row) for row in rows.all()]
 
     async def lock_activation_user(self, user_id: int) -> None:
@@ -383,7 +438,7 @@ class PromocodeDaoImpl(PromocodeDao):
         if max_activations is not None:
             count_result = await self.session.execute(
                 select(func.count(PromocodeActivation.id)).where(
-                    PromocodeActivation.promocode_id == activation.promocode_id
+                    PromocodeActivation.promocode_id == activation.promocode_id,
                 )
             )
             count = count_result.scalar() or 0
@@ -417,6 +472,13 @@ class PromocodeDaoImpl(PromocodeDao):
             target_remna_id=activation.target_remna_id,
             reset_traffic=activation.reset_traffic,
             last_error=activation.last_error,
+            attempt_count=activation.attempt_count,
+            next_retry_at=activation.next_retry_at,
+            event_status=activation.event_status,
+            event_attempt_count=activation.event_attempt_count,
+            event_next_retry_at=activation.event_next_retry_at,
+            event_last_error=activation.event_last_error,
+            event_sent_at=activation.event_sent_at,
         )
         self.session.add(db)
         await self.session.flush()
@@ -430,16 +492,83 @@ class PromocodeDaoImpl(PromocodeDao):
         db = await self.session.scalar(
             update(PromocodeActivation)
             .where(PromocodeActivation.request_id == request_id)
-            .values(status=PromocodeActivationStatus.APPLIED, last_error=None)
+            .values(
+                status=PromocodeActivationStatus.APPLIED,
+                last_error=None,
+                next_retry_at=None,
+                event_status=PromocodeActivationEventStatus.PENDING,
+                event_attempt_count=0,
+                event_next_retry_at=None,
+                event_last_error=None,
+            )
             .returning(PromocodeActivation)
         )
         if db is None:
             raise RuntimeError(f"Promocode activation request '{request_id}' not found")
         return self._act_to_dto(db)
 
-    async def set_activation_error(self, request_id: UUID, error: str) -> None:
+    async def record_activation_failure(
+        self,
+        request_id: UUID,
+        error: str,
+        status: PromocodeActivationStatus,
+        attempt_count: int,
+        next_retry_at: Optional[datetime],
+    ) -> None:
         await self.session.execute(
             update(PromocodeActivation)
             .where(PromocodeActivation.request_id == request_id)
-            .values(last_error=error[:1000])
+            .values(
+                status=status,
+                last_error=error[:1000],
+                attempt_count=attempt_count,
+                next_retry_at=next_retry_at,
+            )
+        )
+
+    async def mark_activation_event_sent(
+        self,
+        activation_id: int,
+        sent_at: datetime,
+    ) -> None:
+        await self.session.execute(
+            update(PromocodeActivation)
+            .where(
+                PromocodeActivation.id == activation_id,
+                PromocodeActivation.event_status
+                == PromocodeActivationEventStatus.PENDING,
+            )
+            .values(
+                event_status=PromocodeActivationEventStatus.SENT,
+                event_next_retry_at=None,
+                event_last_error=None,
+                event_sent_at=sent_at,
+            )
+        )
+
+    async def record_activation_event_failure(
+        self,
+        activation_id: int,
+        error: str,
+        attempt_count: int,
+        next_retry_at: Optional[datetime],
+    ) -> None:
+        status = (
+            PromocodeActivationEventStatus.FAILED
+            if next_retry_at is None
+            else PromocodeActivationEventStatus.PENDING
+        )
+        await self.session.execute(
+            update(PromocodeActivation)
+            .where(
+                PromocodeActivation.id == activation_id,
+                PromocodeActivation.event_status
+                == PromocodeActivationEventStatus.PENDING,
+            )
+            .values(
+                event_status=status,
+                event_attempt_count=attempt_count,
+                event_next_retry_at=next_retry_at,
+                event_last_error=error[:1000],
+            )
         )

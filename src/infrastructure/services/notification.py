@@ -199,6 +199,31 @@ class NotificationService(Notifier):
         payload.reply_markup = self._resolve_keyboard(event)
         await self.notify_system(payload, notification_type=event.notification_type)
 
+    async def deliver_system_event(self, event: SystemEvent) -> None:
+        """Deliver an outbox event and return only after all sends complete."""
+        if isinstance(event, NotificationErrorEvent):
+            return
+
+        settings: SettingsDto = await self.settings_dao.get()
+        if not settings.notifications.is_enabled(event.notification_type):
+            logger.info(f"Notification for '{event.notification_type}' is disabled, skipping")
+            return
+
+        payload = event.as_payload()
+        payload.reply_markup = self._resolve_keyboard(event)
+        route = settings.notifications.resolve_route(event.notification_type)
+        if route and route.is_configured:
+            await self._send_to_route(payload, route, raise_on_error=True)
+            return
+
+        await self._process_task(
+            NotificationTaskDto(
+                payload=payload,
+                roles=[Role.OWNER, Role.DEV, Role.ADMIN],
+            ),
+            raise_on_error=True,
+        )
+
     @on_event(ErrorEvent)
     async def on_error_event(self, event: ErrorEvent) -> None:
         logger.info(f"Received '{event.event_type}' event")
@@ -256,6 +281,7 @@ class NotificationService(Notifier):
         self,
         payload: MessagePayloadDto,
         route: SystemNotificationRouteDto,
+        raise_on_error: bool = False,
     ) -> None:
         chat_id = route.chat_id
         thread_id = route.effective_thread_id
@@ -315,6 +341,8 @@ class NotificationService(Notifier):
                     reason=str(e),
                 )
             )
+            if raise_on_error:
+                raise
 
     async def delete_notification(self, chat_id: int, message_id: int) -> None:
         try:
@@ -324,18 +352,27 @@ class NotificationService(Notifier):
             logger.error(f"Failed to delete notification '{message_id}': {e}")
             await self._clear_reply_markup(chat_id, message_id)
 
-    async def _process_task(self, task: NotificationTaskDto) -> None:
+    async def _process_task(
+        self,
+        task: NotificationTaskDto,
+        raise_on_error: bool = False,
+    ) -> None:
         users = await self.user_dao.filter_by_role(task.roles)
 
         if not users:
             temp_owner = [TempUserDto.as_temp_owner(telegram_id=self.config.bot.owner_id)]
 
-        await self._broadcast(users or temp_owner, task.payload)
+        await self._broadcast(
+            users or temp_owner,
+            task.payload,
+            raise_on_error=raise_on_error,
+        )
 
     async def _broadcast(
         self,
         users: Sequence[Union[TempUserDto, UserDto]],
         payload: MessagePayloadDto,
+        raise_on_error: bool = False,
     ) -> None:
         logger.debug(f"Starting broadcast to '{len(users)}' users")
 
@@ -344,9 +381,14 @@ class NotificationService(Notifier):
             return_exceptions=True,
         )
 
+        errors: list[Exception] = []
         for user, result in zip(users, results):
             if isinstance(result, Exception):
+                errors.append(result)
                 logger.error(f"Broadcast failed for user {user.log}: {result}")
+
+        if raise_on_error and errors:
+            raise ExceptionGroup("System notification delivery failed", errors)
 
     async def _send_message(
         self,

@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import (
+    PromocodeActivationEventStatus,
     PromocodeActivationStatus,
     PromocodeAvailability,
     PromocodeRemoteAction,
@@ -57,7 +58,15 @@ class PromocodeActivation(BaseSql):
             "uq_promocode_activations_pending_user",
             "user_id",
             unique=True,
-            postgresql_where=text("status = 'PENDING'"),
+            postgresql_where=text(
+                "status IN ('PENDING', 'FAILED', 'REQUIRES_REVIEW')"
+            ),
+        ),
+        Index("ix_promocode_activations_retry_due", "status", "next_retry_at"),
+        Index(
+            "ix_promocode_activations_event_due",
+            "event_status",
+            "event_next_retry_at",
         ),
     )
 
@@ -99,5 +108,18 @@ class PromocodeActivation(BaseSql):
         server_default=text("false"),
     )
     last_error: Mapped[Optional[str]] = mapped_column(Text)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    event_status: Mapped[Optional[PromocodeActivationEventStatus]] = mapped_column(
+        Enum(PromocodeActivationEventStatus, native_enum=False, length=16)
+    )
+    event_attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    event_next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    event_last_error: Mapped[Optional[str]] = mapped_column(Text)
+    event_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     promocode: Mapped["Promocode"] = relationship(back_populates="activations")

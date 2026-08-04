@@ -145,6 +145,14 @@ class PromocodeAvailability(UpperStrEnum):
 class PromocodeActivationStatus(UpperStrEnum):
     PENDING = auto()
     APPLIED = auto()
+    FAILED = auto()
+    REQUIRES_REVIEW = auto()
+
+
+class PromocodeActivationEventStatus(UpperStrEnum):
+    PENDING = auto()
+    SENT = auto()
+    FAILED = auto()
 
 
 class PromocodeRemoteAction(UpperStrEnum):

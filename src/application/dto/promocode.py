@@ -4,6 +4,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from src.core.enums import (
+    PromocodeActivationEventStatus,
     PromocodeActivationStatus,
     PromocodeAvailability,
     PromocodeRemoteAction,
@@ -42,6 +43,13 @@ class PromocodeActivationDto(BaseDto):
     target_remna_id: Optional[UUID] = None
     reset_traffic: bool = False
     last_error: Optional[str] = None
+    attempt_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    event_status: Optional[PromocodeActivationEventStatus] = None
+    event_attempt_count: int = 0
+    event_next_retry_at: Optional[datetime] = None
+    event_last_error: Optional[str] = None
+    event_sent_at: Optional[datetime] = None
 
 
 @dataclass(kw_only=True)

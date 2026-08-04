@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from src.application.dto import (
     PromocodeDto,
     PromocodeStatisticsDto,
 )
+from src.core.enums import PromocodeActivationStatus
 
 
 @runtime_checkable
@@ -50,6 +52,12 @@ class PromocodeDao(Protocol):
 
     async def get_pending_activations(self, limit: int = 100) -> list[PromocodeActivationDto]: ...
 
+    async def claim_pending_activation_events(
+        self,
+        lease_until: datetime,
+        limit: int = 100,
+    ) -> list[PromocodeActivationDto]: ...
+
     async def lock_activation_user(self, user_id: int) -> None: ...
 
     async def lock_activation_request(self, request_id: UUID) -> None: ...
@@ -69,4 +77,25 @@ class PromocodeDao(Protocol):
 
     async def mark_activation_applied(self, request_id: UUID) -> PromocodeActivationDto: ...
 
-    async def set_activation_error(self, request_id: UUID, error: str) -> None: ...
+    async def record_activation_failure(
+        self,
+        request_id: UUID,
+        error: str,
+        status: PromocodeActivationStatus,
+        attempt_count: int,
+        next_retry_at: Optional[datetime],
+    ) -> None: ...
+
+    async def mark_activation_event_sent(
+        self,
+        activation_id: int,
+        sent_at: datetime,
+    ) -> None: ...
+
+    async def record_activation_event_failure(
+        self,
+        activation_id: int,
+        error: str,
+        attempt_count: int,
+        next_retry_at: Optional[datetime],
+    ) -> None: ...
