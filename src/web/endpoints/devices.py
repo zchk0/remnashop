@@ -516,6 +516,29 @@ def _datetime_to_timestamp(value: Optional[datetime]) -> Optional[int]:
     return int(value.timestamp()) if value else None
 
 
+def _build_promocode_plan_snapshot(
+    plan_snapshot: Optional[dict[str, object]],
+) -> Optional[dict[str, object]]:
+    if plan_snapshot is None:
+        return None
+
+    return {
+        "name": plan_snapshot.get("name"),
+        "duration": plan_snapshot.get("duration"),
+    }
+
+
+def _build_promocode_http_error(
+    status_code: int,
+    code: str,
+    message: str,
+) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message},
+    )
+
+
 def _build_current_plan_data(subscription: SubscriptionDto) -> dict:
     plan = subscription.plan_snapshot
 
@@ -1429,7 +1452,11 @@ async def activate_promocode_for_device(
     telegram_id = _resolve_telegram_id(auth, None)
     user = await user_dao.get_by_telegram_id(telegram_id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise _build_promocode_http_error(
+            status.HTTP_404_NOT_FOUND,
+            "USER_NOT_FOUND",
+            "User not found",
+        )
 
     try:
         promo = await activate_promocode(
@@ -1437,19 +1464,37 @@ async def activate_promocode_for_device(
             ActivatePromocodeDto(code=request.code, user=user),
         )
     except PromocodeNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-    except (
-        PromocodeExpiredError,
-        PromocodeAlreadyActivatedError,
-        PromocodeNotAvailableError,
-    ) as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+        raise _build_promocode_http_error(
+            status.HTTP_404_NOT_FOUND,
+            "PROMOCODE_NOT_FOUND",
+            str(e),
+        ) from e
+    except PromocodeExpiredError as e:
+        raise _build_promocode_http_error(
+            status.HTTP_409_CONFLICT,
+            "PROMOCODE_EXPIRED",
+            str(e),
+        ) from e
+    except PromocodeAlreadyActivatedError as e:
+        raise _build_promocode_http_error(
+            status.HTTP_409_CONFLICT,
+            "PROMOCODE_ALREADY_ACTIVATED",
+            str(e),
+        ) from e
+    except PromocodeNotAvailableError as e:
+        raise _build_promocode_http_error(
+            status.HTTP_409_CONFLICT,
+            "PROMOCODE_NOT_AVAILABLE",
+            str(e),
+        ) from e
 
     return {
         "success": True,
         "data": {
             "code": promo.code,
             "reward_type": promo.reward_type.value,
+            "reward": promo.reward,
+            "plan_snapshot": _build_promocode_plan_snapshot(promo.plan_snapshot),
         },
     }
 
@@ -1466,7 +1511,11 @@ async def get_applied_promocodes_for_device(
     telegram_id = _resolve_telegram_id(auth, None)
     user = await user_dao.get_by_telegram_id(telegram_id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise _build_promocode_http_error(
+            status.HTTP_404_NOT_FOUND,
+            "USER_NOT_FOUND",
+            "User not found",
+        )
 
     activations = await promocode_dao.get_activations_by_user(
         user.id,
@@ -1489,7 +1538,9 @@ async def get_applied_promocodes_for_device(
                     "code": activation.code,
                     "reward_type": activation.reward_type.value,
                     "reward": activation.reward,
-                    "plan_snapshot": activation.plan_snapshot,
+                    "plan_snapshot": _build_promocode_plan_snapshot(
+                        activation.plan_snapshot
+                    ),
                     "activated_at": _datetime_to_iso(activation.activated_at),
                 }
                 for activation in activations
