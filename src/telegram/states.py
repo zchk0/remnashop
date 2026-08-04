@@ -52,6 +52,9 @@ class DashboardBroadcast(StatesGroup):
     SEND = State()
     CONTENT = State()
     BUTTONS = State()
+    CUSTOM_BUTTON = State()
+    CUSTOM_BUTTON_TEXT = State()
+    CUSTOM_BUTTON_URL = State()
 
 
 class DashboardPromocodes(StatesGroup):

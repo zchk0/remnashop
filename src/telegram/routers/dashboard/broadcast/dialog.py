@@ -19,7 +19,14 @@ from src.telegram.widgets.kbd import (
     SwitchTo,
 )
 
-from .getters import buttons_getter, list_getter, plans_getter, send_getter, view_getter
+from .getters import (
+    buttons_getter,
+    custom_button_getter,
+    list_getter,
+    plans_getter,
+    send_getter,
+    view_getter,
+)
 from .handlers import (
     on_audience_select,
     on_broadcast_list,
@@ -27,6 +34,9 @@ from .handlers import (
     on_button_select,
     on_cancel,
     on_content_input,
+    on_custom_button_delete,
+    on_custom_button_text_input,
+    on_custom_button_url_input,
     on_delete,
     on_plan_select,
     on_preview,
@@ -285,6 +295,13 @@ buttons = Window(
     ),
     Row(
         SwitchTo(
+            I18nFormat("btn-broadcast.custom-button"),
+            id="custom_button",
+            state=DashboardBroadcast.CUSTOM_BUTTON,
+        ),
+    ),
+    Row(
+        SwitchTo(
             I18nFormat("btn-back.general"),
             id="back",
             state=DashboardBroadcast.CONTENT,
@@ -295,6 +312,73 @@ buttons = Window(
     getter=buttons_getter,
 )
 
+custom_button = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-broadcast-custom-button"),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-broadcast.custom-button-text"),
+            id="custom_button_text",
+            state=DashboardBroadcast.CUSTOM_BUTTON_TEXT,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-broadcast.custom-button-url"),
+            id="custom_button_url",
+            state=DashboardBroadcast.CUSTOM_BUTTON_URL,
+        ),
+    ),
+    Row(
+        Button(
+            I18nFormat("btn-broadcast.custom-button-delete"),
+            id="custom_button_delete",
+            on_click=on_custom_button_delete,
+            when=F["has_custom_button"],
+        ),
+    ),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardBroadcast.BUTTONS,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardBroadcast.CUSTOM_BUTTON,
+    getter=custom_button_getter,
+)
+
+custom_button_text = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-broadcast-custom-button-text"),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardBroadcast.CUSTOM_BUTTON,
+        ),
+    ),
+    MessageInput(func=on_custom_button_text_input),
+    IgnoreUpdate(),
+    state=DashboardBroadcast.CUSTOM_BUTTON_TEXT,
+)
+
+custom_button_url = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-broadcast-custom-button-url"),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardBroadcast.CUSTOM_BUTTON,
+        ),
+    ),
+    MessageInput(func=on_custom_button_url_input),
+    IgnoreUpdate(),
+    state=DashboardBroadcast.CUSTOM_BUTTON_URL,
+)
+
 router = Dialog(
     broadcast,
     list,
@@ -303,4 +387,7 @@ router = Dialog(
     send,
     content,
     buttons,
+    custom_button,
+    custom_button_text,
+    custom_button_url,
 )

@@ -127,6 +127,11 @@ ntf-broadcast =
     .audience-unavailable = ❌ <i>Нет пользователей для выбранной аудитории.</i>
     .content-empty = ❌ <i>Контент пуст.</i>
     .content-saved = ✅ <i>Контент успешно сохранен.</i>
+    .custom-button-saved = ✅ <i>Настройки своей кнопки сохранены.</i>
+    .custom-button-deleted = ✅ <i>Своя кнопка удалена из рассылки.</i>
+    .custom-button-text-invalid = ❌ <i>Текст кнопки должен содержать от 1 до 64 символов.</i>
+    .custom-button-url-invalid = ❌ <i>Отправьте корректную HTTPS-ссылку.</i>
+    .custom-button-incomplete = ❌ <i>Укажите текст и ссылку своей кнопки либо удалите ее.</i>
 
     .not-cancelable = ❌ <i>Рассылку невозможно отменить.</i>
     .canceled = ✅ <i>Рассылка успешно отменена.</i>

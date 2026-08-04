@@ -60,6 +60,7 @@ from src.application.events.user import (
     UserNotConnectedEvent,
 )
 from src.core.config import AppConfig
+from src.core.constants import RAW_BUTTON_TEXT_PREFIX
 from src.core.enums import Locale, Role
 from src.core.types import AnyKeyboard, NotificationType
 from src.infrastructure.services.event_bus import on_event
@@ -470,13 +471,11 @@ class NotificationService(Notifier):
                 return self._translate_keyboard_text(close_keyboard, locale)
             return None
 
-        translated_markup = self._translate_keyboard_text(reply_markup, locale)
-
         if disable_default_markup or delete_after is not None:
-            return translated_markup
+            return self._translate_keyboard_text(reply_markup, locale)
 
-        if isinstance(translated_markup, InlineKeyboardMarkup):
-            builder = InlineKeyboardBuilder.from_markup(translated_markup)
+        if isinstance(reply_markup, InlineKeyboardMarkup):
+            builder = InlineKeyboardBuilder.from_markup(reply_markup)
             builder.row(get_close_notification_button())
             return self._translate_keyboard_text(builder.as_markup(), locale)
 
@@ -484,7 +483,7 @@ class NotificationService(Notifier):
             f"Unsupported reply_markup type '{type(reply_markup).__name__}' "
             f"for chat '{chat_id}', close button skipped"
         )
-        return translated_markup
+        return self._translate_keyboard_text(reply_markup, locale)
 
     def _get_default_keyboard(self, button: InlineKeyboardButton) -> InlineKeyboardMarkup:
         builder = InlineKeyboardBuilder([[button]])
@@ -497,7 +496,10 @@ class NotificationService(Notifier):
                 i_buttons = []
                 for i_btn in i_row:
                     btn_dict = i_btn.model_dump()
-                    translated = self._get_translated_text(locale, i_btn.text) or i_btn.text
+                    if i_btn.text.startswith(RAW_BUTTON_TEXT_PREFIX):
+                        translated = i_btn.text.removeprefix(RAW_BUTTON_TEXT_PREFIX)
+                    else:
+                        translated = self._get_translated_text(locale, i_btn.text) or i_btn.text
                     clean_text, emoji_id = extract_tg_emoji(translated)
                     btn_dict["text"] = clean_text
                     if emoji_id and not btn_dict.get("icon_custom_emoji_id"):

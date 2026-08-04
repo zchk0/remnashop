@@ -416,6 +416,30 @@ msg-broadcast-content =
 
 msg-broadcast-buttons = <b>✳️ Кнопки рассылки</b>
 
+msg-broadcast-custom-button =
+    <b>🔗 Своя кнопка</b>
+
+    <blockquote>
+    • <b>Текст</b>: { $custom_button_text }
+    • <b>Ссылка</b>: { $custom_button_url }
+    • <b>Готова</b>: { $custom_button_ready ->
+        [1] ✅
+        *[0] ❌ Укажите текст и ссылку
+    }
+    </blockquote>
+
+    Кнопка будет добавлена отдельной строкой после выбранных стандартных кнопок.
+
+msg-broadcast-custom-button-text =
+    <b>✏️ Текст своей кнопки</b>
+
+    Отправьте текст кнопки длиной до 64 символов.
+
+msg-broadcast-custom-button-url =
+    <b>🔗 Ссылка своей кнопки</b>
+
+    Отправьте полную HTTPS-ссылку, например <code>https://example.com</code>.
+
 msg-broadcast-view =
     <b>📢 Рассылка</b>
 

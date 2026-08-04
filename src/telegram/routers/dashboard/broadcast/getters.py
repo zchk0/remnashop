@@ -1,3 +1,4 @@
+import html
 from typing import Any
 
 from aiogram_dialog import DialogManager
@@ -78,6 +79,22 @@ async def buttons_getter(
 
     return {
         "buttons": buttons,
+    }
+
+
+async def custom_button_getter(
+    dialog_manager: DialogManager,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    custom_button: dict[str, str] = dialog_manager.dialog_data.get("custom_button", {})
+    text = custom_button.get("text", "")
+    url = custom_button.get("url", "")
+
+    return {
+        "custom_button_text": html.escape(text) if text else "—",
+        "custom_button_url": html.escape(url) if url else "—",
+        "has_custom_button": bool(custom_button),
+        "custom_button_ready": bool(text and url),
     }
 
 

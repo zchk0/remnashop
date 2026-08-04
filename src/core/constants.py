@@ -51,6 +51,7 @@ WEB_PREFIX: Final[str] = "web_"
 PAYMENT_PREFIX: Final[str] = "payment_"
 GOTO_PREFIX: Final[str] = "gt_"
 ENCRYPTED_PREFIX: Final[str] = "enc_"
+RAW_BUTTON_TEXT_PREFIX: Final[str] = "__raw_button_text__:"
 
 MIDDLEWARE_DATA_KEY: Final[str] = "middleware_data"
 CONTAINER_KEY: Final[str] = "dishka_container"

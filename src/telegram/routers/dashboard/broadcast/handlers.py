@@ -3,7 +3,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from adaptix import Retort
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram_dialog import DialogManager, ShowMode
 from aiogram_dialog.utils import remove_intent_id
@@ -27,8 +27,14 @@ from src.application.use_cases.broadcast.queries.audience import (
     GetBroadcastAudienceCountDto,
     HasAvailableBroadcastPlans,
 )
-from src.core.constants import TEXT_MAX_LENGTH, TEXT_MEDIA_MAX_LENGTH, USER_KEY
+from src.core.constants import (
+    RAW_BUTTON_TEXT_PREFIX,
+    TEXT_MAX_LENGTH,
+    TEXT_MEDIA_MAX_LENGTH,
+    USER_KEY,
+)
 from src.core.enums import BroadcastAudience, MediaType
+from src.core.utils.validators import is_valid_url
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 from src.telegram.states import DashboardBroadcast
 from src.telegram.utils import is_double_click
@@ -54,6 +60,53 @@ def _update_payload(
     payload_data.update(updates)
     dialog_manager.dialog_data["payload"] = payload_data
     return retort.load(payload_data, MessagePayloadDto)
+
+
+def _is_custom_button_ready(dialog_manager: DialogManager) -> bool:
+    custom_button: dict[str, str] = dialog_manager.dialog_data.get("custom_button", {})
+    return bool(custom_button.get("text") and custom_button.get("url"))
+
+
+async def _sync_payload_keyboard(
+    dialog_manager: DialogManager,
+    bot_service: BotService,
+    retort: Retort,
+    i18n: TranslatorRunner,
+    settings_dao: SettingsDao,
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    settings = await settings_dao.get()
+    all_buttons = get_broadcast_buttons(
+        support_url=bot_service.get_support_url(
+            text=i18n.get("message.help", telegram_id=user.telegram_id)
+        ),
+        is_referral_enable=settings.referral.enable,
+    )
+    goto_buttons = all_buttons[:-1]
+    selected_buttons: list[dict] = dialog_manager.dialog_data.get("buttons", [])
+
+    builder = InlineKeyboardBuilder()
+    has_buttons = False
+    for button in selected_buttons:
+        button_id = int(button["id"])
+        if button.get("selected") and 0 <= button_id < len(goto_buttons):
+            builder.row(goto_buttons[button_id])
+            has_buttons = True
+
+    custom_button: dict[str, str] = dialog_manager.dialog_data.get("custom_button", {})
+    custom_text = custom_button.get("text")
+    custom_url = custom_button.get("url")
+    if custom_text and custom_url:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{RAW_BUTTON_TEXT_PREFIX}{custom_text}",
+                url=custom_url,
+            )
+        )
+        has_buttons = True
+
+    reply_markup = builder.as_markup().model_dump() if has_buttons else None
+    _update_payload(dialog_manager, retort, reply_markup=reply_markup)
 
 
 @inject
@@ -226,27 +279,96 @@ async def on_button_select(
             button["selected"] = not button.get("selected", False)
             break
 
-    settings = await settings_dao.get()
-
-    all_buttons = get_broadcast_buttons(
-        support_url=bot_service.get_support_url(
-            text=i18n.get("message.help", telegram_id=user.telegram_id)
-        ),
-        is_referral_enable=settings.referral.enable,
-    )
-    goto_buttons = all_buttons[:-1]
-
     if selected_id == CLOSE_BUTTON_ID:
         close_selected = next((b["selected"] for b in buttons if b["id"] == CLOSE_BUTTON_ID), True)
         _update_payload(dialog_manager, retort, disable_default_markup=not close_selected)
     else:
-        builder = InlineKeyboardBuilder()
-        for button in buttons:
-            if button.get("selected") and button["id"] != CLOSE_BUTTON_ID:
-                builder.row(goto_buttons[int(button["id"])])
-        _update_payload(dialog_manager, retort, reply_markup=builder.as_markup().model_dump())
+        await _sync_payload_keyboard(
+            dialog_manager,
+            bot_service,
+            retort,
+            i18n,
+            settings_dao,
+        )
 
     logger.debug(f"{user.log} Updated payload keyboard: {buttons}")
+
+
+@inject
+async def on_custom_button_text_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    bot_service: FromDishka[BotService],
+    retort: FromDishka[Retort],
+    i18n: FromDishka[TranslatorRunner],
+    settings_dao: FromDishka[SettingsDao],
+    notifier: FromDishka[Notifier],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    text = (message.text or "").strip()
+
+    if not 1 <= len(text) <= 64:
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-text-invalid")
+        return
+
+    custom_button = dict(dialog_manager.dialog_data.get("custom_button", {}))
+    custom_button["text"] = text
+    dialog_manager.dialog_data["custom_button"] = custom_button
+    await _sync_payload_keyboard(dialog_manager, bot_service, retort, i18n, settings_dao)
+
+    logger.info(f"{user.log} Updated custom broadcast button text")
+    await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-saved")
+    await dialog_manager.switch_to(DashboardBroadcast.CUSTOM_BUTTON)
+
+
+@inject
+async def on_custom_button_url_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    bot_service: FromDishka[BotService],
+    retort: FromDishka[Retort],
+    i18n: FromDishka[TranslatorRunner],
+    settings_dao: FromDishka[SettingsDao],
+    notifier: FromDishka[Notifier],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    url = (message.text or "").strip()
+
+    if len(url) > 2048 or not is_valid_url(url):
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-url-invalid")
+        return
+
+    custom_button = dict(dialog_manager.dialog_data.get("custom_button", {}))
+    custom_button["url"] = url
+    dialog_manager.dialog_data["custom_button"] = custom_button
+    await _sync_payload_keyboard(dialog_manager, bot_service, retort, i18n, settings_dao)
+
+    logger.info(f"{user.log} Updated custom broadcast button URL")
+    await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-saved")
+    await dialog_manager.switch_to(DashboardBroadcast.CUSTOM_BUTTON)
+
+
+@inject
+async def on_custom_button_delete(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    bot_service: FromDishka[BotService],
+    retort: FromDishka[Retort],
+    i18n: FromDishka[TranslatorRunner],
+    settings_dao: FromDishka[SettingsDao],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    dialog_manager.dialog_data.pop("custom_button", None)
+    await _sync_payload_keyboard(dialog_manager, bot_service, retort, i18n, settings_dao)
+
+    logger.info(f"{user.log} Deleted custom broadcast button")
+    await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-deleted")
 
 
 @inject
@@ -262,6 +384,12 @@ async def on_preview(
 
     if not payload or not payload["i18n_kwargs"].get("content") and not payload.get("media"):
         await notifier.notify_user(user, i18n_key="ntf-broadcast.content-empty")
+        return
+
+    if dialog_manager.dialog_data.get("custom_button") and not _is_custom_button_ready(
+        dialog_manager
+    ):
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-incomplete")
         return
 
     await notifier.notify_user(user, payload=retort.load(payload, MessagePayloadDto))
@@ -300,8 +428,16 @@ async def on_send(
     plan_id = dialog_manager.dialog_data.get("plan_id")
     payload = dialog_manager.dialog_data.get("payload")
 
-    if not payload:
+    if not payload or (
+        not payload.get("i18n_kwargs", {}).get("content") and not payload.get("media")
+    ):
         await notifier.notify_user(user, i18n_key="ntf-broadcast.content-empty")
+        return
+
+    if dialog_manager.dialog_data.get("custom_button") and not _is_custom_button_ready(
+        dialog_manager
+    ):
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-incomplete")
         return
 
     payload = retort.load(payload, MessagePayloadDto)
