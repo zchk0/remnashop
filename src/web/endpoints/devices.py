@@ -35,6 +35,7 @@ from src.application.common.dao import (
     LinkedDeviceDao,
     PaymentGatewayDao,
     PlanDao,
+    PromocodeDao,
     ReferralDao,
     SettingsDao,
     SubscriptionDao,
@@ -60,6 +61,10 @@ from src.application.dto.device import (
 from src.application.services import PricingService
 from src.application.services.device_binding import bind_linked_device
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
+from src.application.use_cases.promocode.commands.activate import (
+    ActivatePromocode,
+    ActivatePromocodeDto,
+)
 from src.application.use_cases.referral.commands.attachment import (
     AttachReferral,
     AttachReferralDto,
@@ -68,6 +73,12 @@ from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
 from src.core.constants import TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
 from src.core.enums import Deeplink, PlanAvailability, PurchaseType
+from src.core.exceptions import (
+    PromocodeAlreadyActivatedError,
+    PromocodeExpiredError,
+    PromocodeNotAvailableError,
+    PromocodeNotFoundError,
+)
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 from src.core.utils.device_description import (
     append_device_id_to_description,
@@ -801,6 +812,10 @@ class TvPairConfirmRequest(BaseModel):
     telegram_id: Optional[int] = None
 
 
+class PromocodeActivateRequest(BaseModel):
+    code: str
+
+
 # ── Auth token endpoints ─────────────────────────────────────────
 @router.post("/auth/request")
 @inject
@@ -1401,6 +1416,86 @@ async def get_user_avatar(
         media_type="image/jpeg",
         headers={"Cache-Control": _AVATAR_CACHE_CONTROL},
     )
+
+
+@router.post("/user/promocodes/activate")
+@inject
+async def activate_promocode_for_device(
+    request: PromocodeActivateRequest,
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    user_dao: FromDishka[UserDao],
+    activate_promocode: FromDishka[ActivatePromocode],
+) -> dict:
+    telegram_id = _resolve_telegram_id(auth, None)
+    user = await user_dao.get_by_telegram_id(telegram_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    try:
+        promo = await activate_promocode(
+            user,
+            ActivatePromocodeDto(code=request.code, user=user),
+        )
+    except PromocodeNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except (
+        PromocodeExpiredError,
+        PromocodeAlreadyActivatedError,
+        PromocodeNotAvailableError,
+    ) as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+    return {
+        "success": True,
+        "data": {
+            "code": promo.code,
+            "reward_type": promo.reward_type.value,
+        },
+    }
+
+
+@router.get("/user/promocodes")
+@inject
+async def get_applied_promocodes_for_device(
+    auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
+    user_dao: FromDishka[UserDao],
+    promocode_dao: FromDishka[PromocodeDao],
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    telegram_id = _resolve_telegram_id(auth, None)
+    user = await user_dao.get_by_telegram_id(telegram_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    activations = await promocode_dao.get_activations_by_user(
+        user.id,
+        limit=limit,
+        offset=offset,
+    )
+    total = await promocode_dao.get_activations_count_by_user(user.id)
+
+    return {
+        "success": True,
+        "data": {
+            "telegram_id": telegram_id,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "promocodes": [
+                {
+                    "activation_id": activation.activation_id,
+                    "promocode_id": activation.promocode_id,
+                    "code": activation.code,
+                    "reward_type": activation.reward_type.value,
+                    "reward": activation.reward,
+                    "plan_snapshot": activation.plan_snapshot,
+                    "activated_at": _datetime_to_iso(activation.activated_at),
+                }
+                for activation in activations
+            ],
+        },
+    }
 
 
 # TV pairing endpoints

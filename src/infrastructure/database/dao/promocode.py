@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import PromocodeDao
 from src.application.dto import (
+    PromocodeActivationDetailDto,
     PromocodeActivationDto,
     PromocodeDetailStatisticsDto,
     PromocodeDto,
@@ -227,6 +228,39 @@ class PromocodeDaoImpl(PromocodeDao):
         )
         db = await self.session.scalar(stmt)
         return self._act_to_dto(db) if db else None
+
+    async def get_activations_by_user(
+        self, user_id: int, limit: int = 100, offset: int = 0
+    ) -> list[PromocodeActivationDetailDto]:
+        stmt = (
+            select(PromocodeActivation, Promocode)
+            .join(Promocode, Promocode.id == PromocodeActivation.promocode_id)
+            .where(PromocodeActivation.user_id == user_id)
+            .order_by(PromocodeActivation.activated_at.desc(), PromocodeActivation.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            PromocodeActivationDetailDto(
+                activation_id=activation.id,
+                promocode_id=promocode.id,
+                code=promocode.code,
+                reward_type=promocode.reward_type,
+                reward=promocode.reward,
+                plan_snapshot=promocode.plan_snapshot,
+                activated_at=activation.activated_at,
+            )
+            for activation, promocode in rows
+        ]
+
+    async def get_activations_count_by_user(self, user_id: int) -> int:
+        result = await self.session.scalar(
+            select(func.count(PromocodeActivation.id)).where(
+                PromocodeActivation.user_id == user_id
+            )
+        )
+        return result or 0
 
     async def create_activation(
         self,

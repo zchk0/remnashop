@@ -25,3 +25,14 @@ class PromocodeActivationDto(BaseDto):
     promocode_id: int
     user_id: int
     activated_at: datetime
+
+
+@dataclass(kw_only=True)
+class PromocodeActivationDetailDto:
+    activation_id: int
+    promocode_id: int
+    code: str
+    reward_type: PromocodeRewardType
+    reward: Optional[int]
+    plan_snapshot: Optional[dict[str, Any]]
+    activated_at: datetime
