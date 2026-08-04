@@ -44,15 +44,15 @@ async def send_getter(
     excluded_telegram_ids: list[int] = dialog_manager.dialog_data.get(
         "excluded_telegram_ids", []
     )
-    exclude_registered_within_days = dialog_manager.dialog_data.get(
-        "exclude_registered_within_days"
+    exclude_registered_older_than_days = dialog_manager.dialog_data.get(
+        "exclude_registered_older_than_days"
     )
 
     return {
         "audience_type": audience,
         "audience_count": audience_count,
         "excluded_users_count": len(excluded_telegram_ids),
-        "registration_exclusion_days": exclude_registered_within_days or 0,
+        "registration_exclusion_days": exclude_registered_older_than_days or 0,
     }
 
 
@@ -67,24 +67,24 @@ async def excluded_users_getter(
     ids_text = ", ".join(str(telegram_id) for telegram_id in visible_ids) or "—"
     if len(excluded_telegram_ids) > len(visible_ids):
         ids_text += f" … (+{len(excluded_telegram_ids) - len(visible_ids)})"
-    exclude_registered_within_days = dialog_manager.dialog_data.get(
-        "exclude_registered_within_days"
+    exclude_registered_older_than_days = dialog_manager.dialog_data.get(
+        "exclude_registered_older_than_days"
     )
 
     return {
         "excluded_users_count": len(excluded_telegram_ids),
         "excluded_user_ids": ids_text,
         "audience_count": dialog_manager.dialog_data["audience_count"],
-        "registration_exclusion_days": exclude_registered_within_days or 0,
+        "registration_exclusion_days": exclude_registered_older_than_days or 0,
         "registration_exclusion_periods": [
             {
                 "days": days,
-                "selected": (days or None) == exclude_registered_within_days,
+                "selected": (days or None) == exclude_registered_older_than_days,
             }
             for days in (0, 7, 30, 90)
         ],
         "has_excluded_users": bool(
-            excluded_telegram_ids or exclude_registered_within_days
+            excluded_telegram_ids or exclude_registered_older_than_days
         ),
     }
 

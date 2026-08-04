@@ -32,7 +32,7 @@ class SubscriptionDao(Protocol):
         self,
         plan_id: int,
         excluded_telegram_ids: Optional[Sequence[int]] = None,
-        exclude_registered_within_days: Optional[int] = None,
+        exclude_registered_older_than_days: Optional[int] = None,
     ) -> int: ...
 
     async def get_all_active_internal_squads(self) -> list[UUID]: ...

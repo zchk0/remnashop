@@ -172,7 +172,7 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         self,
         plan_id: int,
         excluded_telegram_ids: Optional[Sequence[int]] = None,
-        exclude_registered_within_days: Optional[int] = None,
+        exclude_registered_older_than_days: Optional[int] = None,
     ) -> int:
         stmt = (
             select(func.count(Subscription.id))
@@ -184,13 +184,18 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
                 User.is_bot_blocked.is_(False),
             )
         )
-        if excluded_telegram_ids is not None:
+        if (
+            excluded_telegram_ids is not None
+            or exclude_registered_older_than_days is not None
+        ):
             stmt = stmt.where(User.telegram_id.is_not(None))
-            if excluded_telegram_ids:
-                stmt = stmt.where(User.telegram_id.not_in(excluded_telegram_ids))
-        if exclude_registered_within_days is not None:
-            registered_before = datetime_now() - timedelta(days=exclude_registered_within_days)
-            stmt = stmt.where(User.created_at < registered_before)
+        if excluded_telegram_ids:
+            stmt = stmt.where(User.telegram_id.not_in(excluded_telegram_ids))
+        if exclude_registered_older_than_days is not None:
+            registration_cutoff = datetime_now() - timedelta(
+                days=exclude_registered_older_than_days
+            )
+            stmt = stmt.where(User.created_at >= registration_cutoff)
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 

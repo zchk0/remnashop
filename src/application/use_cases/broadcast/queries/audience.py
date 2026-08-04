@@ -22,7 +22,7 @@ class GetBroadcastAudienceCountDto:
     audience: BroadcastAudience
     plan_id: Optional[int] = None
     excluded_telegram_ids: list[int] = field(default_factory=list)
-    exclude_registered_within_days: Optional[int] = None
+    exclude_registered_older_than_days: Optional[int] = None
 
 
 class HasAvailableBroadcastPlans(Interactor[None, bool]):
@@ -50,8 +50,8 @@ class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
         audience = data.audience
         plan_id = data.plan_id
         excluded_telegram_ids = data.excluded_telegram_ids
-        exclude_registered_within_days = data.exclude_registered_within_days
-        validate_registration_exclusion(exclude_registered_within_days)
+        exclude_registered_older_than_days = data.exclude_registered_older_than_days
+        validate_registration_exclusion(exclude_registered_older_than_days)
 
         if audience == BroadcastAudience.PLAN:
             if not plan_id:
@@ -59,32 +59,32 @@ class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
             count = await self.subscription_dao.count_active_by_plan(
                 plan_id,
                 excluded_telegram_ids,
-                exclude_registered_within_days,
+                exclude_registered_older_than_days,
             )
 
         elif audience == BroadcastAudience.ALL:
             count = await self.user_dao.count_active_non_blocked(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
 
         elif audience == BroadcastAudience.SUBSCRIBED:
             count = await self.user_dao.count_with_active_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
 
         elif audience == BroadcastAudience.UNSUBSCRIBED:
             count = await self.user_dao.count_without_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
 
         elif audience == BroadcastAudience.EXPIRED:
             count = await self.user_dao.count_with_expired_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
 
         elif audience == BroadcastAudience.TRIAL:
             count = await self.user_dao.count_with_trial_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
 
         else:
@@ -100,7 +100,7 @@ class GetBroadcastAudienceUsersDto:
     audience: BroadcastAudience
     plan_id: Optional[int] = None
     excluded_telegram_ids: list[int] = field(default_factory=list)
-    exclude_registered_within_days: Optional[int] = None
+    exclude_registered_older_than_days: Optional[int] = None
 
 
 class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[UserDto]]):
@@ -113,34 +113,34 @@ class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[Us
         audience = data.audience
         plan_id = data.plan_id
         excluded_telegram_ids = data.excluded_telegram_ids
-        exclude_registered_within_days = data.exclude_registered_within_days
-        validate_registration_exclusion(exclude_registered_within_days)
+        exclude_registered_older_than_days = data.exclude_registered_older_than_days
+        validate_registration_exclusion(exclude_registered_older_than_days)
 
         if audience == BroadcastAudience.PLAN:
             if plan_id is None:
                 raise ValueError("plan_id is required for PLAN audience")
             users = await self.user_dao.get_active_by_plan(
-                plan_id, excluded_telegram_ids, exclude_registered_within_days
+                plan_id, excluded_telegram_ids, exclude_registered_older_than_days
             )
         elif audience == BroadcastAudience.ALL:
             users = await self.user_dao.get_active_non_blocked(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
         elif audience == BroadcastAudience.SUBSCRIBED:
             users = await self.user_dao.get_with_active_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
         elif audience == BroadcastAudience.UNSUBSCRIBED:
             users = await self.user_dao.get_without_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
         elif audience == BroadcastAudience.EXPIRED:
             users = await self.user_dao.get_with_expired_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
         elif audience == BroadcastAudience.TRIAL:
             users = await self.user_dao.get_with_trial_subscription(
-                excluded_telegram_ids, exclude_registered_within_days
+                excluded_telegram_ids, exclude_registered_older_than_days
             )
         else:
             logger.error(f"{actor.log} Received unknown broadcast audience '{audience}'")
@@ -149,6 +149,6 @@ class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[Us
         logger.info(
             f"{actor.log} Retrieved '{len(users)}' users for audience '{audience}', "
             f"excluded Telegram IDs: '{len(excluded_telegram_ids)}', "
-            f"registration exclusion days: '{exclude_registered_within_days}'"
+            f"registration age exclusion days: '{exclude_registered_older_than_days}'"
         )
         return users

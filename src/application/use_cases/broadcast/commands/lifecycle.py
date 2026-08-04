@@ -22,7 +22,7 @@ class StartBroadcastDto:
     payload: MessagePayloadDto
     plan_id: Optional[int] = None
     excluded_telegram_ids: list[int] = field(default_factory=list)
-    exclude_registered_within_days: Optional[int] = None
+    exclude_registered_older_than_days: Optional[int] = None
 
 
 class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
@@ -46,7 +46,7 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
                 data.audience,
                 data.plan_id,
                 data.excluded_telegram_ids,
-                data.exclude_registered_within_days,
+                data.exclude_registered_older_than_days,
             )
         )
 
@@ -66,7 +66,7 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
             broadcast,
             data.plan_id,
             data.excluded_telegram_ids,
-            data.exclude_registered_within_days,
+            data.exclude_registered_older_than_days,
         )
 
         logger.info(f"{actor.log} Scheduled broadcast initialization '{task_id}'")

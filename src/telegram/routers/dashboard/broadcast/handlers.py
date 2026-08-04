@@ -107,8 +107,8 @@ async def _refresh_audience_count(
             excluded_telegram_ids=dialog_manager.dialog_data.get(
                 "excluded_telegram_ids", []
             ),
-            exclude_registered_within_days=dialog_manager.dialog_data.get(
-                "exclude_registered_within_days"
+            exclude_registered_older_than_days=dialog_manager.dialog_data.get(
+                "exclude_registered_older_than_days"
             ),
         ),
     )
@@ -499,7 +499,7 @@ async def on_excluded_users_reset(
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     dialog_manager.dialog_data["excluded_telegram_ids"] = []
-    dialog_manager.dialog_data["exclude_registered_within_days"] = None
+    dialog_manager.dialog_data["exclude_registered_older_than_days"] = None
     await _refresh_audience_count(dialog_manager, user, get_broadcast_audience_count)
     await notifier.notify_user(user, i18n_key="ntf-broadcast.excluded-users-cleared")
     logger.info(f"{user.log} Cleared broadcast exclusions")
@@ -514,22 +514,22 @@ async def on_registration_exclusion_select(
     get_broadcast_audience_count: FromDishka[GetBroadcastAudienceCount],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
-    exclude_registered_within_days = selected_days or None
+    exclude_registered_older_than_days = selected_days or None
     if (
-        exclude_registered_within_days is not None
-        and exclude_registered_within_days not in BROADCAST_REGISTRATION_EXCLUSION_DAYS
+        exclude_registered_older_than_days is not None
+        and exclude_registered_older_than_days not in BROADCAST_REGISTRATION_EXCLUSION_DAYS
     ):
         raise ValueError(
-            f"Unsupported registration exclusion period: '{exclude_registered_within_days}'"
+            f"Unsupported registration exclusion period: '{exclude_registered_older_than_days}'"
         )
 
     dialog_manager.dialog_data[
-        "exclude_registered_within_days"
-    ] = exclude_registered_within_days
+        "exclude_registered_older_than_days"
+    ] = exclude_registered_older_than_days
     await _refresh_audience_count(dialog_manager, user, get_broadcast_audience_count)
     logger.info(
         f"{user.log} Set broadcast registration exclusion to "
-        f"'{exclude_registered_within_days}' days"
+        f"accounts older than '{exclude_registered_older_than_days}' days"
     )
 
 
@@ -590,8 +590,8 @@ async def on_send(
     excluded_telegram_ids: list[int] = dialog_manager.dialog_data.get(
         "excluded_telegram_ids", []
     )
-    exclude_registered_within_days: Optional[int] = dialog_manager.dialog_data.get(
-        "exclude_registered_within_days"
+    exclude_registered_older_than_days: Optional[int] = dialog_manager.dialog_data.get(
+        "exclude_registered_older_than_days"
     )
 
     if not payload or (
@@ -621,7 +621,7 @@ async def on_send(
                 payload,
                 plan_id,
                 excluded_telegram_ids,
-                exclude_registered_within_days,
+                exclude_registered_older_than_days,
             ),
         )
         dialog_manager.dialog_data["task_id"] = task_id

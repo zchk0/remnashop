@@ -37,7 +37,7 @@ async def send_broadcast_task(  # noqa: C901
     broadcast: BroadcastDto,
     plan_id: Optional[int],
     excluded_telegram_ids: list[int],
-    exclude_registered_within_days: Optional[int],
+    exclude_registered_older_than_days: Optional[int],
     broadcast_dao: FromDishka[BroadcastDao],
     get_broadcast_audience_users: FromDishka[GetBroadcastAudienceUsers],
     initialize_broadcast_messages: FromDishka[InitializeBroadcastMessages],
@@ -53,7 +53,7 @@ async def send_broadcast_task(  # noqa: C901
                 broadcast.audience,
                 plan_id,
                 excluded_telegram_ids,
-                exclude_registered_within_days,
+                exclude_registered_older_than_days,
             )
         )
 

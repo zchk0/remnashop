@@ -13,6 +13,6 @@ class BroadcastDispatcher(Protocol):
         broadcast: BroadcastDto,
         plan_id: Optional[int],
         excluded_telegram_ids: list[int],
-        exclude_registered_within_days: Optional[int],
+        exclude_registered_older_than_days: Optional[int],
     ) -> None: ...
     async def delete(self, broadcast: BroadcastDto) -> None: ...
