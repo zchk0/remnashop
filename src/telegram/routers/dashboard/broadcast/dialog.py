@@ -2,6 +2,7 @@ from uuid import UUID
 
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
+from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
 from src.core.enums import BannerName, BroadcastAudience, BroadcastStatus
@@ -36,6 +37,7 @@ from .handlers import (
     on_content_input,
     on_custom_button_delete,
     on_custom_button_text_input,
+    on_custom_button_toggle,
     on_custom_button_url_input,
     on_delete,
     on_plan_select,
@@ -295,9 +297,17 @@ buttons = Window(
     ),
     Row(
         SwitchTo(
-            I18nFormat("btn-broadcast.custom-button"),
+            Format("{custom_button_label}"),
             id="custom_button",
             state=DashboardBroadcast.CUSTOM_BUTTON,
+        ),
+        Button(
+            I18nFormat(
+                "btn-broadcast.button-choice",
+                selected=F["custom_button_enabled"],
+            ),
+            id="custom_button_toggle",
+            on_click=on_custom_button_toggle,
         ),
     ),
     Row(

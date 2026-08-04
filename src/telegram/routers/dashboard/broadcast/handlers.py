@@ -63,8 +63,13 @@ def _update_payload(
 
 
 def _is_custom_button_ready(dialog_manager: DialogManager) -> bool:
-    custom_button: dict[str, str] = dialog_manager.dialog_data.get("custom_button", {})
+    custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
     return bool(custom_button.get("text") and custom_button.get("url"))
+
+
+def _is_custom_button_enabled(dialog_manager: DialogManager) -> bool:
+    custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
+    return bool(custom_button.get("enabled", False))
 
 
 async def _sync_payload_keyboard(
@@ -93,10 +98,10 @@ async def _sync_payload_keyboard(
             builder.row(goto_buttons[button_id])
             has_buttons = True
 
-    custom_button: dict[str, str] = dialog_manager.dialog_data.get("custom_button", {})
+    custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
     custom_text = custom_button.get("text")
     custom_url = custom_button.get("url")
-    if custom_text and custom_url:
+    if custom_button.get("enabled") and custom_text and custom_url:
         builder.row(
             InlineKeyboardButton(
                 text=f"{RAW_BUTTON_TEXT_PREFIX}{custom_text}",
@@ -372,6 +377,32 @@ async def on_custom_button_delete(
 
 
 @inject
+async def on_custom_button_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    bot_service: FromDishka[BotService],
+    retort: FromDishka[Retort],
+    i18n: FromDishka[TranslatorRunner],
+    settings_dao: FromDishka[SettingsDao],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    custom_button = dict(dialog_manager.dialog_data.get("custom_button", {}))
+
+    if not custom_button.get("enabled") and not _is_custom_button_ready(dialog_manager):
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-incomplete")
+        await dialog_manager.switch_to(DashboardBroadcast.CUSTOM_BUTTON)
+        return
+
+    custom_button["enabled"] = not bool(custom_button.get("enabled", False))
+    dialog_manager.dialog_data["custom_button"] = custom_button
+    await _sync_payload_keyboard(dialog_manager, bot_service, retort, i18n, settings_dao)
+
+    logger.info(f"{user.log} Set custom broadcast button enabled={custom_button['enabled']}")
+
+
+@inject
 async def on_preview(
     callback: CallbackQuery,
     widget: Button,
@@ -386,9 +417,7 @@ async def on_preview(
         await notifier.notify_user(user, i18n_key="ntf-broadcast.content-empty")
         return
 
-    if dialog_manager.dialog_data.get("custom_button") and not _is_custom_button_ready(
-        dialog_manager
-    ):
+    if _is_custom_button_enabled(dialog_manager) and not _is_custom_button_ready(dialog_manager):
         await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-incomplete")
         return
 
@@ -434,9 +463,7 @@ async def on_send(
         await notifier.notify_user(user, i18n_key="ntf-broadcast.content-empty")
         return
 
-    if dialog_manager.dialog_data.get("custom_button") and not _is_custom_button_ready(
-        dialog_manager
-    ):
+    if _is_custom_button_enabled(dialog_manager) and not _is_custom_button_ready(dialog_manager):
         await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-incomplete")
         return
 

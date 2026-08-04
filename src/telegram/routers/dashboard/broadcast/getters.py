@@ -77,8 +77,15 @@ async def buttons_getter(
         ]
         dialog_manager.dialog_data["buttons"] = buttons
 
+    custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
+    custom_text = custom_button.get("text")
+
     return {
         "buttons": buttons,
+        "custom_button_label": (
+            f"🔗 {custom_text}" if custom_text else i18n.get("btn-broadcast.custom-button")
+        ),
+        "custom_button_enabled": bool(custom_button.get("enabled", False)),
     }
 
 
@@ -86,7 +93,7 @@ async def custom_button_getter(
     dialog_manager: DialogManager,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    custom_button: dict[str, str] = dialog_manager.dialog_data.get("custom_button", {})
+    custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
     text = custom_button.get("text", "")
     url = custom_button.get("url", "")
 
@@ -95,6 +102,7 @@ async def custom_button_getter(
         "custom_button_url": html.escape(url) if url else "—",
         "has_custom_button": bool(custom_button),
         "custom_button_ready": bool(text and url),
+        "custom_button_enabled": bool(custom_button.get("enabled", False)),
     }
 
 
