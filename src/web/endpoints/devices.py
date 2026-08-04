@@ -21,7 +21,7 @@ from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from loguru import logger
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import UUID4, BaseModel, EmailStr, Field
 from redis.asyncio import Redis
 from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
@@ -73,12 +73,7 @@ from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
 from src.core.constants import TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
 from src.core.enums import Deeplink, PlanAvailability, PurchaseType
-from src.core.exceptions import (
-    PromocodeAlreadyActivatedError,
-    PromocodeExpiredError,
-    PromocodeNotAvailableError,
-    PromocodeNotFoundError,
-)
+from src.core.exceptions import PromocodeError, PromocodeIdempotencyConflictError
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 from src.core.utils.device_description import (
     append_device_id_to_description,
@@ -837,6 +832,7 @@ class TvPairConfirmRequest(BaseModel):
 
 class PromocodeActivateRequest(BaseModel):
     code: str
+    request_id: UUID4
 
 
 # ── Auth token endpoints ─────────────────────────────────────────
@@ -1461,36 +1457,29 @@ async def activate_promocode_for_device(
     try:
         promo = await activate_promocode(
             user,
-            ActivatePromocodeDto(code=request.code, user=user),
+            ActivatePromocodeDto(
+                code=request.code,
+                user=user,
+                request_id=request.request_id,
+            ),
         )
-    except PromocodeNotFoundError as e:
-        raise _build_promocode_http_error(
-            status.HTTP_404_NOT_FOUND,
-            "PROMOCODE_NOT_FOUND",
-            str(e),
-        ) from e
-    except PromocodeExpiredError as e:
+    except PromocodeIdempotencyConflictError as e:
         raise _build_promocode_http_error(
             status.HTTP_409_CONFLICT,
-            "PROMOCODE_EXPIRED",
-            str(e),
+            "PROMOCODE_REQUEST_ID_CONFLICT",
+            "request_id was already used for another promocode activation",
         ) from e
-    except PromocodeAlreadyActivatedError as e:
+    except PromocodeError as e:
         raise _build_promocode_http_error(
-            status.HTTP_409_CONFLICT,
-            "PROMOCODE_ALREADY_ACTIVATED",
-            str(e),
-        ) from e
-    except PromocodeNotAvailableError as e:
-        raise _build_promocode_http_error(
-            status.HTTP_409_CONFLICT,
-            "PROMOCODE_NOT_AVAILABLE",
-            str(e),
+            status.HTTP_400_BAD_REQUEST,
+            "PROMOCODE_INVALID",
+            "Promocode is invalid, unavailable, or already activated",
         ) from e
 
     return {
         "success": True,
         "data": {
+            "request_id": str(request.request_id),
             "code": promo.code,
             "reward_type": promo.reward_type.value,
             "reward": promo.reward,

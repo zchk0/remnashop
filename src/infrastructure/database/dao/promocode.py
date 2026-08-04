@@ -1,9 +1,10 @@
 from datetime import timedelta
 from typing import Optional
+from uuid import UUID
 
 from adaptix.conversion import ConversionRetort
 from loguru import logger
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,9 +16,10 @@ from src.application.dto import (
     PromocodeDto,
     PromocodeStatisticsDto,
 )
-from src.core.enums import PromocodeRewardType
+from src.core.enums import PromocodeActivationStatus, PromocodeRewardType
 from src.core.exceptions import PromocodeAlreadyActivatedError, PromocodeNotAvailableError
 from src.core.utils.time import datetime_now
+from src.infrastructure.database.models import User
 from src.infrastructure.database.models.promocode import Promocode, PromocodeActivation
 
 
@@ -86,6 +88,15 @@ class PromocodeDaoImpl(PromocodeDao):
         db = await self.session.scalar(stmt)
         return self._to_dto(db) if db else None
 
+    async def get_by_code_for_update(self, code: str) -> Optional[PromocodeDto]:
+        stmt = (
+            select(Promocode)
+            .where(Promocode.code == code.strip().upper())
+            .with_for_update()
+        )
+        db = await self.session.scalar(stmt)
+        return self._to_dto(db) if db else None
+
     async def get_list(self, limit: int = 100, offset: int = 0) -> list[PromocodeDto]:
         stmt = select(Promocode).order_by(Promocode.created_at.desc()).limit(limit).offset(offset)
         result = await self.session.scalars(stmt)
@@ -131,7 +142,9 @@ class PromocodeDaoImpl(PromocodeDao):
                         func.sum(case((activated_at >= today_start, 1), else_=0)).label("today"),
                         func.sum(case((activated_at >= week_ago, 1), else_=0)).label("week"),
                         func.sum(case((activated_at >= month_ago, 1), else_=0)).label("month"),
-                    ).select_from(PromocodeActivation)
+                    )
+                    .select_from(PromocodeActivation)
+                    .where(PromocodeActivation.status == PromocodeActivationStatus.APPLIED)
                 )
             )
             .mappings()
@@ -147,6 +160,7 @@ class PromocodeDaoImpl(PromocodeDao):
                         func.coalesce(func.sum(Promocode.reward), 0).label("reward_sum"),
                     )
                     .join(PromocodeActivation, PromocodeActivation.promocode_id == Promocode.id)
+                    .where(PromocodeActivation.status == PromocodeActivationStatus.APPLIED)
                     .group_by(Promocode.reward_type)
                 )
             )
@@ -196,7 +210,10 @@ class PromocodeDaoImpl(PromocodeDao):
                         func.sum(case((activated_at >= today_start, 1), else_=0)).label("today"),
                         func.sum(case((activated_at >= week_ago, 1), else_=0)).label("week"),
                         func.sum(case((activated_at >= month_ago, 1), else_=0)).label("month"),
-                    ).where(PromocodeActivation.promocode_id == promocode_id)
+                    ).where(
+                        PromocodeActivation.promocode_id == promocode_id,
+                        PromocodeActivation.status == PromocodeActivationStatus.APPLIED,
+                    )
                 )
             )
             .mappings()
@@ -229,13 +246,64 @@ class PromocodeDaoImpl(PromocodeDao):
         db = await self.session.scalar(stmt)
         return self._act_to_dto(db) if db else None
 
+    async def get_activation_by_request_id(
+        self,
+        request_id: UUID,
+        for_update: bool = False,
+    ) -> Optional[PromocodeActivationDto]:
+        stmt = select(PromocodeActivation).where(
+            PromocodeActivation.request_id == request_id
+        )
+        if for_update:
+            stmt = stmt.with_for_update()
+        db = await self.session.scalar(stmt)
+        return self._act_to_dto(db) if db else None
+
+    async def get_pending_activation_by_user(
+        self,
+        user_id: int,
+    ) -> Optional[PromocodeActivationDto]:
+        stmt = select(PromocodeActivation).where(
+            PromocodeActivation.user_id == user_id,
+            PromocodeActivation.status == PromocodeActivationStatus.PENDING,
+        )
+        db = await self.session.scalar(stmt)
+        return self._act_to_dto(db) if db else None
+
+    async def get_pending_activations(
+        self,
+        limit: int = 100,
+    ) -> list[PromocodeActivationDto]:
+        stmt = (
+            select(PromocodeActivation)
+            .where(PromocodeActivation.status == PromocodeActivationStatus.PENDING)
+            .order_by(PromocodeActivation.activated_at, PromocodeActivation.id)
+            .limit(limit)
+        )
+        rows = await self.session.scalars(stmt)
+        return [self._act_to_dto(row) for row in rows.all()]
+
+    async def lock_activation_user(self, user_id: int) -> None:
+        await self.session.execute(
+            select(User.id).where(User.id == user_id).with_for_update()
+        )
+
+    async def lock_activation_request(self, request_id: UUID) -> None:
+        # A transaction-scoped advisory lock also serializes the first insertion,
+        # when there is no activation row available for SELECT FOR UPDATE yet.
+        lock_key = request_id.int & ((1 << 63) - 1)
+        await self.session.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
     async def get_activations_by_user(
         self, user_id: int, limit: int = 100, offset: int = 0
     ) -> list[PromocodeActivationDetailDto]:
         stmt = (
             select(PromocodeActivation, Promocode)
             .join(Promocode, Promocode.id == PromocodeActivation.promocode_id)
-            .where(PromocodeActivation.user_id == user_id)
+            .where(
+                PromocodeActivation.user_id == user_id,
+                PromocodeActivation.status == PromocodeActivationStatus.APPLIED,
+            )
             .order_by(PromocodeActivation.activated_at.desc(), PromocodeActivation.id.desc())
             .limit(limit)
             .offset(offset)
@@ -257,7 +325,8 @@ class PromocodeDaoImpl(PromocodeDao):
     async def get_activations_count_by_user(self, user_id: int) -> int:
         result = await self.session.scalar(
             select(func.count(PromocodeActivation.id)).where(
-                PromocodeActivation.user_id == user_id
+                PromocodeActivation.user_id == user_id,
+                PromocodeActivation.status == PromocodeActivationStatus.APPLIED,
             )
         )
         return result or 0
@@ -304,6 +373,12 @@ class PromocodeDaoImpl(PromocodeDao):
             promocode_id=activation.promocode_id,
             user_id=activation.user_id,
             activated_at=activation.activated_at,
+            request_id=activation.request_id,
+            status=activation.status,
+            remote_action=activation.remote_action,
+            target_remna_id=activation.target_remna_id,
+            reset_traffic=activation.reset_traffic,
+            last_error=activation.last_error,
         )
         self.session.add(db)
         await self.session.flush()
@@ -312,3 +387,21 @@ class PromocodeDaoImpl(PromocodeDao):
             f"user_id={activation.user_id}"
         )
         return self._act_to_dto(db)
+
+    async def mark_activation_applied(self, request_id: UUID) -> PromocodeActivationDto:
+        db = await self.session.scalar(
+            update(PromocodeActivation)
+            .where(PromocodeActivation.request_id == request_id)
+            .values(status=PromocodeActivationStatus.APPLIED, last_error=None)
+            .returning(PromocodeActivation)
+        )
+        if db is None:
+            raise RuntimeError(f"Promocode activation request '{request_id}' not found")
+        return self._act_to_dto(db)
+
+    async def set_activation_error(self, request_id: UUID, error: str) -> None:
+        await self.session.execute(
+            update(PromocodeActivation)
+            .where(PromocodeActivation.request_id == request_id)
+            .values(last_error=error[:1000])
+        )

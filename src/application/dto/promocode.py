@@ -1,8 +1,14 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
-from src.core.enums import PromocodeAvailability, PromocodeRewardType
+from src.core.enums import (
+    PromocodeActivationStatus,
+    PromocodeAvailability,
+    PromocodeRemoteAction,
+    PromocodeRewardType,
+)
 
 from .base import BaseDto, TimestampMixin, TrackableMixin
 
@@ -25,6 +31,12 @@ class PromocodeActivationDto(BaseDto):
     promocode_id: int
     user_id: int
     activated_at: datetime
+    request_id: Optional[UUID] = None
+    status: PromocodeActivationStatus = PromocodeActivationStatus.APPLIED
+    remote_action: PromocodeRemoteAction = PromocodeRemoteAction.NONE
+    target_remna_id: Optional[UUID] = None
+    reset_traffic: bool = False
+    last_error: Optional[str] = None
 
 
 @dataclass(kw_only=True)

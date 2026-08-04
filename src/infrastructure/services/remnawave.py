@@ -132,6 +132,14 @@ class RemnawaveImpl(Remnawave):
             )
             return remna_user
         except ConflictError:
+            if request_dto.uuid is not None:
+                existing = await self.get_user_by_uuid(request_dto.uuid)
+                if existing is not None:
+                    logger.info(
+                        f"RemnaUser with deterministic UUID '{request_dto.uuid}' "
+                        f"already exists; treating create as idempotent success"
+                    )
+                    return existing
             logger.warning(
                 f"RemnaUser '{request_dto.username}' with UUID '{request_dto.uuid}' "
                 f"already exists in panel"

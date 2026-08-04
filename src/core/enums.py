@@ -142,6 +142,17 @@ class PromocodeAvailability(UpperStrEnum):
     INVITED = auto()
 
 
+class PromocodeActivationStatus(UpperStrEnum):
+    PENDING = auto()
+    APPLIED = auto()
+
+
+class PromocodeRemoteAction(UpperStrEnum):
+    NONE = auto()
+    UPDATE_SUBSCRIPTION = auto()
+    CREATE_SUBSCRIPTION = auto()
+
+
 class ReferralLevel(IntEnum):
     FIRST = auto()
     SECOND = auto()

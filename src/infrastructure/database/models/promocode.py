@@ -1,11 +1,17 @@
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.enums import PromocodeAvailability, PromocodeRewardType
+from src.core.enums import (
+    PromocodeActivationStatus,
+    PromocodeAvailability,
+    PromocodeRemoteAction,
+    PromocodeRewardType,
+)
 
 from .base import BaseSql
 from .timestamp import TimestampMixin
@@ -37,7 +43,20 @@ class Promocode(BaseSql, TimestampMixin):
 
 class PromocodeActivation(BaseSql):
     __tablename__ = "promocode_activations"
-    __table_args__ = (UniqueConstraint("promocode_id", "user_id"),)
+    __table_args__ = (
+        Index(
+            "ix_promocode_activations_request_id",
+            "request_id",
+            unique=True,
+            postgresql_where=text("request_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_promocode_activations_pending_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'PENDING'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     promocode_id: Mapped[int] = mapped_column(
@@ -51,5 +70,27 @@ class PromocodeActivation(BaseSql):
         nullable=False,
         server_default=text("timezone('UTC', now())"),
     )
+    request_id: Mapped[Optional[UUID]]
+    status: Mapped[PromocodeActivationStatus] = mapped_column(
+        Enum(PromocodeActivationStatus, native_enum=False, length=16),
+        nullable=False,
+        default=PromocodeActivationStatus.APPLIED,
+        server_default=PromocodeActivationStatus.APPLIED.value,
+        index=True,
+    )
+    remote_action: Mapped[PromocodeRemoteAction] = mapped_column(
+        Enum(PromocodeRemoteAction, native_enum=False, length=32),
+        nullable=False,
+        default=PromocodeRemoteAction.NONE,
+        server_default=PromocodeRemoteAction.NONE.value,
+    )
+    target_remna_id: Mapped[Optional[UUID]] = mapped_column(index=True)
+    reset_traffic: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
 
     promocode: Mapped["Promocode"] = relationship(back_populates="activations")
