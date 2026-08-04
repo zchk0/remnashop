@@ -18,6 +18,7 @@ class PromocodeDto(BaseDto, TrackableMixin, TimestampMixin):
     code: str
     is_active: bool
     reward_type: PromocodeRewardType
+    deleted_at: Optional[datetime] = None
     reward: Optional[int] = None
     plan_snapshot: Optional[dict[str, Any]] = None
     availability: PromocodeAvailability = PromocodeAvailability.ALL
@@ -31,6 +32,10 @@ class PromocodeActivationDto(BaseDto):
     promocode_id: int
     user_id: int
     activated_at: datetime
+    code_snapshot: str
+    reward_type_snapshot: PromocodeRewardType
+    reward_snapshot: Optional[int] = None
+    plan_snapshot: Optional[dict[str, Any]] = None
     request_id: Optional[UUID] = None
     status: PromocodeActivationStatus = PromocodeActivationStatus.APPLIED
     remote_action: PromocodeRemoteAction = PromocodeRemoteAction.NONE

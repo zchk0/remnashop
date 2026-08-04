@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Optional
 from uuid import UUID, uuid4
@@ -148,6 +148,10 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
                     promocode_id=promo.id,
                     user_id=user.id,
                     activated_at=datetime_now(),
+                    code_snapshot=promo.code,
+                    reward_type_snapshot=promo.reward_type,
+                    reward_snapshot=promo.reward,
+                    plan_snapshot=promo.plan_snapshot,
                     request_id=request_id,
                     status=status,
                     remote_action=reward.remote_action,
@@ -160,7 +164,11 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             await self._persist_reward(user, reward)
             await self.uow.commit()
 
-        return activation, promo, status == PromocodeActivationStatus.APPLIED
+        return (
+            activation,
+            self._promo_from_snapshot(activation, promo),
+            status == PromocodeActivationStatus.APPLIED,
+        )
 
     async def _get_matching_promo(
         self,
@@ -172,12 +180,25 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         if (
             promo is None
             or activation.user_id != data.user.id
-            or promo.code.upper() != normalized_code
+            or activation.code_snapshot.upper() != normalized_code
         ):
             raise PromocodeIdempotencyConflictError(
                 "request_id was already used for another promocode activation"
             )
-        return promo
+        return self._promo_from_snapshot(activation, promo)
+
+    @staticmethod
+    def _promo_from_snapshot(
+        activation: PromocodeActivationDto,
+        promo: PromocodeDto,
+    ) -> PromocodeDto:
+        return replace(
+            promo,
+            code=activation.code_snapshot,
+            reward_type=activation.reward_type_snapshot,
+            reward=activation.reward_snapshot,
+            plan_snapshot=activation.plan_snapshot,
+        )
 
     async def _apply_reserved_activation(
         self,

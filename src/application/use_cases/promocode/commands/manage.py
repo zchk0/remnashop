@@ -117,5 +117,5 @@ class DeletePromocode(Interactor[int, bool]):
             deleted = await self.promocode_dao.delete(promocode_id)
             await self.uow.commit()
         if deleted:
-            logger.info(f"{actor.log} Deleted promocode id={promocode_id}")
+            logger.info(f"{actor.log} Removed promocode id={promocode_id}")
         return deleted

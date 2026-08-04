@@ -23,6 +23,9 @@ class Promocode(BaseSql, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(nullable=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     reward_type: Mapped[PromocodeRewardType]
     reward: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -36,8 +39,8 @@ class Promocode(BaseSql, TimestampMixin):
 
     activations: Mapped[list["PromocodeActivation"]] = relationship(
         back_populates="promocode",
-        cascade="all, delete-orphan",
         lazy="noload",
+        passive_deletes=True,
     )
 
 
@@ -60,7 +63,7 @@ class PromocodeActivation(BaseSql):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     promocode_id: Mapped[int] = mapped_column(
-        ForeignKey("promocodes.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("promocodes.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
@@ -70,6 +73,10 @@ class PromocodeActivation(BaseSql):
         nullable=False,
         server_default=text("timezone('UTC', now())"),
     )
+    code_snapshot: Mapped[str]
+    reward_type_snapshot: Mapped[PromocodeRewardType]
+    reward_snapshot: Mapped[Optional[int]] = mapped_column(Integer)
+    plan_snapshot: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
     request_id: Mapped[Optional[UUID]]
     status: Mapped[PromocodeActivationStatus] = mapped_column(
         Enum(PromocodeActivationStatus, native_enum=False, length=16),

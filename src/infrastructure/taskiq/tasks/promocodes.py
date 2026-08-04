@@ -23,11 +23,10 @@ async def retry_pending_promocode_activations(
             continue
 
         user = await user_dao.get_by_id(activation.user_id)
-        promo = await promocode_dao.get_by_id(activation.promocode_id)
-        if user is None or promo is None:
+        if user is None:
             logger.error(
                 f"Cannot resume promocode activation '{activation.request_id}': "
-                "user or promocode not found"
+                "user not found"
             )
             continue
 
@@ -35,7 +34,7 @@ async def retry_pending_promocode_activations(
             await activate_promocode(
                 user,
                 ActivatePromocodeDto(
-                    code=promo.code,
+                    code=activation.code_snapshot,
                     user=user,
                     request_id=activation.request_id,
                 ),

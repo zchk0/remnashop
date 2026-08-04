@@ -53,12 +53,19 @@ class PromocodeDaoImpl(PromocodeDao):
         return self._to_dto(db)
 
     async def update(self, promocode: PromocodeDto) -> Optional[PromocodeDto]:
-        db = await self.session.get(Promocode, promocode.id)
+        db = await self.session.scalar(
+            select(Promocode)
+            .where(
+                Promocode.id == promocode.id,
+                Promocode.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
         if not db:
             logger.warning(f"Promocode id={promocode.id} not found for update")
             return None
         for key, value in promocode.changed_data.items():
-            if hasattr(db, key):
+            if key != "deleted_at" and hasattr(db, key):
                 if key == "code":
                     value = value.upper()
                 setattr(db, key, value)
@@ -70,14 +77,30 @@ class PromocodeDaoImpl(PromocodeDao):
         return self._to_dto(db)
 
     async def delete(self, promocode_id: int) -> bool:
-        stmt = delete(Promocode).where(Promocode.id == promocode_id).returning(Promocode.id)
-        result = await self.session.execute(stmt)
-        deleted = result.scalar_one_or_none()
-        if deleted:
-            logger.debug(f"Promocode id={promocode_id} deleted")
+        db = await self.session.scalar(
+            select(Promocode).where(Promocode.id == promocode_id).with_for_update()
+        )
+        if db is None:
+            logger.debug(f"Promocode id={promocode_id} not found for deletion")
+            return False
+
+        activation_id = await self.session.scalar(
+            select(PromocodeActivation.id)
+            .where(PromocodeActivation.promocode_id == promocode_id)
+            .limit(1)
+        )
+        if activation_id is not None:
+            db.is_active = False
+            db.deleted_at = datetime_now()
+            await self.session.flush()
+            logger.debug(
+                f"Promocode id={promocode_id} soft-deleted to preserve activation history"
+            )
             return True
-        logger.debug(f"Promocode id={promocode_id} not found for deletion")
-        return False
+
+        await self.session.execute(delete(Promocode).where(Promocode.id == promocode_id))
+        logger.debug(f"Unused promocode id={promocode_id} deleted")
+        return True
 
     async def get_by_id(self, promocode_id: int) -> Optional[PromocodeDto]:
         db = await self.session.get(Promocode, promocode_id)
@@ -98,12 +121,20 @@ class PromocodeDaoImpl(PromocodeDao):
         return self._to_dto(db) if db else None
 
     async def get_list(self, limit: int = 100, offset: int = 0) -> list[PromocodeDto]:
-        stmt = select(Promocode).order_by(Promocode.created_at.desc()).limit(limit).offset(offset)
+        stmt = (
+            select(Promocode)
+            .where(Promocode.deleted_at.is_(None))
+            .order_by(Promocode.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self.session.scalars(stmt)
         return self._to_dto_list(list(result.all()))
 
     async def get_count(self) -> int:
-        result = await self.session.scalar(select(func.count(Promocode.id)))
+        result = await self.session.scalar(
+            select(func.count(Promocode.id)).where(Promocode.deleted_at.is_(None))
+        )
         return result or 0
 
     async def get_activations_count(self, promocode_id: int) -> int:
@@ -126,7 +157,9 @@ class PromocodeDaoImpl(PromocodeDao):
                     select(
                         func.count().label("total"),
                         func.sum(case((Promocode.is_active, 1), else_=0)).label("active"),
-                    ).select_from(Promocode)
+                    )
+                    .select_from(Promocode)
+                    .where(Promocode.deleted_at.is_(None))
                 )
             )
             .mappings()
@@ -155,13 +188,14 @@ class PromocodeDaoImpl(PromocodeDao):
             (
                 await self.session.execute(
                     select(
-                        Promocode.reward_type,
+                        PromocodeActivation.reward_type_snapshot,
                         func.count(PromocodeActivation.id).label("count"),
-                        func.coalesce(func.sum(Promocode.reward), 0).label("reward_sum"),
+                        func.coalesce(func.sum(PromocodeActivation.reward_snapshot), 0).label(
+                            "reward_sum"
+                        ),
                     )
-                    .join(PromocodeActivation, PromocodeActivation.promocode_id == Promocode.id)
                     .where(PromocodeActivation.status == PromocodeActivationStatus.APPLIED)
-                    .group_by(Promocode.reward_type)
+                    .group_by(PromocodeActivation.reward_type_snapshot)
                 )
             )
             .mappings()
@@ -171,8 +205,9 @@ class PromocodeDaoImpl(PromocodeDao):
         counts: dict[PromocodeRewardType, int] = {}
         reward_sums: dict[PromocodeRewardType, int] = {}
         for row in by_type_rows:
-            counts[row["reward_type"]] = int(row["count"] or 0)
-            reward_sums[row["reward_type"]] = int(row["reward_sum"] or 0)
+            reward_type = row["reward_type_snapshot"]
+            counts[reward_type] = int(row["count"] or 0)
+            reward_sums[reward_type] = int(row["reward_sum"] or 0)
 
         return PromocodeStatisticsDto(
             total_promocodes=int(promo_counts["total"] or 0),
@@ -298,8 +333,7 @@ class PromocodeDaoImpl(PromocodeDao):
         self, user_id: int, limit: int = 100, offset: int = 0
     ) -> list[PromocodeActivationDetailDto]:
         stmt = (
-            select(PromocodeActivation, Promocode)
-            .join(Promocode, Promocode.id == PromocodeActivation.promocode_id)
+            select(PromocodeActivation)
             .where(
                 PromocodeActivation.user_id == user_id,
                 PromocodeActivation.status == PromocodeActivationStatus.APPLIED,
@@ -308,18 +342,18 @@ class PromocodeDaoImpl(PromocodeDao):
             .limit(limit)
             .offset(offset)
         )
-        rows = (await self.session.execute(stmt)).all()
+        rows = (await self.session.scalars(stmt)).all()
         return [
             PromocodeActivationDetailDto(
                 activation_id=activation.id,
-                promocode_id=promocode.id,
-                code=promocode.code,
-                reward_type=promocode.reward_type,
-                reward=promocode.reward,
-                plan_snapshot=promocode.plan_snapshot,
+                promocode_id=activation.promocode_id,
+                code=activation.code_snapshot,
+                reward_type=activation.reward_type_snapshot,
+                reward=activation.reward_snapshot,
+                plan_snapshot=activation.plan_snapshot,
                 activated_at=activation.activated_at,
             )
-            for activation, promocode in rows
+            for activation in rows
         ]
 
     async def get_activations_count_by_user(self, user_id: int) -> int:
@@ -373,6 +407,10 @@ class PromocodeDaoImpl(PromocodeDao):
             promocode_id=activation.promocode_id,
             user_id=activation.user_id,
             activated_at=activation.activated_at,
+            code_snapshot=activation.code_snapshot,
+            reward_type_snapshot=activation.reward_type_snapshot,
+            reward_snapshot=activation.reward_snapshot,
+            plan_snapshot=activation.plan_snapshot,
             request_id=activation.request_id,
             status=activation.status,
             remote_action=activation.remote_action,
