@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -64,27 +65,72 @@ class UserDao(Protocol):
 
     async def toggle_blocked_status(self, user_id: int) -> None: ...
 
-    async def count_active_non_blocked(self) -> int: ...
+    async def count_active_non_blocked(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int: ...
 
-    async def count_with_active_subscription(self) -> int: ...
+    async def count_with_active_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int: ...
 
-    async def count_without_subscription(self) -> int: ...
+    async def count_without_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int: ...
 
-    async def count_with_expired_subscription(self) -> int: ...
+    async def count_with_expired_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int: ...
 
-    async def count_with_trial_subscription(self) -> int: ...
+    async def count_with_trial_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int: ...
 
-    async def get_active_non_blocked(self) -> list[UserDto]: ...
+    async def get_active_non_blocked(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
 
-    async def get_active_by_plan(self, plan_id: int) -> list[UserDto]: ...
+    async def get_active_by_plan(
+        self,
+        plan_id: int,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
 
-    async def get_with_active_subscription(self) -> list[UserDto]: ...
+    async def get_with_active_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
 
-    async def get_without_subscription(self) -> list[UserDto]: ...
+    async def get_without_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
 
-    async def get_with_expired_subscription(self) -> list[UserDto]: ...
+    async def get_with_expired_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
 
-    async def get_with_trial_subscription(self) -> list[UserDto]: ...
+    async def get_with_trial_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
 
     async def count_new(self, days: int) -> int: ...
 

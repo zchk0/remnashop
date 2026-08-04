@@ -8,5 +8,11 @@ class PaymentNotificationDispatcher(Protocol):
 
 
 class BroadcastDispatcher(Protocol):
-    async def start(self, broadcast: BroadcastDto, plan_id: Optional[int]) -> None: ...
+    async def start(
+        self,
+        broadcast: BroadcastDto,
+        plan_id: Optional[int],
+        excluded_telegram_ids: list[int],
+        exclude_registered_within_days: Optional[int],
+    ) -> None: ...
     async def delete(self, broadcast: BroadcastDto) -> None: ...

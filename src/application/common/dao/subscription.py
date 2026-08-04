@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Optional, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -27,7 +28,12 @@ class SubscriptionDao(Protocol):
 
     async def exists(self, remna_id: UUID) -> bool: ...
 
-    async def count_active_by_plan(self, plan_id: int) -> int: ...
+    async def count_active_by_plan(
+        self,
+        plan_id: int,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int: ...
 
     async def get_all_active_internal_squads(self) -> list[UUID]: ...
 

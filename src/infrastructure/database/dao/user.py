@@ -1,12 +1,13 @@
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Optional, cast
+from typing import Any, Optional, cast
 from uuid import UUID
 
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import UserDao
@@ -30,6 +31,25 @@ class UserDaoImpl(UserDao):
 
         self._convert_to_dto = self.conversion_retort.get_converter(User, UserDto)
         self._convert_to_dto_list = self.conversion_retort.get_converter(list[User], list[UserDto])
+
+    @staticmethod
+    def _filter_broadcast_recipients(
+        stmt: Select[Any],
+        excluded_telegram_ids: Optional[Sequence[int]],
+        exclude_registered_within_days: Optional[int],
+    ) -> Select[Any]:
+        if excluded_telegram_ids is None and exclude_registered_within_days is None:
+            return stmt
+
+        stmt = stmt.where(User.telegram_id.is_not(None))
+        if excluded_telegram_ids:
+            stmt = stmt.where(User.telegram_id.not_in(excluded_telegram_ids))
+        if exclude_registered_within_days is not None:
+            registered_before = datetime.now(timezone.utc) - timedelta(
+                days=exclude_registered_within_days
+            )
+            stmt = stmt.where(User.created_at < registered_before)
+        return stmt
 
     async def create(self, user: UserDto) -> UserDto:
         user_data = self.retort.dump(user)
@@ -306,17 +326,28 @@ class UserDaoImpl(UserDao):
             f"Toggled blocked status for user_id='{user_id}', new status is '{new_status}'"
         )
 
-    async def count_active_non_blocked(self) -> int:
+    async def count_active_non_blocked(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int:
         stmt = (
             select(func.count())
             .select_from(User)
             .where(User.is_blocked.is_(False), User.is_bot_blocked.is_(False))
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Total active non-blocked users count is '{count}'")
         return count
 
-    async def count_with_active_subscription(self) -> int:
+    async def count_with_active_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int:
         stmt = (
             select(func.count(User.id))
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -325,12 +356,19 @@ class UserDaoImpl(UserDao):
                 User.is_bot_blocked.is_(False),
                 Subscription.status == SubscriptionStatus.ACTIVE,
             )
+        )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
         )
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Total users with active subscription count is '{count}'")
         return count
 
-    async def count_with_expired_subscription(self) -> int:
+    async def count_with_expired_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int:
         stmt = (
             select(func.count(User.id))
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -340,11 +378,18 @@ class UserDaoImpl(UserDao):
                 Subscription.status == SubscriptionStatus.EXPIRED,
             )
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Total users with expired subscription count is '{count}'")
         return count
 
-    async def count_with_trial_subscription(self) -> int:
+    async def count_with_trial_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int:
         stmt = (
             select(func.count(User.id))
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -354,28 +399,49 @@ class UserDaoImpl(UserDao):
                 Subscription.is_trial.is_(True),
             )
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Total users with trial subscription count is '{count}'")
         return count
 
-    async def count_without_subscription(self) -> int:
+    async def count_without_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int:
         stmt = select(func.count(User.id)).where(
             User.is_blocked.is_(False),
             User.is_bot_blocked.is_(False),
             User.current_subscription_id.is_(None),
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Total users without subscription count is '{count}'")
         return count
 
-    async def get_active_non_blocked(self) -> list[UserDto]:
+    async def get_active_non_blocked(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]:
         stmt = select(User).where(User.is_blocked.is_(False), User.is_bot_blocked.is_(False))
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         result = await self.session.scalars(stmt)
         db_users = cast(list, result.all())
         logger.debug(f"Retrieved '{len(db_users)}' active non-blocked users")
         return self._convert_to_dto_list(db_users)
 
-    async def get_with_active_subscription(self) -> list[UserDto]:
+    async def get_with_active_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]:
         stmt = (
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -385,19 +451,33 @@ class UserDaoImpl(UserDao):
                 Subscription.status == SubscriptionStatus.ACTIVE,
             )
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         result = await self.session.execute(stmt)
         return self._convert_to_dto_list(list(result.scalars()))
 
-    async def get_without_subscription(self) -> list[UserDto]:
+    async def get_without_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]:
         stmt = select(User).where(
             User.is_blocked.is_(False),
             User.is_bot_blocked.is_(False),
             User.current_subscription_id.is_(None),
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         result = await self.session.execute(stmt)
         return self._convert_to_dto_list(list(result.scalars()))
 
-    async def get_with_expired_subscription(self) -> list[UserDto]:
+    async def get_with_expired_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]:
         stmt = (
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -407,10 +487,17 @@ class UserDaoImpl(UserDao):
                 Subscription.status == SubscriptionStatus.EXPIRED,
             )
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         result = await self.session.execute(stmt)
         return self._convert_to_dto_list(list(result.scalars()))
 
-    async def get_with_trial_subscription(self) -> list[UserDto]:
+    async def get_with_trial_subscription(
+        self,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]:
         stmt = (
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -420,10 +507,18 @@ class UserDaoImpl(UserDao):
                 Subscription.is_trial.is_(True),
             )
         )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
+        )
         result = await self.session.execute(stmt)
         return self._convert_to_dto_list(list(result.scalars()))
 
-    async def get_active_by_plan(self, plan_id: int) -> list[UserDto]:
+    async def get_active_by_plan(
+        self,
+        plan_id: int,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> list[UserDto]:
         stmt = (
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
@@ -433,6 +528,9 @@ class UserDaoImpl(UserDao):
                 Subscription.status == SubscriptionStatus.ACTIVE,
                 Subscription.plan_snapshot["id"].as_integer() == plan_id,
             )
+        )
+        stmt = self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_within_days
         )
         result = await self.session.execute(stmt)
         db_users = list(result.scalars().all())

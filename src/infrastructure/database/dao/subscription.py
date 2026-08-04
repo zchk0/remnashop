@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import Optional, cast
 from uuid import UUID
@@ -167,7 +168,12 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         )
         return is_exists
 
-    async def count_active_by_plan(self, plan_id: int) -> int:
+    async def count_active_by_plan(
+        self,
+        plan_id: int,
+        excluded_telegram_ids: Optional[Sequence[int]] = None,
+        exclude_registered_within_days: Optional[int] = None,
+    ) -> int:
         stmt = (
             select(func.count(Subscription.id))
             .join(User, User.current_subscription_id == Subscription.id)
@@ -178,6 +184,13 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
                 User.is_bot_blocked.is_(False),
             )
         )
+        if excluded_telegram_ids is not None:
+            stmt = stmt.where(User.telegram_id.is_not(None))
+            if excluded_telegram_ids:
+                stmt = stmt.where(User.telegram_id.not_in(excluded_telegram_ids))
+        if exclude_registered_within_days is not None:
+            registered_before = datetime_now() - timedelta(days=exclude_registered_within_days)
+            stmt = stmt.where(User.created_at < registered_before)
         result = await self.session.execute(stmt)
         return result.scalar() or 0
 

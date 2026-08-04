@@ -55,6 +55,7 @@ class DashboardBroadcast(StatesGroup):
     CUSTOM_BUTTON = State()
     CUSTOM_BUTTON_TEXT = State()
     CUSTOM_BUTTON_URL = State()
+    EXCLUDED_USERS = State()
 
 
 class DashboardPromocodes(StatesGroup):

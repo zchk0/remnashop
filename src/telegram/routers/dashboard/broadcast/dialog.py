@@ -23,6 +23,7 @@ from src.telegram.widgets.kbd import (
 from .getters import (
     buttons_getter,
     custom_button_getter,
+    excluded_users_getter,
     list_getter,
     plans_getter,
     send_getter,
@@ -40,8 +41,11 @@ from .handlers import (
     on_custom_button_toggle,
     on_custom_button_url_input,
     on_delete,
+    on_excluded_users_input,
+    on_excluded_users_reset,
     on_plan_select,
     on_preview,
+    on_registration_exclusion_select,
     on_send,
     on_view_preview,
 )
@@ -228,6 +232,17 @@ send = Window(
         ),
     ),
     Row(
+        SwitchTo(
+            I18nFormat(
+                "btn-broadcast.excluded-users",
+                count=F["excluded_users_count"],
+                registration_days=F["registration_exclusion_days"],
+            ),
+            id="excluded_users",
+            state=DashboardBroadcast.EXCLUDED_USERS,
+        ),
+    ),
+    Row(
         Button(
             I18nFormat("btn-broadcast.preview"),
             id="preview",
@@ -389,6 +404,44 @@ custom_button_url = Window(
     state=DashboardBroadcast.CUSTOM_BUTTON_URL,
 )
 
+excluded_users = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-broadcast-excluded-users"),
+    Column(
+        Select(
+            text=I18nFormat(
+                "btn-broadcast.registration-exclusion",
+                selected=F["item"]["selected"],
+                days=F["item"]["days"],
+            ),
+            id="registration_exclusion",
+            item_id_getter=lambda item: item["days"],
+            items="registration_exclusion_periods",
+            type_factory=int,
+            on_click=on_registration_exclusion_select,
+        ),
+    ),
+    Row(
+        Button(
+            I18nFormat("btn-broadcast.excluded-users-reset"),
+            id="excluded_users_reset",
+            on_click=on_excluded_users_reset,
+            when=F["has_excluded_users"],
+        ),
+    ),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardBroadcast.SEND,
+        ),
+    ),
+    MessageInput(func=on_excluded_users_input),
+    IgnoreUpdate(),
+    state=DashboardBroadcast.EXCLUDED_USERS,
+    getter=excluded_users_getter,
+)
+
 router = Dialog(
     broadcast,
     list,
@@ -400,4 +453,5 @@ router = Dialog(
     custom_button,
     custom_button_text,
     custom_button_url,
+    excluded_users,
 )

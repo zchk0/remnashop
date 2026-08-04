@@ -10,13 +10,24 @@ class PaymentNotificationDispatcherImpl:
 
 
 class BroadcastDispatcherImpl:
-    async def start(self, broadcast: BroadcastDto, plan_id: Optional[int]) -> None:
+    async def start(
+        self,
+        broadcast: BroadcastDto,
+        plan_id: Optional[int],
+        excluded_telegram_ids: list[int],
+        exclude_registered_within_days: Optional[int],
+    ) -> None:
         from src.infrastructure.taskiq.tasks.broadcast import send_broadcast_task  # noqa: PLC0415
 
         await (
             send_broadcast_task.kicker()
             .with_task_id(str(broadcast.task_id))
-            .kiq(broadcast, plan_id)  # type: ignore[call-overload]
+            .kiq(
+                broadcast,
+                plan_id,
+                excluded_telegram_ids,
+                exclude_registered_within_days,
+            )  # type: ignore[call-overload]
         )
 
     async def delete(self, broadcast: BroadcastDto) -> None:

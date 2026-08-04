@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -21,6 +21,8 @@ class StartBroadcastDto:
     audience: BroadcastAudience
     payload: MessagePayloadDto
     plan_id: Optional[int] = None
+    excluded_telegram_ids: list[int] = field(default_factory=list)
+    exclude_registered_within_days: Optional[int] = None
 
 
 class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
@@ -40,7 +42,12 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
 
     async def _execute(self, actor: UserDto, data: StartBroadcastDto) -> UUID:
         total_count = await self.get_broadcast_audience_count.system(
-            GetBroadcastAudienceCountDto(data.audience, data.plan_id)
+            GetBroadcastAudienceCountDto(
+                data.audience,
+                data.plan_id,
+                data.excluded_telegram_ids,
+                data.exclude_registered_within_days,
+            )
         )
 
         async with self.uow:
@@ -55,7 +62,12 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
             await self.broadcast_dao.create(broadcast)
             await self.uow.commit()
 
-        await self.broadcast_dispatcher.start(broadcast, data.plan_id)
+        await self.broadcast_dispatcher.start(
+            broadcast,
+            data.plan_id,
+            data.excluded_telegram_ids,
+            data.exclude_registered_within_days,
+        )
 
         logger.info(f"{actor.log} Scheduled broadcast initialization '{task_id}'")
         return task_id

@@ -1,4 +1,5 @@
 import html
+import re
 from typing import Any, Optional
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from src.application.use_cases.broadcast.commands.lifecycle import (
     StartBroadcastDto,
 )
 from src.application.use_cases.broadcast.queries.audience import (
+    BROADCAST_REGISTRATION_EXCLUSION_DAYS,
     GetBroadcastAudienceCount,
     GetBroadcastAudienceCountDto,
     HasAvailableBroadcastPlans,
@@ -38,6 +40,9 @@ from src.core.utils.validators import is_valid_url
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 from src.telegram.states import DashboardBroadcast
 from src.telegram.utils import is_double_click
+
+MAX_EXCLUDED_TELEGRAM_IDS = 1000
+MAX_TELEGRAM_ID = 9_223_372_036_854_775_807
 
 
 def _update_payload(
@@ -70,6 +75,45 @@ def _is_custom_button_ready(dialog_manager: DialogManager) -> bool:
 def _is_custom_button_enabled(dialog_manager: DialogManager) -> bool:
     custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
     return bool(custom_button.get("enabled", False))
+
+
+def _parse_excluded_telegram_ids(raw: str) -> list[int]:
+    tokens = [token for token in re.split(r"[\s,;]+", raw.strip()) if token]
+    if not tokens or any(not token.isdigit() for token in tokens):
+        raise ValueError("Telegram IDs must be positive integers")
+
+    telegram_ids = sorted({int(token) for token in tokens})
+    if any(telegram_id <= 0 or telegram_id > MAX_TELEGRAM_ID for telegram_id in telegram_ids):
+        raise ValueError("Telegram ID is outside the supported range")
+    if len(telegram_ids) > MAX_EXCLUDED_TELEGRAM_IDS:
+        raise OverflowError("Too many excluded Telegram IDs")
+    return telegram_ids
+
+
+async def _refresh_audience_count(
+    dialog_manager: DialogManager,
+    user: TelegramUserDto,
+    get_broadcast_audience_count: GetBroadcastAudienceCount,
+) -> int:
+    audience: Optional[BroadcastAudience] = dialog_manager.dialog_data.get("audience_type")
+    if audience is None:
+        raise ValueError("BroadcastAudience not found in dialog data")
+
+    count = await get_broadcast_audience_count(
+        user,
+        GetBroadcastAudienceCountDto(
+            audience=audience,
+            plan_id=dialog_manager.dialog_data.get("plan_id"),
+            excluded_telegram_ids=dialog_manager.dialog_data.get(
+                "excluded_telegram_ids", []
+            ),
+            exclude_registered_within_days=dialog_manager.dialog_data.get(
+                "exclude_registered_within_days"
+            ),
+        ),
+    )
+    dialog_manager.dialog_data["audience_count"] = count
+    return count
 
 
 async def _sync_payload_keyboard(
@@ -403,6 +447,93 @@ async def on_custom_button_toggle(
 
 
 @inject
+async def on_excluded_users_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    get_broadcast_audience_count: FromDishka[GetBroadcastAudienceCount],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+
+    try:
+        excluded_telegram_ids = _parse_excluded_telegram_ids(message.text or "")
+    except OverflowError:
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.excluded-users-too-many")
+        return
+    except ValueError:
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.excluded-users-invalid")
+        return
+
+    dialog_manager.dialog_data["excluded_telegram_ids"] = excluded_telegram_ids
+    audience_count = await _refresh_audience_count(
+        dialog_manager,
+        user,
+        get_broadcast_audience_count,
+    )
+    await notifier.notify_user(
+        user,
+        MessagePayloadDto(
+            i18n_key="ntf-broadcast.excluded-users-saved",
+            i18n_kwargs={
+                "excluded_count": len(excluded_telegram_ids),
+                "audience_count": audience_count,
+            },
+        ),
+    )
+    logger.info(
+        f"{user.log} Set '{len(excluded_telegram_ids)}' excluded Telegram IDs "
+        f"for broadcast"
+    )
+    await dialog_manager.switch_to(DashboardBroadcast.SEND)
+
+
+@inject
+async def on_excluded_users_reset(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    get_broadcast_audience_count: FromDishka[GetBroadcastAudienceCount],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    dialog_manager.dialog_data["excluded_telegram_ids"] = []
+    dialog_manager.dialog_data["exclude_registered_within_days"] = None
+    await _refresh_audience_count(dialog_manager, user, get_broadcast_audience_count)
+    await notifier.notify_user(user, i18n_key="ntf-broadcast.excluded-users-cleared")
+    logger.info(f"{user.log} Cleared broadcast exclusions")
+
+
+@inject
+async def on_registration_exclusion_select(
+    callback: CallbackQuery,
+    widget: Select,
+    dialog_manager: DialogManager,
+    selected_days: int,
+    get_broadcast_audience_count: FromDishka[GetBroadcastAudienceCount],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    exclude_registered_within_days = selected_days or None
+    if (
+        exclude_registered_within_days is not None
+        and exclude_registered_within_days not in BROADCAST_REGISTRATION_EXCLUSION_DAYS
+    ):
+        raise ValueError(
+            f"Unsupported registration exclusion period: '{exclude_registered_within_days}'"
+        )
+
+    dialog_manager.dialog_data[
+        "exclude_registered_within_days"
+    ] = exclude_registered_within_days
+    await _refresh_audience_count(dialog_manager, user, get_broadcast_audience_count)
+    logger.info(
+        f"{user.log} Set broadcast registration exclusion to "
+        f"'{exclude_registered_within_days}' days"
+    )
+
+
+@inject
 async def on_preview(
     callback: CallbackQuery,
     widget: Button,
@@ -456,6 +587,12 @@ async def on_send(
     audience: Optional[BroadcastAudience] = dialog_manager.dialog_data.get("audience_type")
     plan_id = dialog_manager.dialog_data.get("plan_id")
     payload = dialog_manager.dialog_data.get("payload")
+    excluded_telegram_ids: list[int] = dialog_manager.dialog_data.get(
+        "excluded_telegram_ids", []
+    )
+    exclude_registered_within_days: Optional[int] = dialog_manager.dialog_data.get(
+        "exclude_registered_within_days"
+    )
 
     if not payload or (
         not payload.get("i18n_kwargs", {}).get("content") and not payload.get("media")
@@ -467,13 +604,26 @@ async def on_send(
         await notifier.notify_user(user, i18n_key="ntf-broadcast.custom-button-incomplete")
         return
 
+    if dialog_manager.dialog_data.get("audience_count", 0) <= 0:
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.audience-unavailable")
+        return
+
     payload = retort.load(payload, MessagePayloadDto)
 
     if not audience:
         raise ValueError("BroadcastAudience not found in dialog data")
 
     if is_double_click(dialog_manager, key="broadcast_confirm", cooldown=5):
-        task_id = await start_broadcast(user, StartBroadcastDto(audience, payload, plan_id))
+        task_id = await start_broadcast(
+            user,
+            StartBroadcastDto(
+                audience,
+                payload,
+                plan_id,
+                excluded_telegram_ids,
+                exclude_registered_within_days,
+            ),
+        )
         dialog_manager.dialog_data["task_id"] = task_id
         await dialog_manager.switch_to(state=DashboardBroadcast.VIEW)
         return

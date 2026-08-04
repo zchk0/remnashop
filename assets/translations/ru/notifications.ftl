@@ -132,6 +132,10 @@ ntf-broadcast =
     .custom-button-text-invalid = ❌ <i>Текст кнопки должен содержать от 1 до 64 символов.</i>
     .custom-button-url-invalid = ❌ <i>Отправьте корректную HTTPS-ссылку.</i>
     .custom-button-incomplete = ❌ <i>Укажите текст и ссылку своей кнопки либо удалите ее.</i>
+    .excluded-users-saved = ✅ <i>Исключения сохранены: { $excluded_count }. Получателей рассылки: { $audience_count }.</i>
+    .excluded-users-cleared = ✅ <i>Исключения по ID и времени регистрации очищены.</i>
+    .excluded-users-invalid = ❌ <i>Отправьте положительные Telegram ID через пробел, запятую, точку с запятой или с новой строки.</i>
+    .excluded-users-too-many = ❌ <i>За один раз можно исключить не более 1000 Telegram ID.</i>
 
     .not-cancelable = ❌ <i>Рассылку невозможно отменить.</i>
     .canceled = ✅ <i>Рассылка успешно отменена.</i>
