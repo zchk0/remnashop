@@ -6,6 +6,7 @@ data/*
 tests/*
 !tests/test_promocode_recovery.py
 !tests/test_broadcast_registration_exclusion.py
+!tests/test_notification_keyboard.py
 .DS_Store
 traefik
 logs/*

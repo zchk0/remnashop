@@ -517,9 +517,20 @@ class NotificationService(Notifier):
             return self._translate_keyboard_text(reply_markup, locale)
 
         if isinstance(reply_markup, InlineKeyboardMarkup):
-            builder = InlineKeyboardBuilder.from_markup(reply_markup)
-            builder.row(get_close_notification_button())
-            return self._translate_keyboard_text(builder.as_markup(), locale)
+            close_button = get_close_notification_button()
+            rows = [
+                [button.model_copy(deep=True) for button in row]
+                for row in reply_markup.inline_keyboard
+            ]
+            has_close_button = any(
+                button.callback_data == close_button.callback_data
+                for row in rows
+                for button in row
+            )
+            if not has_close_button:
+                rows.append([close_button])
+            markup = InlineKeyboardMarkup(inline_keyboard=rows)
+            return self._translate_keyboard_text(markup, locale)
 
         logger.warning(
             f"Unsupported reply_markup type '{type(reply_markup).__name__}' "
