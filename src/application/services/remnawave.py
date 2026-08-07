@@ -1,5 +1,6 @@
 from datetime import timedelta
 from enum import StrEnum
+from typing import Optional
 
 from loguru import logger
 from redis.asyncio import Redis
@@ -30,7 +31,7 @@ from src.application.use_cases.remnawave.commands.synchronization import (
 )
 from src.core.config import AppConfig
 from src.core.constants import DATETIME_VIEW_FORMAT, IMPORTED_TAG, T_ME, TIME_1H
-from src.core.enums import SubscriptionStatus
+from src.core.enums import SubscriptionStatus, UserNotificationType
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import country_code_to_flag
 from src.core.utils.i18n_helpers import (
@@ -66,7 +67,12 @@ class RemnaWebhookService:
         #
         self.sync_user = sync_user
 
-    async def handle_user_event(self, event: str, remna_user: RemnaUserDto) -> None:
+    async def handle_user_event(
+        self,
+        event: str,
+        remna_user: RemnaUserDto,
+        expiration_hours: Optional[int] = None,
+    ) -> None:
         logger.debug(f"Received user event '{event}'")
 
         if event == RemnaUserEvent.NOT_CONNECTED:
@@ -113,11 +119,18 @@ class RemnaWebhookService:
             )
 
         elif event in {
+            RemnaUserEvent.EXPIRATION,
             RemnaUserEvent.EXPIRES_IN_72_HOURS,
             RemnaUserEvent.EXPIRES_IN_48_HOURS,
             RemnaUserEvent.EXPIRES_IN_24_HOURS,
         }:
-            await self._process_expiring(user, current_subscription, event, remna_user)
+            await self._process_expiration_event(
+                user,
+                current_subscription,
+                event,
+                remna_user,
+                expiration_hours,
+            )
 
         elif event == RemnaUserEvent.FIRST_CONNECTED:
             await self.event_bus.publish(
@@ -239,6 +252,25 @@ class RemnaWebhookService:
                 )
             )
 
+    async def _process_expiration_event(
+        self,
+        user: UserDto,
+        current_subscription: SubscriptionDto,
+        event: str,
+        remna_user: RemnaUserDto,
+        expiration_hours: Optional[int],
+    ) -> None:
+        if event == RemnaUserEvent.EXPIRATION:
+            await self._process_expiration(
+                user,
+                current_subscription,
+                remna_user,
+                expiration_hours,
+            )
+            return
+
+        await self._process_expiring(user, current_subscription, event, remna_user)
+
     async def _process_expiring(
         self,
         user: UserDto,
@@ -257,17 +289,70 @@ class RemnaWebhookService:
                 f"webhook={remna_user.expire_at})"
             )
             return
-        expire_map: dict[str, int] = {
-            RemnaUserEvent.EXPIRES_IN_72_HOURS: 3,
-            RemnaUserEvent.EXPIRES_IN_48_HOURS: 2,
-            RemnaUserEvent.EXPIRES_IN_24_HOURS: 1,
+        expire_map: dict[str, tuple[int, UserNotificationType]] = {
+            RemnaUserEvent.EXPIRES_IN_72_HOURS: (
+                3,
+                UserNotificationType.EXPIRES_IN_3_DAYS,
+            ),
+            RemnaUserEvent.EXPIRES_IN_48_HOURS: (
+                2,
+                UserNotificationType.EXPIRES_IN_2_DAYS,
+            ),
+            RemnaUserEvent.EXPIRES_IN_24_HOURS: (
+                1,
+                UserNotificationType.EXPIRES_IN_1_DAY,
+            ),
         }
+        day, notification_type = expire_map[event]
         await self.event_bus.publish(
             SubscriptionExpiresEvent(
-                day=expire_map[event],
+                day=day,
                 user=user,
                 is_trial=current_subscription.is_trial,
+                notification_type=notification_type,
             )
+        )
+
+    async def _process_expiration(
+        self,
+        user: UserDto,
+        current_subscription: SubscriptionDto,
+        remna_user: RemnaUserDto,
+        expiration_hours: Optional[int],
+    ) -> None:
+        before_expiration_events: dict[int, RemnaUserEvent] = {
+            -72: RemnaUserEvent.EXPIRES_IN_72_HOURS,
+            -48: RemnaUserEvent.EXPIRES_IN_48_HOURS,
+            -24: RemnaUserEvent.EXPIRES_IN_24_HOURS,
+        }
+        legacy_event = (
+            before_expiration_events.get(expiration_hours)
+            if expiration_hours is not None
+            else None
+        )
+
+        if legacy_event:
+            await self._process_expiring(
+                user,
+                current_subscription,
+                legacy_event,
+                remna_user,
+            )
+            return
+
+        if expiration_hours == 24:
+            await self.event_bus.publish(
+                SubscriptionExpiredAgoEvent(
+                    user=user,
+                    is_trial=current_subscription.is_trial,
+                    day=1,
+                )
+            )
+            return
+
+        logger.warning(
+            f"Unsupported or missing expiration offset '{expiration_hours}' "
+            f"for RemnaUser '{remna_user.telegram_id}'"
         )
 
     async def _process_not_connected(self, remna_user: RemnaUserDto) -> None:
@@ -476,6 +561,7 @@ class RemnaUserEvent(StrEnum):
     EXPIRES_IN_48_HOURS = "user.expires_in_48_hours"
     EXPIRES_IN_24_HOURS = "user.expires_in_24_hours"
     EXPIRED_24_HOURS_AGO = "user.expired_24_hours_ago"
+    EXPIRATION = "user.expiration"
 
 
 class RemnaUserHwidDevicesEvent(StrEnum):
