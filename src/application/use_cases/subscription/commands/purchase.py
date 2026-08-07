@@ -182,8 +182,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 subscription.internal_squads = plan.internal_squads
                 subscription.external_squad = plan.external_squad
 
-                await self.remnawave.update_user(
-                    user=user,
+                await self.remnawave.update_user_subscription(
                     uuid=subscription.user_remna_id,
                     subscription=subscription,
                     reset_traffic=reset_traffic,
@@ -209,8 +208,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                     status=SubscriptionStatus.DELETED,
                 )
 
-                updated_user = await self.remnawave.update_user(
-                    user=user,
+                updated_user = await self.remnawave.update_user_subscription(
                     uuid=subscription.user_remna_id,
                     plan=plan,
                     reset_traffic=reset_traffic,

@@ -12,6 +12,7 @@ from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import RequirementSettingsDto, SettingsDto, UserDto
 from src.core.enums import SubscriptionStatus
+from src.core.utils.converters import gb_to_bytes
 from src.core.utils.time import datetime_now
 
 
@@ -139,10 +140,9 @@ class UpdateTrafficLimit(Interactor[UpdateTrafficLimitDto, None]):
 
             subscription.traffic_limit = data.traffic_limit
             await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
-                user=target_user,
-                uuid=subscription.user_remna_id,
-                subscription=subscription,
+            await self.remnawave.update_user_traffic_limit(
+                subscription.user_remna_id,
+                gb_to_bytes(data.traffic_limit),
             )
 
             await self.uow.commit()
@@ -185,10 +185,9 @@ class UpdateDeviceLimit(Interactor[UpdateDeviceLimitDto, None]):
 
             subscription.device_limit = data.device_limit
             await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
-                user=target_user,
-                uuid=subscription.user_remna_id,
-                subscription=subscription,
+            await self.remnawave.update_user_device_limit(
+                subscription.user_remna_id,
+                data.device_limit,
             )
             await self.uow.commit()
 
@@ -237,10 +236,9 @@ class ToggleInternalSquad(Interactor[ToggleInternalSquadDto, None]):
 
             subscription.internal_squads = squads
             await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
-                user=target_user,
-                uuid=subscription.user_remna_id,
-                subscription=subscription,
+            await self.remnawave.update_user_internal_squads(
+                subscription.user_remna_id,
+                squads,
             )
             await self.uow.commit()
 
@@ -288,10 +286,9 @@ class ToggleExternalSquad(Interactor[ToggleExternalSquadDto, None]):
 
             subscription.external_squad = new_squad
             await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
-                user=target_user,
-                uuid=subscription.user_remna_id,
-                subscription=subscription,
+            await self.remnawave.update_user_external_squad(
+                subscription.user_remna_id,
+                new_squad,
             )
             await self.uow.commit()
 
@@ -336,10 +333,9 @@ class AddSubscriptionDuration(Interactor[AddSubscriptionDurationDto, None]):
 
             subscription.expire_at = new_expire
             await self.subscription_dao.update(subscription)
-            await self.remnawave.update_user(
-                user=target_user,
-                uuid=subscription.user_remna_id,
-                subscription=subscription,
+            await self.remnawave.update_user_expire_at(
+                subscription.user_remna_id,
+                new_expire,
             )
 
             await self.uow.commit()

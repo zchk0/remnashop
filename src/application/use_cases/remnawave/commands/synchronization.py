@@ -188,8 +188,7 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
                 remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
 
                 if remna_user:
-                    updated_user = await self.remnawave.update_user(
-                        user=user,
+                    updated_user = await self.remnawave.update_user_subscription(
                         uuid=subscription.user_remna_id,
                         subscription=subscription,
                     )

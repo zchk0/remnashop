@@ -8,6 +8,7 @@ tests/*
 !tests/test_broadcast_registration_exclusion.py
 !tests/test_notification_keyboard.py
 !tests/test_remnawave_expiration_notifications.py
+!tests/test_remnawave_partial_updates.py
 .DS_Store
 traefik
 logs/*

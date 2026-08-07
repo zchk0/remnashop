@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional, Protocol, TypeVar, Union
 from uuid import UUID
 
@@ -26,9 +27,8 @@ class Remnawave(Protocol):
         subscription: Optional[SubscriptionDto] = None,
     ) -> UserResponseDto: ...
 
-    async def update_user(
+    async def update_user_subscription(
         self,
-        user: UserDto,
         uuid: UUID,
         plan: Optional[PlanSnapshotDto] = None,
         subscription: Optional[SubscriptionDto] = None,
@@ -41,6 +41,30 @@ class Remnawave(Protocol):
         self,
         uuid: UUID,
         traffic_limit_bytes: int,
+    ) -> UserResponseDto: ...
+
+    async def update_user_device_limit(
+        self,
+        uuid: UUID,
+        device_limit: int,
+    ) -> UserResponseDto: ...
+
+    async def update_user_expire_at(
+        self,
+        uuid: UUID,
+        expire_at: datetime,
+    ) -> UserResponseDto: ...
+
+    async def update_user_internal_squads(
+        self,
+        uuid: UUID,
+        squad_ids: list[UUID],
+    ) -> UserResponseDto: ...
+
+    async def update_user_external_squad(
+        self,
+        uuid: UUID,
+        squad_id: Optional[UUID],
     ) -> UserResponseDto: ...
 
     async def enable_user(self, uuid: UUID) -> None: ...

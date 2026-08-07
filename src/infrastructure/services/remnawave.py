@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import fields, is_dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Optional, Union
 from uuid import UUID
 
@@ -146,27 +146,16 @@ class RemnawaveImpl(Remnawave):
             )
             raise
 
-    async def update_user(
+    async def update_user_subscription(
         self,
-        user: UserDto,
         uuid: UUID,
         plan: Optional[PlanSnapshotDto] = None,
         subscription: Optional[SubscriptionDto] = None,
         reset_traffic: bool = False,
     ) -> UserResponseDto:
-        request_dto = self._build_update_request(user, uuid, plan, subscription)
-
-        try:
-            remna_user = await self.sdk.users.update_user(request_dto)
-            logger.info(
-                f"RemnaUser '{remna_user.username}' updated successfully. "
-                f"UUID: '{remna_user.uuid}', telegram_id: '{remna_user.telegram_id}'"
-            )
-        except NotFoundError:
-            logger.warning(
-                f"RemnaUser '{request_dto.username}' with UUID '{request_dto.uuid}' not found"
-            )
-            raise
+        request_dto = self._build_update_request(uuid, plan, subscription)
+        remna_user = await self._patch_user(request_dto)
+        logger.info(f"Subscription fields for RemnaUser '{uuid}' updated successfully")
 
         if reset_traffic:
             await self.reset_traffic(uuid)
@@ -174,31 +163,75 @@ class RemnawaveImpl(Remnawave):
         return remna_user
 
     async def update_user_description(self, uuid: UUID, description: str) -> UserResponseDto:
-        try:
-            remna_user = await self.sdk.users.update_user(
-                UpdateUserRequestDto(uuid=uuid, description=description)
-            )
-            logger.info(f"Description for RemnaUser '{uuid}' updated successfully")
-            return remna_user
-        except NotFoundError:
-            logger.warning(f"RemnaUser '{uuid}' not found")
-            raise
+        remna_user = await self._patch_user(
+            UpdateUserRequestDto(uuid=uuid, description=description)
+        )
+        logger.info(f"Description for RemnaUser '{uuid}' updated successfully")
+        return remna_user
 
     async def update_user_traffic_limit(
         self,
         uuid: UUID,
         traffic_limit_bytes: int,
     ) -> UserResponseDto:
+        remna_user = await self._patch_user(
+            UpdateUserRequestDto(uuid=uuid, traffic_limit_bytes=traffic_limit_bytes)
+        )
+        logger.info(
+            f"Traffic limit for RemnaUser '{uuid}' updated to '{traffic_limit_bytes}' bytes"
+        )
+        return remna_user
+
+    async def update_user_device_limit(
+        self,
+        uuid: UUID,
+        device_limit: int,
+    ) -> UserResponseDto:
+        remna_user = await self._patch_user(
+            UpdateUserRequestDto(uuid=uuid, hwid_device_limit=device_limit)
+        )
+        logger.info(f"Device limit for RemnaUser '{uuid}' updated to '{device_limit}'")
+        return remna_user
+
+    async def update_user_expire_at(
+        self,
+        uuid: UUID,
+        expire_at: datetime,
+    ) -> UserResponseDto:
+        remna_user = await self._patch_user(
+            UpdateUserRequestDto(uuid=uuid, expire_at=expire_at)
+        )
+        logger.info(f"Expiration time for RemnaUser '{uuid}' updated to '{expire_at}'")
+        return remna_user
+
+    async def update_user_internal_squads(
+        self,
+        uuid: UUID,
+        squad_ids: list[UUID],
+    ) -> UserResponseDto:
+        remna_user = await self._patch_user(
+            UpdateUserRequestDto(uuid=uuid, active_internal_squads=squad_ids)
+        )
+        logger.info(f"Internal squads for RemnaUser '{uuid}' updated")
+        return remna_user
+
+    async def update_user_external_squad(
+        self,
+        uuid: UUID,
+        squad_id: Optional[UUID],
+    ) -> UserResponseDto:
+        remna_user = await self._patch_user(
+            UpdateUserRequestDto(uuid=uuid, external_squad_uuid=squad_id)
+        )
+        logger.info(f"External squad for RemnaUser '{uuid}' updated to '{squad_id}'")
+        return remna_user
+
+    async def _patch_user(self, request_dto: UpdateUserRequestDto) -> UserResponseDto:
         try:
-            remna_user = await self.sdk.users.update_user(
-                UpdateUserRequestDto(uuid=uuid, traffic_limit_bytes=traffic_limit_bytes)
-            )
-            logger.info(
-                f"Traffic limit for RemnaUser '{uuid}' updated to '{traffic_limit_bytes}' bytes"
-            )
-            return remna_user
+            return await self.sdk.users.update_user(request_dto)
         except NotFoundError:
-            logger.warning(f"RemnaUser '{uuid}' not found")
+            identifier = request_dto.uuid or request_dto.username
+            logger.warning(f"RemnaUser '{identifier}' not found")
             raise
 
     async def enable_user(self, uuid: UUID) -> None:
@@ -415,7 +448,6 @@ class RemnawaveImpl(Remnawave):
 
     def _build_update_request(
         self,
-        user: UserDto,
         uuid: UUID,
         plan: Optional[PlanSnapshotDto],
         subscription: Optional[SubscriptionDto],
@@ -423,7 +455,6 @@ class RemnawaveImpl(Remnawave):
         if subscription:
             return UpdateUserRequestDto(
                 uuid=uuid,
-                telegram_id=user.telegram_id,
                 expire_at=subscription.expire_at,
                 status=(
                     SubscriptionStatus.DISABLED
@@ -433,8 +464,6 @@ class RemnawaveImpl(Remnawave):
                 traffic_limit_strategy=subscription.traffic_limit_strategy,
                 traffic_limit_bytes=gb_to_bytes(subscription.traffic_limit),
                 hwid_device_limit=subscription.device_limit,
-                description=user.remna_description,
-                email=user.email,
                 tag=subscription.tag,
                 active_internal_squads=subscription.internal_squads,
                 external_squad_uuid=subscription.external_squad,
@@ -443,14 +472,11 @@ class RemnawaveImpl(Remnawave):
         if plan:
             return UpdateUserRequestDto(
                 uuid=uuid,
-                telegram_id=user.telegram_id,
                 expire_at=days_to_datetime(plan.duration),
                 status=SubscriptionStatus.ACTIVE,
                 traffic_limit_strategy=plan.traffic_limit_strategy,
                 traffic_limit_bytes=gb_to_bytes(plan.traffic_limit),
                 hwid_device_limit=plan.device_limit,
-                description=user.remna_description,
-                email=user.email,
                 tag=plan.tag,
                 active_internal_squads=plan.internal_squads,
                 external_squad_uuid=plan.external_squad,

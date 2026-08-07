@@ -283,8 +283,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             )
 
         if activation.remote_action == PromocodeRemoteAction.UPDATE_SUBSCRIPTION:
-            remna_user = await self.remnawave.update_user(
-                user=user,
+            remna_user = await self.remnawave.update_user_subscription(
                 uuid=target_remna_id,
                 subscription=subscription,
                 reset_traffic=activation.reset_traffic,

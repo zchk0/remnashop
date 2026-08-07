@@ -48,8 +48,7 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
             subscription = await self.subscription_dao.get_current(target_user.id)
 
             if subscription:
-                remna_user = await self.remnawave.update_user(
-                    user=target_user,
+                remna_user = await self.remnawave.update_user_subscription(
                     uuid=subscription.user_remna_id,
                     plan=plan_snapshot,
                     reset_traffic=True,

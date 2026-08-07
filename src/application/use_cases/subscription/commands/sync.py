@@ -157,8 +157,7 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
                 remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
 
                 if remna_user:
-                    await self.remnawave.update_user(
-                        user=target_user,
+                    await self.remnawave.update_user_subscription(
                         uuid=subscription.user_remna_id,
                         subscription=subscription,
                     )
