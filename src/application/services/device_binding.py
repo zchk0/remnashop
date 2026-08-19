@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from typing import Optional
+from typing import Collection, Optional
 
 from src.application.common.dao.device import LinkedDeviceDao
 from src.application.dto.device import LinkedDeviceDto
@@ -25,20 +25,31 @@ async def bind_linked_device(
     device_limit: int,
     panel_user_uuid: Optional[str],
     short_uuid: Optional[str],
+    panel_device_ids: Optional[Collection[str]] = None,
     device_name: Optional[str] = None,
     device_type: Optional[str] = None,
     platform: Optional[str] = None,
 ) -> DeviceBindingResult:
+    """Link a device to a Telegram account, honouring the subscription limit.
+
+    ``device_limit`` comes from the panel (``hwid_device_limit``), so the count
+    it is compared against has to come from the panel too. Pass the account's
+    current panel HWIDs in ``panel_device_ids``; the local ``linked_devices``
+    table is only used as a fallback when they cannot be read.
+    """
     await device_dao.lock_binding_by_telegram_id(telegram_id)
 
     existing = await device_dao.get_by_device_id(device_id)
     already_linked = existing is not None and existing.telegram_id == telegram_id
 
     if not already_linked:
-        linked_count = await device_dao.count_by_telegram_id(
-            telegram_id,
-            exclude_device_id=device_id,
-        )
+        if panel_device_ids is not None:
+            linked_count = sum(1 for hwid in panel_device_ids if hwid != device_id)
+        else:
+            linked_count = await device_dao.count_by_telegram_id(
+                telegram_id,
+                exclude_device_id=device_id,
+            )
         if _is_device_limit_reached(linked_count, device_limit):
             return DeviceBindingResult(
                 is_bound=False,
