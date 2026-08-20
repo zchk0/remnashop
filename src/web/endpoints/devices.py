@@ -645,6 +645,25 @@ def _build_hwid_device_data(device: HwidDeviceDto) -> dict:
     }
 
 
+async def _get_panel_device_ids(
+    panel_user: UserResponseDto,
+    remnawave: Remnawave,
+) -> Optional[list[str]]:
+    """HWIDs the panel currently knows for this account.
+
+    Returns None when the panel cannot be reached, so the caller falls back to
+    the local table instead of wrongly treating the account as empty.
+    """
+    if panel_user.uuid is None:
+        return None
+    try:
+        devices = await remnawave.get_devices(panel_user.uuid)
+    except Exception as e:
+        logger.warning(f"Could not read panel devices for '{panel_user.uuid}': {e}")
+        return None
+    return [device.hwid for device in devices if device.hwid]
+
+
 def _get_device_limit(panel_user: UserResponseDto) -> int:
     return panel_user.hwid_device_limit or 0
 
@@ -932,6 +951,7 @@ async def register_device(
         device_limit=_get_device_limit(panel_user),
         panel_user_uuid=panel_user_uuid,
         short_uuid=short_uuid,
+        panel_device_ids=await _get_panel_device_ids(panel_user, remnawave),
         device_name=request.device_name,
         device_type=request.device_type,
         platform=request.platform or auth.platform,
@@ -1606,6 +1626,7 @@ async def tv_pair_confirm(
         device_limit=_get_device_limit(panel_user),
         panel_user_uuid=panel_user_uuid,
         short_uuid=short_uuid,
+        panel_device_ids=await _get_panel_device_ids(panel_user, remnawave),
     )
     if not binding.is_bound:
         await uow.rollback()

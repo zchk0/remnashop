@@ -6,6 +6,7 @@ mobile app, this handler links their Telegram identity to their device and
 Remnawave panel account.
 """
 
+from typing import Optional
 from uuid import UUID
 
 from aiogram import F, Router
@@ -14,6 +15,7 @@ from aiogram.types import Message
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
+from remnapy.models import UserResponseDto
 
 from src.application.common import Remnawave, TranslatorRunner
 from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao
@@ -33,6 +35,21 @@ from src.core.utils.device_description import (
 )
 
 router = Router(name=__name__)
+
+
+async def _panel_device_ids(
+    remnawave: Remnawave,
+    panel_user: UserResponseDto,
+) -> Optional[list[str]]:
+    """HWIDs the panel knows for this account, or None if it cannot be read."""
+    if panel_user.uuid is None:
+        return None
+    try:
+        devices = await remnawave.get_devices(panel_user.uuid)
+    except Exception as e:
+        logger.warning(f"Could not read panel devices for '{panel_user.uuid}': {e}")
+        return None
+    return [device.hwid for device in devices if device.hwid]
 
 
 def _is_auth_token(args: str) -> bool:
@@ -227,6 +244,7 @@ async def on_device_auth(  # noqa: C901
         device_limit=panel_user.hwid_device_limit or 0,
         panel_user_uuid=panel_uuid,
         short_uuid=short_uuid,
+        panel_device_ids=await _panel_device_ids(remnawave, panel_user),
     )
     if not binding.is_bound:
         await uow.rollback()
