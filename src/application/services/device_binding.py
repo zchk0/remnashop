@@ -42,20 +42,23 @@ async def bind_linked_device(
     existing = await device_dao.get_by_device_id(device_id)
     already_linked = existing is not None and existing.telegram_id == telegram_id
 
-    if not already_linked:
-        if panel_device_ids is not None:
-            linked_count = sum(1 for hwid in panel_device_ids if hwid != device_id)
-        else:
-            linked_count = await device_dao.count_by_telegram_id(
-                telegram_id,
-                exclude_device_id=device_id,
-            )
-        if _is_device_limit_reached(linked_count, device_limit):
-            return DeviceBindingResult(
-                is_bound=False,
-                device_limit=device_limit,
-                message=f"Device limit reached. Maximum is {device_limit}.",
-            )
+    linked_count: Optional[int] = None
+    if panel_device_ids is not None:
+        # A local row may outlive its panel HWID after deletion through the bot.
+        # Therefore local ownership must not bypass an available panel snapshot.
+        linked_count = sum(1 for hwid in panel_device_ids if hwid != device_id)
+    elif not already_linked:
+        linked_count = await device_dao.count_by_telegram_id(
+            telegram_id,
+            exclude_device_id=device_id,
+        )
+
+    if linked_count is not None and _is_device_limit_reached(linked_count, device_limit):
+        return DeviceBindingResult(
+            is_bound=False,
+            device_limit=device_limit,
+            message=f"Device limit reached. Maximum is {device_limit}.",
+        )
 
     if existing:
         device_to_save = replace(

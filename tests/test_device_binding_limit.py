@@ -70,7 +70,8 @@ async def test_limit_is_enforced_from_panel_devices() -> None:
 
 async def test_device_already_on_panel_does_not_count_against_itself() -> None:
     """Re-linking a device that already holds a panel slot must not be refused."""
-    dao = _FakeLinkedDeviceDao(stale_rows=0)
+    existing = LinkedDeviceDto(device_id="tv", telegram_id=1)
+    dao = _FakeLinkedDeviceDao(stale_rows=0, existing=existing)
 
     result = await bind_linked_device(
         dao,
@@ -83,6 +84,26 @@ async def test_device_already_on_panel_does_not_count_against_itself() -> None:
     )
 
     assert result.is_bound
+
+
+async def test_stale_local_link_does_not_bypass_full_panel_limit() -> None:
+    """A deleted panel HWID may still look linked in the local table."""
+    existing = LinkedDeviceDto(device_id="old-tv", telegram_id=1)
+    dao = _FakeLinkedDeviceDao(stale_rows=1, existing=existing)
+
+    result = await bind_linked_device(
+        dao,
+        device_id="old-tv",
+        telegram_id=1,
+        device_limit=3,
+        panel_user_uuid="panel-uuid",
+        short_uuid="short-uuid",
+        panel_device_ids=["phone", "desktop", "tablet"],
+    )
+
+    assert not result.is_bound
+    assert result.device_limit == 3
+    dao.upsert.assert_not_awaited()
 
 
 async def test_falls_back_to_local_rows_when_panel_unavailable() -> None:
