@@ -580,7 +580,18 @@ async def _get_panel_user_by_telegram_id(
     telegram_id: int,
     remnawave: Remnawave,
 ) -> Optional[UserResponseDto]:
-    panel_users = await remnawave.get_users_by_telegram_id(telegram_id)
+    try:
+        panel_users = await remnawave.get_users_by_telegram_id(telegram_id)
+    except Exception as e:
+        logger.warning(
+            f"Could not read panel user for telegram '{telegram_id}': "
+            f"{type(e).__name__}: {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Remnawave panel is temporarily unavailable",
+            headers={"Retry-After": "5"},
+        ) from e
     return panel_users[0] if panel_users else None
 
 
