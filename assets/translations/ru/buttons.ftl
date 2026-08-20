@@ -214,7 +214,7 @@ btn-broadcast =
     .trial = ✳️ С пробником
     .content = ✉️ Редактировать содержимое
     .buttons = ✳️ Редактировать кнопки
-    .custom-button = 🔗 Своя кнопка
+    .custom-button = Своя кнопка
     .custom-button-text = ✏️ Изменить текст
     .custom-button-url = 🔗 Изменить ссылку
     .custom-button-delete = 🗑️ Удалить свою кнопку
@@ -235,6 +235,7 @@ btn-broadcast =
        *[0] Не исключать по времени регистрации
     }
     .preview = 👀 Предпросмотр
+    .repeat = 🔁 Повторить рассылку
     .confirm = ✅ Запустить рассылку
     .refresh = 🔄 Обновить данные
     .cancel = ⛔ Остановить рассылку

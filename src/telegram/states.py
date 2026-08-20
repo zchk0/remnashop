@@ -48,6 +48,7 @@ class DashboardBroadcast(StatesGroup):
     MAIN = State()
     LIST = State()
     VIEW = State()
+    REPEAT = State()
     PLAN = State()
     SEND = State()
     CONTENT = State()

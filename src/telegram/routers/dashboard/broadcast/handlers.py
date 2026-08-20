@@ -575,6 +575,45 @@ async def on_view_preview(
 
 
 @inject
+async def on_repeat(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    broadcast_dao: FromDishka[BroadcastDao],
+    retort: FromDishka[Retort],
+    notifier: FromDishka[Notifier],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    task_id = dialog_manager.dialog_data.get("task_id")
+    broadcast = await broadcast_dao.get_by_task_id(task_id) if task_id else None
+
+    if not broadcast or not broadcast.payload:
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.content-empty")
+        return
+
+    for key in (
+        "audience_type",
+        "plan_id",
+        "audience_count",
+        "excluded_telegram_ids",
+        "exclude_registered_older_than_days",
+        "buttons",
+        "custom_button",
+        "broadcast_confirm",
+    ):
+        dialog_manager.dialog_data.pop(key, None)
+
+    dialog_manager.dialog_data["payload"] = retort.dump(
+        broadcast.payload,
+        MessagePayloadDto,
+    )
+    dialog_manager.dialog_data["is_repeat"] = True
+
+    logger.info(f"{user.log} Started repeat flow for broadcast '{broadcast.task_id}'")
+    await dialog_manager.switch_to(state=DashboardBroadcast.REPEAT)
+
+
+@inject
 async def on_send(
     callback: CallbackQuery,
     widget: Button,

@@ -400,6 +400,11 @@ msg-access-channel =
 
 # Broadcast
 msg-broadcast-list = <b>📄 Список рассылок</b>
+msg-broadcast-repeat =
+    <b>🔁 Повтор рассылки</b>
+
+    Исходная рассылка: <code>{ $broadcast_id }</code>
+    Выберите, кому повторно отправить сообщение. Исключения можно настроить на следующем шаге.
 msg-broadcast-plan-select = <b>📦 Выберите план для рассылки</b>
 msg-broadcast-send = <b>📢 Отправить рассылку ({ audience-type })</b>
 

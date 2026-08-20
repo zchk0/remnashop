@@ -9,6 +9,7 @@ from src.application.common import BotService, TranslatorRunner
 from src.application.common.dao import BroadcastDao, PlanDao, SettingsDao
 from src.application.dto import PlanDto
 from src.core.constants import DATETIME_VIEW_FORMAT, USER_KEY
+from src.core.enums import BroadcastStatus
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 
 
@@ -32,7 +33,16 @@ async def plans_getter(
 
     return {
         "plans": formatted_plans,
+        "is_repeat": bool(dialog_manager.dialog_data.get("is_repeat", False)),
     }
+
+
+async def repeat_getter(
+    dialog_manager: DialogManager,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    task_id = dialog_manager.dialog_data.get("task_id")
+    return {"broadcast_id": str(task_id) if task_id else ""}
 
 
 async def send_getter(
@@ -53,6 +63,7 @@ async def send_getter(
         "audience_count": audience_count,
         "excluded_users_count": len(excluded_telegram_ids),
         "registration_exclusion_days": exclude_registered_older_than_days or 0,
+        "is_repeat": bool(dialog_manager.dialog_data.get("is_repeat", False)),
     }
 
 
@@ -191,4 +202,5 @@ async def view_getter(
         "total_count": broadcast.total_count,
         "success_count": broadcast.success_count,
         "failed_count": broadcast.failed_count,
+        "can_repeat": broadcast.status != BroadcastStatus.PROCESSING and bool(broadcast.payload),
     }

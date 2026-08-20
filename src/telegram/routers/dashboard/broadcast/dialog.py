@@ -26,6 +26,7 @@ from .getters import (
     excluded_users_getter,
     list_getter,
     plans_getter,
+    repeat_getter,
     send_getter,
     view_getter,
 )
@@ -46,6 +47,7 @@ from .handlers import (
     on_plan_select,
     on_preview,
     on_registration_exclusion_select,
+    on_repeat,
     on_send,
     on_view_preview,
 )
@@ -163,6 +165,14 @@ view = Window(
     ),
     Row(
         Button(
+            I18nFormat("btn-broadcast.repeat"),
+            id="repeat",
+            on_click=on_repeat,
+            when=F["can_repeat"],
+        ),
+    ),
+    Row(
+        Button(
             I18nFormat("btn-broadcast.cancel"),
             id="cancel",
             on_click=on_cancel,
@@ -191,6 +201,57 @@ view = Window(
     getter=view_getter,
 )
 
+repeat = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-broadcast-repeat"),
+    Row(
+        Button(
+            I18nFormat("btn-broadcast.all"),
+            id=BroadcastAudience.ALL,
+            on_click=on_audience_select,
+        ),
+        Button(
+            I18nFormat("btn-broadcast.plan"),
+            id=BroadcastAudience.PLAN,
+            on_click=on_audience_select,
+        ),
+    ),
+    Row(
+        Button(
+            I18nFormat("btn-broadcast.subscribed"),
+            id=BroadcastAudience.SUBSCRIBED,
+            on_click=on_audience_select,
+        ),
+        Button(
+            I18nFormat("btn-broadcast.unsubscribed"),
+            id=BroadcastAudience.UNSUBSCRIBED,
+            on_click=on_audience_select,
+        ),
+    ),
+    Row(
+        Button(
+            I18nFormat("btn-broadcast.expired"),
+            id=BroadcastAudience.EXPIRED,
+            on_click=on_audience_select,
+        ),
+        Button(
+            I18nFormat("btn-broadcast.trial"),
+            id=BroadcastAudience.TRIAL,
+            on_click=on_audience_select,
+        ),
+    ),
+    Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back",
+            state=DashboardBroadcast.VIEW,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=DashboardBroadcast.REPEAT,
+    getter=repeat_getter,
+)
+
 plan = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-broadcast-plan-select"),
@@ -209,11 +270,18 @@ plan = Window(
         ),
     ),
     Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back_repeat",
+            state=DashboardBroadcast.REPEAT,
+            when=F["is_repeat"],
+        ),
         Start(
             I18nFormat("btn-back.general"),
             id="back",
             state=DashboardBroadcast.MAIN,
             mode=StartMode.RESET_STACK,
+            when=~F["is_repeat"],
         ),
     ),
     IgnoreUpdate(),
@@ -229,6 +297,7 @@ send = Window(
             I18nFormat("btn-broadcast.content"),
             id="content",
             state=DashboardBroadcast.CONTENT,
+            when=~F["is_repeat"],
         ),
     ),
     Row(
@@ -257,11 +326,18 @@ send = Window(
         ),
     ),
     Row(
+        SwitchTo(
+            I18nFormat("btn-back.general"),
+            id="back_repeat",
+            state=DashboardBroadcast.REPEAT,
+            when=F["is_repeat"],
+        ),
         Start(
             I18nFormat("btn-back.general"),
             id="back",
             state=DashboardBroadcast.MAIN,
             mode=StartMode.RESET_STACK,
+            when=~F["is_repeat"],
         ),
     ),
     IgnoreUpdate(),
@@ -446,6 +522,7 @@ router = Dialog(
     broadcast,
     list,
     view,
+    repeat,
     plan,
     send,
     content,
