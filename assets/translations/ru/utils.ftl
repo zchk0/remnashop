@@ -198,7 +198,7 @@ frg-node-info =
     • <b>Название</b>: { $country } { $name }
     • <b>Адрес</b>: <code>{ $address }{ $port ->
     [0] { space }
-    *[HAS] :{ $port }
+    *[HAS] :{ NUMBER($port, useGrouping: 0) }
     }</code>
     • <b>Трафик</b>: { $traffic_used } / { $traffic_limit }
     { $last_status_message ->

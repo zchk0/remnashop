@@ -11,6 +11,7 @@ tests/*
 !tests/test_device_binding_limit.py
 !tests/test_remnawave_partial_updates.py
 !tests/test_telegram_error_middleware.py
+!tests/test_translation_port_formatting.py
 .DS_Store
 traefik
 logs/*

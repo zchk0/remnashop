@@ -858,7 +858,7 @@ msg-remnawave-host-details =
     *[0] включен
     })</b>:
     <blockquote>
-    • <b>Адрес</b>: <code>{ $address }:{ $port }</code>
+    • <b>Адрес</b>: <code>{ $address }:{ NUMBER($port, useGrouping: 0) }</code>
     { $inbound_uuid ->
     [0] { empty }
     *[HAS] • <b>Инбаунд</b>: <code>{ $inbound_uuid }</code>
@@ -873,7 +873,7 @@ msg-remnawave-node-details =
     <blockquote>
     • <b>Адрес</b>: <code>{ $address }{ $port ->
     [0] { empty }
-    *[HAS]:{ $port }
+    *[HAS]:{ NUMBER($port, useGrouping: 0) }
     }</code>
     • <b>Аптайм (xray)</b>: { $xray_uptime }
     • <b>Пользователей онлайн</b>: { $users_online }
@@ -890,7 +890,7 @@ msg-remnawave-inbound-details =
     }
     { $port ->
     [0] { empty }
-    *[HAS] • <b>Порт</b>: { $port }
+    *[HAS] • <b>Порт</b>: { NUMBER($port, useGrouping: 0) }
     }
     { $security ->
     [0] { empty }
