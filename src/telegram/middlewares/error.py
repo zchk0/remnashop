@@ -1,5 +1,7 @@
 from typing import Any, Awaitable, Callable, Final, Optional, cast
+from urllib.parse import urlsplit
 
+import httpx
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import ErrorEvent as AiogramErrorEvent
 from aiogram.types import TelegramObject
@@ -34,6 +36,34 @@ _IGNORED_BAD_REQUESTS: Final[tuple[str, ...]] = (
     "MESSAGE_ID_INVALID",
     "Bad Request: message to forward not found",
 )
+
+
+def _find_remnawave_transport_error(
+    exception: BaseException,
+    panel_url: str,
+) -> Optional[httpx.TransportError]:
+    panel_host = urlsplit(panel_url).hostname
+    if not panel_host:
+        return None
+
+    current: Optional[BaseException] = exception
+    seen: set[int] = set()
+
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+
+        if isinstance(current, httpx.TransportError):
+            try:
+                request_host = current.request.url.host
+            except RuntimeError:
+                request_host = None
+
+            if request_host and request_host.lower() == panel_host.lower():
+                return current
+
+        current = current.__cause__ or current.__context__
+
+    return None
 
 
 class ErrorMiddleware(EventTypedMiddleware):
@@ -73,6 +103,22 @@ class ErrorMiddleware(EventTypedMiddleware):
                 if aiogram_user:
                     await redirect_menu.system(aiogram_user.id)
                 return
+
+        remnawave_error = _find_remnawave_transport_error(
+            event.exception,
+            config.remnawave.url.get_secret_value(),
+        )
+        if remnawave_error:
+            logger.warning(
+                "Remnawave panel request failed: "
+                f"{type(remnawave_error).__name__}: {remnawave_error}"
+            )
+            if aiogram_user:
+                await notifier.notify_user(
+                    TempUserDto.from_aiogram(aiogram_user),
+                    i18n_key="ntf-error.remnawave-unavailable",
+                )
+            return
 
         if aiogram_user:
             if isinstance(event.exception, TelegramForbiddenError):

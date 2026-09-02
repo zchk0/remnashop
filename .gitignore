@@ -10,6 +10,7 @@ tests/*
 !tests/test_remnawave_expiration_notifications.py
 !tests/test_device_binding_limit.py
 !tests/test_remnawave_partial_updates.py
+!tests/test_telegram_error_middleware.py
 .DS_Store
 traefik
 logs/*
