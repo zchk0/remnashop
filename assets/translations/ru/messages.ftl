@@ -64,7 +64,7 @@ msg-menu-devices =
         }
     }{ $max_count ->
     [0] { space }
-    *[LIMIT] Если не хватает лимита устройств — измените подписку.
+    *[LIMIT] { space }Если не хватает лимита устройств — измените подписку.
     }
 
 msg-menu-devices-confirm-reissue =

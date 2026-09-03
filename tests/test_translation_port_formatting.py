@@ -79,3 +79,15 @@ def test_port_is_rendered_without_digit_grouping(
 
     assert "2 222" not in rendered
     assert "2222" in rendered
+
+
+def test_device_menu_sentences_are_separated(translator: FluentTranslator) -> None:
+    rendered = translator.get(
+        "msg-menu-devices",
+        current_count=8,
+        max_count=9,
+        has_devices=1,
+        device_single_enabled=1,
+    )
+
+    assert "удалить его. Если" in rendered
