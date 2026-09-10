@@ -113,7 +113,7 @@ class BroadcastDaoImpl(BroadcastDao):
         await self.session.execute(stmt)
         logger.debug(f"Set total_count for task '{task_id}' to '{total}'")
 
-    async def delete_old(self, days: int = 7) -> int:
+    async def delete_old(self, days: int = 14) -> int:
         threshold = datetime_now() - timedelta(days=days)
 
         stmt = delete(Broadcast).where(Broadcast.created_at < threshold).returning(Broadcast.id)
