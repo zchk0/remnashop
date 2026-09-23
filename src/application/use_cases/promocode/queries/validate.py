@@ -7,7 +7,7 @@ from src.application.common.dao import PromocodeDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.dto import PromocodeDto, SubscriptionDto, UserDto
 from src.core.constants import UNLIMITED_EXPIRE_YEAR
-from src.core.enums import PromocodeAvailability, PromocodeRewardType
+from src.core.enums import PromocodeAvailability, PromocodeRewardType, SubscriptionStatus
 from src.core.exceptions import (
     PromocodeAlreadyActivatedError,
     PromocodeExpiredError,
@@ -74,11 +74,14 @@ class ValidatePromocode(Interactor[ValidatePromocodeDto, PromocodeDto]):
 
         if promo.reward_type in SUBSCRIPTION_REQUIRED_REWARDS:
             current = await self.subscription_dao.get_current(user.id)
-            if current is None or not current.is_active:
-                # An expired/disabled subscription has expire_at in the past; extending it
-                # would push a past date to the panel, which rejects it. Require an active sub.
-                logger.info(f"{actor.log} Promocode '{code}' requires an active subscription")
-                raise PromocodeNotAvailableError("Active subscription required for this promocode")
+            if current is None or not self._can_apply_to_subscription(
+                promo.reward_type,
+                current,
+            ):
+                logger.info(f"{actor.log} Promocode '{code}' requires an eligible subscription")
+                raise PromocodeNotAvailableError(
+                    "Eligible subscription required for this promocode"
+                )
             if self._is_resource_unlimited(promo.reward_type, current):
                 logger.info(f"{actor.log} Promocode '{code}' resource already unlimited")
                 raise PromocodeNotAvailableError("Resource is already unlimited")
@@ -87,6 +90,18 @@ class ValidatePromocode(Interactor[ValidatePromocodeDto, PromocodeDto]):
 
         logger.info(f"{actor.log} Promocode '{code}' is valid for user")
         return promo
+
+    @staticmethod
+    def _can_apply_to_subscription(
+        reward_type: PromocodeRewardType,
+        subscription: SubscriptionDto,
+    ) -> bool:
+        if reward_type == PromocodeRewardType.DURATION:
+            return subscription.status in {
+                SubscriptionStatus.ACTIVE,
+                SubscriptionStatus.EXPIRED,
+            }
+        return subscription.is_active
 
     @staticmethod
     def _is_resource_unlimited(

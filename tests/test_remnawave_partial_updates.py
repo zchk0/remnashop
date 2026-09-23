@@ -94,7 +94,7 @@ async def test_duration_change_uses_expiration_only_update() -> None:
     user_uuid = UUID("00000000-0000-0000-0000-000000000001")
     target_user = SimpleNamespace(id=7, remna_name="user-7")
     subscription = SimpleNamespace(
-        expire_at=datetime(2026, 8, 10, tzinfo=UTC),
+        expire_at=datetime(2030, 8, 10, tzinfo=UTC),
         user_remna_id=user_uuid,
     )
     remnawave = SimpleNamespace(update_user_expire_at=AsyncMock())
@@ -113,5 +113,5 @@ async def test_duration_change_uses_expiration_only_update() -> None:
 
     remnawave.update_user_expire_at.assert_awaited_once_with(
         user_uuid,
-        datetime(2026, 8, 13, tzinfo=UTC),
+        datetime(2030, 8, 13, tzinfo=UTC),
     )
