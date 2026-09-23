@@ -1,13 +1,13 @@
 from collections.abc import Sequence
 from datetime import timedelta
-from typing import Optional, cast
+from typing import Any, Optional, cast
 from uuid import UUID
 
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import and_, case, func, select, update
+from sqlalchemy import Select, and_, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import SubscriptionDao, UserDao
@@ -68,7 +68,7 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         return None
 
     async def get_by_remna_id(self, user_remna_id: UUID) -> Optional[SubscriptionDto]:
-        stmt = select(Subscription).where(Subscription.user_remna_id == user_remna_id)
+        stmt = self._get_by_remna_id_stmt(user_remna_id)
         db_subscription = await self.session.scalar(stmt)
 
         if db_subscription:
@@ -77,6 +77,27 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
 
         logger.debug(f"Subscription with remna ID '{user_remna_id}' not found")
         return None
+
+    @staticmethod
+    def _get_by_remna_id_stmt(user_remna_id: UUID) -> Select[Any]:
+        return (
+            select(Subscription)
+            .join(User, User.id == Subscription.user_id)
+            .where(Subscription.user_remna_id == user_remna_id)
+            .order_by(
+                case(
+                    (User.current_subscription_id == Subscription.id, 0),
+                    else_=1,
+                ),
+                case(
+                    (Subscription.status != SubscriptionStatus.DELETED, 0),
+                    else_=1,
+                ),
+                Subscription.created_at.desc(),
+                Subscription.id.desc(),
+            )
+            .limit(1)
+        )
 
     async def get_all_by_user(self, user_id: int) -> list[SubscriptionDto]:
         stmt = (
