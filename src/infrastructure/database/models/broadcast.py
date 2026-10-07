@@ -15,6 +15,7 @@ class Broadcast(BaseSql, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     task_id: Mapped[UUID] = mapped_column(unique=True)
+    campaign_id: Mapped[UUID] = mapped_column(index=True)
 
     status: Mapped[BroadcastStatus] = mapped_column(index=True)
     audience: Mapped[BroadcastAudience]
@@ -53,3 +54,12 @@ class BroadcastMessage(BaseSql):
     status: Mapped[BroadcastMessageStatus] = mapped_column(index=True)
 
     broadcast: Mapped["Broadcast"] = relationship(back_populates="messages")
+
+
+class BroadcastDelivery(BaseSql):
+    """Receipts persist while any broadcast in the campaign remains repeatable."""
+
+    __tablename__ = "broadcast_deliveries"
+
+    campaign_id: Mapped[UUID] = mapped_column(primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

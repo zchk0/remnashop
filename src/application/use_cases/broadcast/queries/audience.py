@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
 from typing import Optional
+from uuid import UUID
 
 from loguru import logger
 
 from src.application.common import Interactor
-from src.application.common.dao import PlanDao, SubscriptionDao, UserDao
+from src.application.common.dao import BroadcastDao, PlanDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.dto import UserDto
 from src.core.enums import BroadcastAudience
@@ -23,6 +24,7 @@ class GetBroadcastAudienceCountDto:
     plan_id: Optional[int] = None
     excluded_telegram_ids: list[int] = field(default_factory=list)
     exclude_registered_older_than_days: Optional[int] = None
+    campaign_id: Optional[UUID] = None
 
 
 class HasAvailableBroadcastPlans(Interactor[None, bool]):
@@ -42,14 +44,19 @@ class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
         self,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
+        broadcast_dao: BroadcastDao,
     ) -> None:
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
+        self.broadcast_dao = broadcast_dao
 
     async def _execute(self, actor: UserDto, data: GetBroadcastAudienceCountDto) -> int:
         audience = data.audience
         plan_id = data.plan_id
         excluded_telegram_ids = data.excluded_telegram_ids
+        if data.campaign_id is not None:
+            delivered = await self.broadcast_dao.get_delivered_telegram_ids(data.campaign_id)
+            excluded_telegram_ids = sorted(set(excluded_telegram_ids).union(delivered))
         exclude_registered_older_than_days = data.exclude_registered_older_than_days
         validate_registration_exclusion(exclude_registered_older_than_days)
 
@@ -101,18 +108,23 @@ class GetBroadcastAudienceUsersDto:
     plan_id: Optional[int] = None
     excluded_telegram_ids: list[int] = field(default_factory=list)
     exclude_registered_older_than_days: Optional[int] = None
+    campaign_id: Optional[UUID] = None
 
 
 class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[UserDto]]):
     required_permission = Permission.BROADCAST
 
-    def __init__(self, user_dao: UserDao) -> None:
+    def __init__(self, user_dao: UserDao, broadcast_dao: BroadcastDao) -> None:
         self.user_dao = user_dao
+        self.broadcast_dao = broadcast_dao
 
     async def _execute(self, actor: UserDto, data: GetBroadcastAudienceUsersDto) -> list[UserDto]:
         audience = data.audience
         plan_id = data.plan_id
         excluded_telegram_ids = data.excluded_telegram_ids
+        if data.campaign_id is not None:
+            delivered = await self.broadcast_dao.get_delivered_telegram_ids(data.campaign_id)
+            excluded_telegram_ids = sorted(set(excluded_telegram_ids).union(delivered))
         exclude_registered_older_than_days = data.exclude_registered_older_than_days
         validate_registration_exclusion(exclude_registered_older_than_days)
 

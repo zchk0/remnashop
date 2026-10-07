@@ -27,13 +27,14 @@ from src.application.use_cases.broadcast.queries.audience import (
 from src.application.use_cases.misc.commands.maintenance import ClearOldBroadcasts
 from src.core.constants import BATCH_DELAY, BATCH_SIZE_20
 from src.core.enums import BroadcastMessageStatus, BroadcastStatus
+from src.core.exceptions import BroadcastDeliveryRecordError
 from src.core.utils.iterables import chunked
 from src.infrastructure.taskiq.broker import broker
 
 
 @broker.task
 @inject(patch_module=True)
-async def send_broadcast_task(  # noqa: C901
+async def send_broadcast_task(
     broadcast: BroadcastDto,
     plan_id: Optional[int],
     excluded_telegram_ids: list[int],
@@ -45,6 +46,43 @@ async def send_broadcast_task(  # noqa: C901
     finish_broadcast: FromDishka[FinishBroadcast],
     notifier: FromDishka[Notifier],
 ) -> None:
+    campaign_id = broadcast.campaign_id or broadcast.task_id
+    try:
+        async with broadcast_dao.lock_campaign(campaign_id):
+            current = await broadcast_dao.get_by_task_id(broadcast.task_id)
+            if current is None or current.status != BroadcastStatus.PROCESSING:
+                return
+            await _send_broadcast(
+                current,
+                plan_id,
+                excluded_telegram_ids,
+                exclude_registered_older_than_days,
+                broadcast_dao,
+                get_broadcast_audience_users,
+                initialize_broadcast_messages,
+                update_broadcast_message_status,
+                finish_broadcast,
+                notifier,
+            )
+    except Exception:
+        logger.exception(
+            f"Broadcast '{broadcast.task_id}' could not acquire or retain its campaign lock"
+        )
+        await finish_broadcast.system(FinishBroadcastDto(broadcast.task_id, BroadcastStatus.ERROR))
+
+
+async def _send_broadcast(  # noqa: C901
+    broadcast: BroadcastDto,
+    plan_id: Optional[int],
+    excluded_telegram_ids: list[int],
+    exclude_registered_older_than_days: Optional[int],
+    broadcast_dao: BroadcastDao,
+    get_broadcast_audience_users: GetBroadcastAudienceUsers,
+    initialize_broadcast_messages: InitializeBroadcastMessages,
+    update_broadcast_message_status: UpdateBroadcastMessageStatus,
+    finish_broadcast: FinishBroadcast,
+    notifier: Notifier,
+) -> None:
     task_id = broadcast.task_id
 
     try:
@@ -54,16 +92,12 @@ async def send_broadcast_task(  # noqa: C901
                 plan_id,
                 excluded_telegram_ids,
                 exclude_registered_older_than_days,
+                broadcast.campaign_id or broadcast.task_id,
             )
         )
 
         # Broadcast is Telegram-only; exclude web-only users without a telegram_id
         users = [u for u in users if u.telegram_id is not None]
-
-        if not users:
-            logger.warning(f"No users found for broadcast '{task_id}'")
-            await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.COMPLETED))
-            return
 
         messages = []
         for user in users:
@@ -78,6 +112,14 @@ async def send_broadcast_task(  # noqa: C901
         messages = await initialize_broadcast_messages.system(
             InitializeBroadcastMessagesDto(task_id, messages)
         )
+        message_ids = {message.user_id: message.id for message in messages}
+        # A restarted task must only use its original recipient rows. New users
+        # remain eligible for a subsequent repeat of the campaign.
+        users = [user for user in users if user.id in message_ids]
+        if not users:
+            logger.info(f"No undelivered recipients remain for broadcast '{task_id}'")
+            await finish_broadcast.system(FinishBroadcastDto(task_id, BroadcastStatus.COMPLETED))
+            return
 
         total_users = len(users)
         loop = asyncio.get_running_loop()
@@ -103,6 +145,13 @@ async def send_broadcast_task(  # noqa: C901
                     if tg_message:
                         status = BroadcastMessageStatus.SENT
                         msg_id = tg_message.message_id
+                        try:
+                            await broadcast_dao.record_delivery(
+                                broadcast.campaign_id or broadcast.task_id,
+                                cast(int, user.telegram_id),
+                            )
+                        except Exception as error:
+                            raise BroadcastDeliveryRecordError from error
 
                     return user.id, user.telegram_id, status, msg_id, retry_time_for_user
 
@@ -112,6 +161,8 @@ async def send_broadcast_task(  # noqa: C901
                     await asyncio.sleep(wait_time)
                     retry_time_for_user += wait_time
                     total_retry_time += wait_time
+                except BroadcastDeliveryRecordError:
+                    raise
                 except Exception:
                     logger.exception(f"Failed to send to {user.log}")
                     return user.id, user.telegram_id, status, msg_id, retry_time_for_user
@@ -126,13 +177,18 @@ async def send_broadcast_task(  # noqa: C901
                 break
 
             tasks = [asyncio.create_task(send_one(user)) for user in batch]
-            results = await asyncio.gather(*tasks)
+            gathered = await asyncio.gather(*tasks, return_exceptions=True)
+            results = []
+            for result in gathered:
+                if isinstance(result, BaseException):
+                    raise result
+                results.append(result)
 
             updates = UpdateBroadcastMessageStatusDto(
                 task_id=task_id,
                 messages=[
                     BroadcastMessageDto(
-                        id=next(m.id for m in messages if m.user_id == uid),
+                        id=message_ids[uid],
                         user_id=uid,
                         user_telegram_id=tg_id,
                         status=status,
@@ -197,10 +253,29 @@ async def _finalize_broadcast_deletion(
 @inject(patch_module=True)
 async def delete_broadcast_task(
     broadcast: BroadcastDto,
+    broadcast_dao: FromDishka[BroadcastDao],
     bot: FromDishka[Bot],
     bulk_update_broadcast_messages: FromDishka[BulkUpdateBroadcastMessages],
     finish_broadcast: FromDishka[FinishBroadcast],
     notifier: FromDishka[Notifier],
+) -> tuple[int, int, int]:
+    campaign_id = broadcast.campaign_id or broadcast.task_id
+    async with broadcast_dao.lock_campaign(campaign_id):
+        # Reload after the sender finishes so newly sent messages are also deleted.
+        current = await broadcast_dao.get_by_task_id(broadcast.task_id)
+        if current is None or current.status == BroadcastStatus.DELETED:
+            return 0, 0, 0
+        return await _delete_broadcast(
+            current, bot, bulk_update_broadcast_messages, finish_broadcast, notifier
+        )
+
+
+async def _delete_broadcast(
+    broadcast: BroadcastDto,
+    bot: Bot,
+    bulk_update_broadcast_messages: BulkUpdateBroadcastMessages,
+    finish_broadcast: FinishBroadcast,
+    notifier: Notifier,
 ) -> tuple[int, int, int]:
     broadcast_id = cast(int, broadcast.id)
 

@@ -202,5 +202,6 @@ async def view_getter(
         "total_count": broadcast.total_count,
         "success_count": broadcast.success_count,
         "failed_count": broadcast.failed_count,
-        "can_repeat": broadcast.status != BroadcastStatus.PROCESSING and bool(broadcast.payload),
+        "can_repeat": broadcast.status not in (BroadcastStatus.PROCESSING, BroadcastStatus.DELETED)
+        and bool(broadcast.payload),
     }

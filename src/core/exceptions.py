@@ -14,6 +14,15 @@ class UserNotFoundError(Exception):
         super().__init__(f"User with id '{user_id}' not found" if user_id else "User not found")
 
 
+class BroadcastAudienceUnavailableError(Exception): ...
+
+
+class BroadcastRepeatSourceNotFoundError(Exception): ...
+
+
+class BroadcastDeliveryRecordError(Exception): ...
+
+
 class FileNotFoundError(Exception): ...
 
 

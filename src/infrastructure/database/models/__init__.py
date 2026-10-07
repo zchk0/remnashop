@@ -1,7 +1,7 @@
 from .ad_link import AdLink
 from .auth_token import AuthToken
 from .base import BaseSql
-from .broadcast import Broadcast, BroadcastMessage
+from .broadcast import Broadcast, BroadcastDelivery, BroadcastMessage
 from .device import LinkedDevice
 from .device_session import DeviceSession
 from .oauth_provider import UserOAuthProvider
@@ -22,6 +22,7 @@ __all__ = [
     "Promocode",
     "PromocodeActivation",
     "Broadcast",
+    "BroadcastDelivery",
     "BroadcastMessage",
     "DeviceSession",
     "LinkedDevice",

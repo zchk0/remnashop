@@ -35,7 +35,11 @@ from src.core.constants import (
     TEXT_MEDIA_MAX_LENGTH,
     USER_KEY,
 )
-from src.core.enums import BroadcastAudience, MediaType
+from src.core.enums import BroadcastAudience, BroadcastStatus, MediaType
+from src.core.exceptions import (
+    BroadcastAudienceUnavailableError,
+    BroadcastRepeatSourceNotFoundError,
+)
 from src.core.utils.validators import is_valid_url
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 from src.telegram.states import DashboardBroadcast
@@ -43,6 +47,11 @@ from src.telegram.utils import is_double_click
 
 MAX_EXCLUDED_TELEGRAM_IDS = 1000
 MAX_TELEGRAM_ID = 9_223_372_036_854_775_807
+
+
+def _repeat_campaign_id(dialog_manager: DialogManager) -> Optional[UUID]:
+    value = dialog_manager.dialog_data.get("repeat_campaign_id")
+    return UUID(str(value)) if value else None
 
 
 def _update_payload(
@@ -104,12 +113,11 @@ async def _refresh_audience_count(
         GetBroadcastAudienceCountDto(
             audience=audience,
             plan_id=dialog_manager.dialog_data.get("plan_id"),
-            excluded_telegram_ids=dialog_manager.dialog_data.get(
-                "excluded_telegram_ids", []
-            ),
+            excluded_telegram_ids=dialog_manager.dialog_data.get("excluded_telegram_ids", []),
             exclude_registered_older_than_days=dialog_manager.dialog_data.get(
                 "exclude_registered_older_than_days"
             ),
+            campaign_id=_repeat_campaign_id(dialog_manager),
         ),
     )
     dialog_manager.dialog_data["audience_count"] = count
@@ -213,7 +221,8 @@ async def on_audience_select(
         return
 
     audience_count = await get_broadcast_audience_count(
-        user, GetBroadcastAudienceCountDto(audience)
+        user,
+        GetBroadcastAudienceCountDto(audience, campaign_id=_repeat_campaign_id(dialog_manager)),
     )
     if audience_count == 0:
         await notifier.notify_user(user, i18n_key="ntf-broadcast.audience-unavailable")
@@ -236,7 +245,11 @@ async def on_plan_select(
 
     audience_count = await get_broadcast_audience_count(
         user,
-        GetBroadcastAudienceCountDto(audience=BroadcastAudience.PLAN, plan_id=selected_plan_id),
+        GetBroadcastAudienceCountDto(
+            audience=BroadcastAudience.PLAN,
+            plan_id=selected_plan_id,
+            campaign_id=_repeat_campaign_id(dialog_manager),
+        ),
     )
 
     if audience_count == 0:
@@ -483,8 +496,7 @@ async def on_excluded_users_input(
         ),
     )
     logger.info(
-        f"{user.log} Set '{len(excluded_telegram_ids)}' excluded Telegram IDs "
-        f"for broadcast"
+        f"{user.log} Set '{len(excluded_telegram_ids)}' excluded Telegram IDs for broadcast"
     )
     await dialog_manager.switch_to(DashboardBroadcast.SEND)
 
@@ -523,9 +535,9 @@ async def on_registration_exclusion_select(
             f"Unsupported registration exclusion period: '{exclude_registered_older_than_days}'"
         )
 
-    dialog_manager.dialog_data[
-        "exclude_registered_older_than_days"
-    ] = exclude_registered_older_than_days
+    dialog_manager.dialog_data["exclude_registered_older_than_days"] = (
+        exclude_registered_older_than_days
+    )
     await _refresh_audience_count(dialog_manager, user, get_broadcast_audience_count)
     logger.info(
         f"{user.log} Set broadcast registration exclusion to "
@@ -587,6 +599,10 @@ async def on_repeat(
     task_id = dialog_manager.dialog_data.get("task_id")
     broadcast = await broadcast_dao.get_by_task_id(task_id) if task_id else None
 
+    if broadcast is not None and broadcast.status == BroadcastStatus.DELETED:
+        await notifier.notify_user(user, i18n_key="ntf-broadcast.source-unavailable")
+        return
+
     if not broadcast or not broadcast.payload:
         await notifier.notify_user(user, i18n_key="ntf-broadcast.content-empty")
         return
@@ -608,6 +624,10 @@ async def on_repeat(
         MessagePayloadDto,
     )
     dialog_manager.dialog_data["is_repeat"] = True
+    dialog_manager.dialog_data["repeat_source_task_id"] = str(broadcast.task_id)
+    dialog_manager.dialog_data["repeat_campaign_id"] = str(
+        broadcast.campaign_id or broadcast.task_id
+    )
 
     logger.info(f"{user.log} Started repeat flow for broadcast '{broadcast.task_id}'")
     await dialog_manager.switch_to(state=DashboardBroadcast.REPEAT)
@@ -626,9 +646,7 @@ async def on_send(
     audience: Optional[BroadcastAudience] = dialog_manager.dialog_data.get("audience_type")
     plan_id = dialog_manager.dialog_data.get("plan_id")
     payload = dialog_manager.dialog_data.get("payload")
-    excluded_telegram_ids: list[int] = dialog_manager.dialog_data.get(
-        "excluded_telegram_ids", []
-    )
+    excluded_telegram_ids: list[int] = dialog_manager.dialog_data.get("excluded_telegram_ids", [])
     exclude_registered_older_than_days: Optional[int] = dialog_manager.dialog_data.get(
         "exclude_registered_older_than_days"
     )
@@ -653,16 +671,25 @@ async def on_send(
         raise ValueError("BroadcastAudience not found in dialog data")
 
     if is_double_click(dialog_manager, key="broadcast_confirm", cooldown=5):
-        task_id = await start_broadcast(
-            user,
-            StartBroadcastDto(
-                audience,
-                payload,
-                plan_id,
-                excluded_telegram_ids,
-                exclude_registered_older_than_days,
-            ),
-        )
+        source_task_id = dialog_manager.dialog_data.get("repeat_source_task_id")
+        try:
+            task_id = await start_broadcast(
+                user,
+                StartBroadcastDto(
+                    audience,
+                    payload,
+                    plan_id,
+                    excluded_telegram_ids,
+                    exclude_registered_older_than_days,
+                    source_task_id=UUID(str(source_task_id)) if source_task_id else None,
+                ),
+            )
+        except BroadcastAudienceUnavailableError:
+            await notifier.notify_user(user, i18n_key="ntf-broadcast.audience-unavailable")
+            return
+        except BroadcastRepeatSourceNotFoundError:
+            await notifier.notify_user(user, i18n_key="ntf-broadcast.source-unavailable")
+            return
         dialog_manager.dialog_data["task_id"] = task_id
         await dialog_manager.switch_to(state=DashboardBroadcast.VIEW)
         return

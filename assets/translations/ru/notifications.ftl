@@ -126,6 +126,7 @@ ntf-broadcast =
     .list-empty = ❌ <i>Список рассылок пуст.</i>
     .plans-unavailable = ❌ <i>Нет доступных планов.</i>
     .audience-unavailable = ❌ <i>Нет пользователей для выбранной аудитории.</i>
+    .source-unavailable = ❌ <i>Исходная рассылка больше недоступна. Выберите другую рассылку.</i>
     .content-empty = ❌ <i>Контент пуст.</i>
     .content-saved = ✅ <i>Контент успешно сохранен.</i>
     .custom-button-saved = ✅ <i>Настройки своей кнопки сохранены.</i>

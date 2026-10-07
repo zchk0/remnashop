@@ -15,6 +15,7 @@ tests/*
 !tests/test_traffic_reset_time.py
 !tests/test_menu_traffic_reset.py
 !tests/test_tobevpn_traffic_reset.py
+!tests/test_broadcast_repeats.py
 .DS_Store
 traefik
 logs/*
