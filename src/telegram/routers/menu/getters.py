@@ -10,13 +10,14 @@ from src.application.common.dao import ReferralDao, SettingsDao, SubscriptionDao
 from src.application.dto import TelegramUserDto
 from src.application.use_cases.misc.queries.menu import GetMenuData
 from src.core.config import AppConfig
+from src.core.constants import TIMEZONE
 from src.core.exceptions import MenuRenderError
 from src.core.utils.i18n_helpers import (
     i18n_format_device_limit,
     i18n_format_expire_time,
     i18n_format_traffic_limit,
 )
-from src.core.utils.time import get_traffic_reset_delta
+from src.core.utils.i18n_keys import UtilKey
 
 
 @inject
@@ -74,6 +75,7 @@ async def menu_getter(
             "device_limit": None,
             "expire_time": None,
             "reset_time": None,
+            "next_reset_at": 0,
             "connection_url": None,
             "subscription_url": None,
             "has_subscription_url": False,
@@ -111,12 +113,14 @@ async def menu_getter(
                 "traffic_limit": i18n_format_traffic_limit(subscription.traffic_limit),
                 "device_limit": i18n_format_device_limit(subscription.device_limit),
                 "expire_time": i18n_format_expire_time(subscription.expire_at),
-                "reset_time": i18n_format_expire_time(
-                    get_traffic_reset_delta(
-                        subscription.traffic_limit_strategy,
-                        subscription.created_at,
-                    )
-                ),
+                "reset_time": i18n_format_expire_time(menu_data.traffic_reset_at)
+                if menu_data.traffic_reset_at is not None
+                else [(UtilKey.UNKNOWN, {})],
+                "next_reset_at": menu_data.traffic_reset_at.astimezone(TIMEZONE).strftime(
+                    "%d.%m.%Y %H:%M UTC"
+                )
+                if menu_data.traffic_reset_at is not None
+                else 0,
                 "connectable": subscription.is_active,
                 "has_device_limit": (
                     subscription.has_devices_limit or subscription.device_limit == 0

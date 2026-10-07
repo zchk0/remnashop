@@ -1,4 +1,5 @@
 import time
+from calendar import monthrange
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -18,57 +19,68 @@ def get_uptime() -> int:
     return uptime_seconds
 
 
-def get_traffic_reset_delta(  # noqa: C901
+def get_next_traffic_reset_at(
     strategy: TrafficLimitStrategy,
     subscription_created_at: Optional[datetime] = None,
-) -> timedelta:
+    *,
+    last_traffic_reset_at: Optional[datetime] = None,
+) -> Optional[datetime]:
+    """Return the next scheduled reset for a Remnawave 2.8.1 panel running in UTC.
+
+    A manual reset does not move the calendar schedule or the rolling creation-day anchor.
+    """
     now = datetime_now()
+    if last_traffic_reset_at is not None:
+        now = max(now, last_traffic_reset_at.astimezone(TIMEZONE))
 
     if strategy == TrafficLimitStrategy.NO_RESET:
-        return timedelta(seconds=0)
+        return None
 
     if strategy == TrafficLimitStrategy.DAY:
-        next_day = now.date() + timedelta(days=1)
-        reset_at = datetime.combine(next_day, datetime.min.time(), tzinfo=TIMEZONE)
-        return reset_at - now
+        reset_at = now.replace(hour=0, minute=5, second=0, microsecond=0)
+        return reset_at if reset_at > now else reset_at + timedelta(days=1)
 
     if strategy == TrafficLimitStrategy.WEEK:
-        weekday = now.weekday()
-        days_until = (7 - weekday) % 7 or 7
-        date_target = now.date() + timedelta(days=days_until)
-        reset_at = datetime(
-            date_target.year, date_target.month, date_target.day, 0, 5, 0, tzinfo=TIMEZONE
-        )
-        return reset_at - now
+        reset_at = now.replace(hour=0, minute=15, second=0, microsecond=0)
+        reset_at += timedelta(days=(7 - now.weekday()) % 7)
+        return reset_at if reset_at > now else reset_at + timedelta(days=7)
 
     if strategy == TrafficLimitStrategy.MONTH:
-        year = now.year
-        month = now.month + 1
-        if month == 13:
-            year += 1
-            month = 1
-        reset_at = datetime(year, month, 1, 0, 10, 0, tzinfo=TIMEZONE)
-        return reset_at - now
+        reset_at = now.replace(day=1, hour=0, minute=20, second=0, microsecond=0)
+        if reset_at <= now:
+            reset_at = (reset_at + timedelta(days=32)).replace(day=1)
+        return reset_at
 
     if strategy == TrafficLimitStrategy.MONTH_ROLLING:
         if subscription_created_at is None:
             raise ValueError("subscription_created_at is required for MONTH_ROLLING strategy")
-        reset_day = subscription_created_at.day
-        year = now.year
-        month = now.month
-        if now.day >= reset_day:
-            month += 1
-            if month == 13:
-                year += 1
-                month = 1
-        try:
-            reset_at = datetime(year, month, reset_day, 0, 10, 0, tzinfo=TIMEZONE)
-        except ValueError:
-            month += 1
-            if month == 13:
-                year += 1
-                month = 1
-            reset_at = datetime(year, month, 1, 0, 10, 0, tzinfo=TIMEZONE)
-        return reset_at - now
+        return _get_monthly_rolling_reset_at(now, subscription_created_at.astimezone(TIMEZONE))
 
     raise ValueError("Unsupported strategy")
+
+
+def _get_monthly_rolling_reset_at(now: datetime, created_at: datetime) -> datetime:
+    def reset_in_month(month: datetime) -> datetime:
+        day = min(created_at.day, monthrange(month.year, month.month)[1])
+        return month.replace(day=day, hour=0, minute=10, second=0, microsecond=0)
+
+    month_start = now.replace(day=1)
+    reset_at = reset_in_month(month_start)
+    if reset_at <= now:
+        reset_at = reset_in_month((month_start + timedelta(days=32)).replace(day=1))
+    first_month = (created_at.replace(day=1) + timedelta(days=32)).replace(day=1)
+    return max(reset_at, reset_in_month(first_month))
+
+
+def get_traffic_reset_delta(
+    strategy: TrafficLimitStrategy,
+    subscription_created_at: Optional[datetime] = None,
+    *,
+    last_traffic_reset_at: Optional[datetime] = None,
+) -> timedelta:
+    reset_at = get_next_traffic_reset_at(
+        strategy,
+        subscription_created_at,
+        last_traffic_reset_at=last_traffic_reset_at,
+    )
+    return reset_at - datetime_now() if reset_at is not None else timedelta(0)

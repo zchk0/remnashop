@@ -60,6 +60,10 @@ from src.application.dto.device import (
 )
 from src.application.services import PricingService
 from src.application.services.device_binding import bind_linked_device
+from src.application.services.traffic import (
+    get_panel_traffic_reset_at,
+    get_subscription_traffic_reset_at,
+)
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.promocode.commands.activate import (
     ActivatePromocode,
@@ -534,7 +538,11 @@ def _build_promocode_http_error(
     )
 
 
-def _build_current_plan_data(subscription: SubscriptionDto) -> dict:
+def _build_current_plan_data(
+    subscription: SubscriptionDto,
+    *,
+    traffic_reset_at: Optional[datetime] = None,
+) -> dict:
     plan = subscription.plan_snapshot
 
     return {
@@ -564,6 +572,8 @@ def _build_current_plan_data(subscription: SubscriptionDto) -> dict:
             "traffic_limit": subscription.traffic_limit,
             "traffic_limit_bytes": gb_to_bytes(subscription.traffic_limit),
             "traffic_limit_strategy": subscription.traffic_limit_strategy.value,
+            "next_traffic_reset_at": _datetime_to_iso(traffic_reset_at),
+            "next_traffic_reset_at_ts": _datetime_to_timestamp(traffic_reset_at),
             "device_limit": subscription.device_limit,
             "expire_at": _datetime_to_iso(subscription.expire_at),
             "expire_at_ts": _datetime_to_timestamp(subscription.expire_at),
@@ -1354,6 +1364,7 @@ async def get_current_subscription_plan(
     get_available_plans: FromDishka[GetAvailablePlans],
     match_plan: FromDishka[MatchPlan],
     bot_service: FromDishka[BotService],
+    remnawave: FromDishka[Remnawave],
 ) -> dict:
     resolved_telegram_id = _resolve_telegram_id(auth, None)
     user = await user_dao.get_by_telegram_id(resolved_telegram_id)
@@ -1390,6 +1401,8 @@ async def get_current_subscription_plan(
         ):
             renewal_url = await bot_service.get_purchase_url(renewable_plan.id, duration_days)
 
+    traffic_reset_at = await get_subscription_traffic_reset_at(current_subscription, remnawave)
+
     return {
         "success": True,
         "data": {
@@ -1398,7 +1411,7 @@ async def get_current_subscription_plan(
             "username": user.username,
             "is_admin": user.is_privileged,
             "renewal_url": renewal_url,
-            **_build_current_plan_data(current_subscription),
+            **_build_current_plan_data(current_subscription, traffic_reset_at=traffic_reset_at),
         },
     }
 
@@ -1746,7 +1759,23 @@ async def proxy_sub_info(
                     "subscription_url": None,
                 }
             }
-        return {"response": info.model_dump(mode="json", by_alias=False)}
+        data = info.model_dump(mode="json", by_alias=False)
+        if data.get("is_found") and isinstance(data.get("user"), dict):
+            traffic_reset_at = None
+            try:
+                panel_user = await _get_panel_user_by_subscription_short_uuid(
+                    short_uuid, remnawave_sdk
+                )
+                if panel_user is not None:
+                    traffic_reset_at = get_panel_traffic_reset_at(panel_user)
+            except Exception as e:
+                logger.warning(
+                    f"Could not fetch traffic reset data for subscription '{short_uuid}': {e}"
+                )
+
+            data["user"]["next_traffic_reset_at"] = _datetime_to_iso(traffic_reset_at)
+            data["user"]["next_traffic_reset_at_ts"] = _datetime_to_timestamp(traffic_reset_at)
+        return {"response": data}
     except Exception as e:
         logger.warning(f"proxy_sub_info failed: {e}")
         return {
@@ -1803,7 +1832,11 @@ async def reset_panel_subscription(
         "linked_devices_updated": updated_devices,
     }
     if updated_subscription:
-        data.update(_build_current_plan_data(updated_subscription))
+        data.update(
+            _build_current_plan_data(
+                updated_subscription, traffic_reset_at=get_panel_traffic_reset_at(revoked_user)
+            )
+        )
 
     return {"success": True, "data": data}
 

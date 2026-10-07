@@ -47,6 +47,10 @@ msg-main-menu =
     }</i>
     </blockquote>
     }
+    { $next_reset_at ->
+    [0] { empty }
+    *[DATE] • <b>Следующий сброс трафика</b>: { $next_reset_at }
+    }
 
 msg-menu-devices =
     <b>📱 Управление устройствами</b>

@@ -4,6 +4,7 @@ from typing import Optional
 
 from loguru import logger
 from redis.asyncio import Redis
+from remnapy.enums import TrafficLimitStrategy
 from remnapy.models.webhook import HwidUserDeviceDto, NodeDto, TorrentBlockerReportDto
 
 from src.application.common import BotService, EventPublisher
@@ -491,8 +492,9 @@ class RemnaWebhookService:
                     traffic_strategy=current_subscription.traffic_limit_strategy,
                     reset_time=i18n_format_expire_time(
                         get_traffic_reset_delta(
-                            current_subscription.traffic_limit_strategy,
-                            current_subscription.created_at,
+                            TrafficLimitStrategy(remna_user.traffic_limit_strategy),
+                            remna_user.created_at,
+                            last_traffic_reset_at=remna_user.last_traffic_reset_at,
                         )
                     ),
                 )

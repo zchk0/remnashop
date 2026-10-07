@@ -12,6 +12,9 @@ tests/*
 !tests/test_remnawave_partial_updates.py
 !tests/test_telegram_error_middleware.py
 !tests/test_translation_port_formatting.py
+!tests/test_traffic_reset_time.py
+!tests/test_menu_traffic_reset.py
+!tests/test_tobevpn_traffic_reset.py
 .DS_Store
 traefik
 logs/*

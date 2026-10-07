@@ -16,6 +16,7 @@ from src.application.dto import (
     PlanSnapshotDto,
     TelegramUserDto,
 )
+from src.application.use_cases.misc.queries.menu import GetMenuData
 from src.application.use_cases.referral.queries.code import GenerateReferralQr
 from src.application.use_cases.remnawave.commands.management import (
     DeleteUserAllDevices,
@@ -33,7 +34,7 @@ from src.core.constants import USER_KEY
 from src.core.enums import MediaType
 from src.core.exceptions import CooldownError
 from src.core.utils.i18n_helpers import i18n_format_expire_time
-from src.core.utils.time import get_traffic_reset_delta
+from src.core.utils.i18n_keys import UtilKey
 from src.telegram.keyboards import CALLBACK_CHANNEL_CONFIRM, CALLBACK_RULES_ACCEPT
 from src.telegram.states import MainMenu, Subscription
 
@@ -225,21 +226,20 @@ async def show_reason(
     dialog_manager: DialogManager,
     i18n: FromDishka[TranslatorRunner],
     subscription_dao: FromDishka[SubscriptionDao],
+    get_menu_data: FromDishka[GetMenuData],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     subscription = await subscription_dao.get_current(user.id)
 
     if subscription:
+        reset_at = await get_menu_data.get_traffic_reset_at(subscription)
         kwargs = {
             "status": subscription.current_status,
             "is_trial": subscription.is_trial,
             "traffic_strategy": subscription.traffic_limit_strategy,
-            "reset_time": i18n_format_expire_time(
-                get_traffic_reset_delta(
-                    subscription.traffic_limit_strategy,
-                    subscription.created_at,
-                )
-            ),
+            "reset_time": i18n_format_expire_time(reset_at)
+            if reset_at is not None
+            else [(UtilKey.UNKNOWN, {})],
         }
     else:
         kwargs = {"status": False}

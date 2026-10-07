@@ -1,10 +1,12 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
-from src.application.common import BotService, Interactor, TranslatorRunner
+from src.application.common import BotService, Interactor, Remnawave, TranslatorRunner
 from src.application.common.dao import PlanDao, SettingsDao, SubscriptionDao
 from src.application.common.policy import Permission
 from src.application.dto import MenuButtonDto, PlanDto, SubscriptionDto, UserDto
+from src.application.services.traffic import get_subscription_traffic_reset_at
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
 from src.core.enums import Role
 
@@ -17,6 +19,7 @@ class GetMenuDataResultDto:
     current_subscription: Optional[SubscriptionDto]
     referral_url: str
     custom_buttons: list[MenuButtonDto] = field(default_factory=list)
+    traffic_reset_at: Optional[datetime] = None
 
 
 class GetMenuData(Interactor[None, GetMenuDataResultDto]):
@@ -30,6 +33,7 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
         bot_service: BotService,
         i18n: TranslatorRunner,
         get_available_trial: GetAvailableTrial,
+        remnawave: Remnawave,
     ) -> None:
         self.plan_dao = plan_dao
         self.settings_dao = settings_dao
@@ -37,6 +41,7 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
         self.bot_service = bot_service
         self.i18n = i18n
         self.get_available_trial = get_available_trial
+        self.remnawave = remnawave
 
     async def _execute(self, actor: UserDto, data: None) -> GetMenuDataResultDto:
         current_subscription = await self.subscription_dao.get_current(actor.id)
@@ -61,6 +66,10 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
                 button.text = self.i18n.get(button.text)
                 custom_buttons.append(button)
 
+        traffic_reset_at = None
+        if current_subscription is not None:
+            traffic_reset_at = await self.get_traffic_reset_at(current_subscription)
+
         return GetMenuDataResultDto(
             is_referral_enabled=is_referral_enabled,
             is_trial_available=actor.is_trial_available,
@@ -68,4 +77,8 @@ class GetMenuData(Interactor[None, GetMenuDataResultDto]):
             current_subscription=current_subscription,
             referral_url=referral_url,
             custom_buttons=custom_buttons,
+            traffic_reset_at=traffic_reset_at,
         )
+
+    async def get_traffic_reset_at(self, subscription: SubscriptionDto) -> Optional[datetime]:
+        return await get_subscription_traffic_reset_at(subscription, self.remnawave)
