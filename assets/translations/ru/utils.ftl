@@ -136,6 +136,7 @@ frg-user-details =
 frg-subscription =
     <blockquote>
     • <b>Лимит трафика</b>: { $traffic_limit }
+    { frg-subscription-traffic-reset }
     • <b>Лимит устройств</b>: { $device_limit }
     • <b>Осталось</b>: { $expire_time }
     { $has_subscription_url ->
@@ -145,6 +146,12 @@ frg-subscription =
     *[0] { empty }
     }
     </blockquote>
+
+frg-subscription-traffic-reset =
+    { $next_reset_at ->
+    [0] { empty }
+    *[DATE] • <b>Следующий сброс трафика</b>: { $next_reset_at }
+    }
 
 frg-subscription-user-editor =
     <blockquote>

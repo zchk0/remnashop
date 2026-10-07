@@ -469,6 +469,7 @@ async def success_payment_getter(
         "traffic_limit": i18n_format_traffic_limit(subscription.traffic_limit),
         "device_limit": i18n_format_device_limit(subscription.device_limit),
         "expire_time": i18n_format_expire_time(subscription.expire_at),
+        "next_reset_at": 0,
         "added_duration": i18n_format_days(subscription.plan_snapshot.duration),
         "is_mini_app": config.bot.is_mini_app,
         "is_mini_app_reserve": config.bot.is_mini_app and settings.extra.mini_app_reserve,

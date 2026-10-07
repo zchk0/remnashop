@@ -135,7 +135,7 @@ async def buttons_getter(
     return {
         "buttons": buttons,
         "custom_button_label": (
-            f"🔗 {custom_text}" if custom_text else i18n.get("btn-broadcast.custom-button")
+            custom_text if custom_text else i18n.get("btn-broadcast.custom-button")
         ),
         "custom_button_enabled": bool(custom_button.get("enabled", False)),
     }

@@ -19,6 +19,7 @@ msg-main-menu =
     [LIMITED]
     <blockquote>
     • Ваш трафик израсходован.
+    { frg-subscription-traffic-reset }
 
     <i>{ $is_trial ->
     [0] { $traffic_strategy ->
@@ -46,10 +47,6 @@ msg-main-menu =
     *[0] ↘️ Для покупки доступа перейдите в меню «Подписка».
     }</i>
     </blockquote>
-    }
-    { $next_reset_at ->
-    [0] { empty }
-    *[DATE] • <b>Следующий сброс трафика</b>: { $next_reset_at }
     }
 
 msg-menu-devices =

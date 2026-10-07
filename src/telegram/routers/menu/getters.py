@@ -117,7 +117,7 @@ async def menu_getter(
                 if menu_data.traffic_reset_at is not None
                 else [(UtilKey.UNKNOWN, {})],
                 "next_reset_at": menu_data.traffic_reset_at.astimezone(TIMEZONE).strftime(
-                    "%d.%m.%Y %H:%M UTC"
+                    "%d.%m.%Y"
                 )
                 if menu_data.traffic_reset_at is not None
                 else 0,

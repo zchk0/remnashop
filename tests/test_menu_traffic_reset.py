@@ -107,7 +107,7 @@ async def test_no_date_or_panel_request_when_reset_is_not_applicable(
 
 
 @pytest.mark.parametrize("status", ["ACTIVE", "LIMITED"])
-@pytest.mark.parametrize("next_reset_at", [0, "15.10.2026 00:10 UTC"])
+@pytest.mark.parametrize("next_reset_at", [0, "15.10.2026"])
 def test_menu_displays_next_reset_date_when_available(
     status: str, next_reset_at: int | str
 ) -> None:
@@ -135,12 +135,20 @@ def test_menu_displays_next_reset_date_when_available(
         device_limit="3",
         expire_time="20 дней",
         reset_time="8 дней",
-        has_subscription_url=0,
+        has_subscription_url=1,
+        subscription_url="https://example.com/sub/short",
         next_reset_at=next_reset_at,
     )
 
     if next_reset_at:
         assert "Следующий сброс трафика" in rendered
         assert next_reset_at in rendered
+        reset_index = rendered.index("Следующий сброс трафика")
+        block_start = rendered.rfind("<blockquote>", 0, reset_index)
+        block_end = rendered.index("</blockquote>", block_start)
+        assert block_start < reset_index < block_end
+        if status == "ACTIVE":
+            assert rendered.index("Лимит трафика") < reset_index < rendered.index("Лимит устройств")
+        assert rendered.count("Следующий сброс трафика") == 1
     else:
         assert "Следующий сброс трафика" not in rendered
