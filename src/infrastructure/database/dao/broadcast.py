@@ -83,7 +83,14 @@ class BroadcastDaoImpl(BroadcastDao):
         result = await self.session.scalars(stmt)
         return list(result.all())
 
-    async def record_delivery(self, campaign_id: UUID, telegram_id: int) -> None:
+    async def record_delivery(
+        self,
+        campaign_id: UUID,
+        telegram_id: int,
+        *,
+        broadcast_message_id: Optional[int] = None,
+        message_id: Optional[int] = None,
+    ) -> None:
         # Persist the receipt immediately, independently of the current batch.
         # Concurrent sends cannot share an AsyncSession.
         engine = self.session.bind
@@ -96,6 +103,14 @@ class BroadcastDaoImpl(BroadcastDao):
         )
         async with engine.begin() as connection:
             await connection.execute(stmt)
+            if broadcast_message_id is not None and message_id is not None:
+                # Persist this run's receipt too: a resumed "send to everyone" task
+                # must not resend its own successes when batch statistics fail.
+                await connection.execute(
+                    update(BroadcastMessage)
+                    .where(BroadcastMessage.id == broadcast_message_id)
+                    .values(status=BroadcastMessageStatus.SENT, message_id=message_id)
+                )
 
     @asynccontextmanager
     async def lock_campaign(self, campaign_id: UUID) -> AsyncIterator[None]:

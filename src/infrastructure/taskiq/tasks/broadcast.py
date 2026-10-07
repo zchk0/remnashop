@@ -92,7 +92,9 @@ async def _send_broadcast(  # noqa: C901
                 plan_id,
                 excluded_telegram_ids,
                 exclude_registered_older_than_days,
-                broadcast.campaign_id or broadcast.task_id,
+                (broadcast.campaign_id or broadcast.task_id)
+                if broadcast.exclude_delivered
+                else None,
             )
         )
 
@@ -112,7 +114,16 @@ async def _send_broadcast(  # noqa: C901
         messages = await initialize_broadcast_messages.system(
             InitializeBroadcastMessagesDto(task_id, messages)
         )
-        message_ids = {message.user_id: message.id for message in messages}
+        message_ids = {
+            message.user_id: message.id
+            for message in messages
+            if message.status
+            not in (
+                BroadcastMessageStatus.SENT,
+                BroadcastMessageStatus.EDITED,
+                BroadcastMessageStatus.DELETED,
+            )
+        }
         # A restarted task must only use its original recipient rows. New users
         # remain eligible for a subsequent repeat of the campaign.
         users = [user for user in users if user.id in message_ids]
@@ -149,6 +160,8 @@ async def _send_broadcast(  # noqa: C901
                             await broadcast_dao.record_delivery(
                                 broadcast.campaign_id or broadcast.task_id,
                                 cast(int, user.telegram_id),
+                                broadcast_message_id=cast(int, message_ids[user.id]),
+                                message_id=msg_id,
                             )
                         except Exception as error:
                             raise BroadcastDeliveryRecordError from error

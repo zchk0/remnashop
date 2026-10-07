@@ -42,7 +42,10 @@ async def repeat_getter(
     **kwargs: Any,
 ) -> dict[str, Any]:
     task_id = dialog_manager.dialog_data.get("task_id")
-    return {"broadcast_id": str(task_id) if task_id else ""}
+    return {
+        "broadcast_id": str(task_id) if task_id else "",
+        "exclude_delivered": dialog_manager.dialog_data.get("exclude_delivered", True),
+    }
 
 
 async def send_getter(
@@ -61,6 +64,7 @@ async def send_getter(
     return {
         "audience_type": audience,
         "audience_count": audience_count,
+        "exclude_delivered": dialog_manager.dialog_data.get("exclude_delivered", True),
         "excluded_users_count": len(excluded_telegram_ids),
         "registration_exclusion_days": exclude_registered_older_than_days or 0,
         "is_repeat": bool(dialog_manager.dialog_data.get("is_repeat", False)),

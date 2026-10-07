@@ -21,6 +21,7 @@ class BroadcastDto(BaseDto, TrackableMixin, TimestampMixin):
 
     payload: MessagePayloadDto
     campaign_id: Optional[UUID] = None
+    exclude_delivered: bool = True
 
     messages: list["BroadcastMessageDto"] = field(default_factory=list)
 

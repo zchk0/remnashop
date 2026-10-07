@@ -50,6 +50,8 @@ MAX_TELEGRAM_ID = 9_223_372_036_854_775_807
 
 
 def _repeat_campaign_id(dialog_manager: DialogManager) -> Optional[UUID]:
+    if not dialog_manager.dialog_data.get("exclude_delivered", True):
+        return None
     value = dialog_manager.dialog_data.get("repeat_campaign_id")
     return UUID(str(value)) if value else None
 
@@ -624,6 +626,7 @@ async def on_repeat(
         MessagePayloadDto,
     )
     dialog_manager.dialog_data["is_repeat"] = True
+    dialog_manager.dialog_data["exclude_delivered"] = widget.widget_id != "repeat_all"
     dialog_manager.dialog_data["repeat_source_task_id"] = str(broadcast.task_id)
     dialog_manager.dialog_data["repeat_campaign_id"] = str(
         broadcast.campaign_id or broadcast.task_id
@@ -682,6 +685,7 @@ async def on_send(
                     excluded_telegram_ids,
                     exclude_registered_older_than_days,
                     source_task_id=UUID(str(source_task_id)) if source_task_id else None,
+                    exclude_delivered=dialog_manager.dialog_data.get("exclude_delivered", True),
                 ),
             )
         except BroadcastAudienceUnavailableError:

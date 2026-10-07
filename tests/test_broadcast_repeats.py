@@ -3,6 +3,7 @@ import importlib
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -10,6 +11,8 @@ from uuid import uuid4
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
+from fluent_compiler.bundle import FluentBundle
+from fluentogram.translator import FluentTranslator
 from sqlalchemy import Column, DateTime, Integer, MetaData, Table, create_engine, select
 from sqlalchemy.dialects import postgresql
 
@@ -25,6 +28,7 @@ from src.application.use_cases.broadcast.queries.audience import (
     GetBroadcastAudienceUsers,
     GetBroadcastAudienceUsersDto,
 )
+from src.core.constants import USER_KEY
 from src.core.enums import BroadcastAudience, BroadcastMessageStatus, BroadcastStatus
 from src.core.exceptions import (
     BroadcastAudienceUnavailableError,
@@ -34,6 +38,12 @@ from src.core.utils.time import datetime_now
 from src.infrastructure.database.dao.broadcast import BroadcastDaoImpl
 from src.infrastructure.database.models import Broadcast, BroadcastDelivery
 from src.infrastructure.taskiq.tasks.broadcast import delete_broadcast_task, send_broadcast_task
+from src.telegram.routers.dashboard.broadcast.getters import repeat_getter, send_getter
+from src.telegram.routers.dashboard.broadcast.handlers import (
+    _refresh_audience_count,
+    on_repeat,
+    on_send,
+)
 
 
 class _History:
@@ -42,6 +52,7 @@ class _History:
         self.delivered = {}
         self.locks = {}
         self.transaction_locks = []
+        self.next_message_id = 1000
 
     async def create(self, broadcast):
         self.broadcasts[broadcast.task_id] = broadcast
@@ -53,8 +64,16 @@ class _History:
     async def get_delivered_telegram_ids(self, campaign_id):
         return list(self.delivered.get(campaign_id, set()))
 
-    async def record_delivery(self, campaign_id, telegram_id):
+    async def record_delivery(
+        self, campaign_id, telegram_id, *, broadcast_message_id=None, message_id=None
+    ):
         self.delivered.setdefault(campaign_id, set()).add(telegram_id)
+        if broadcast_message_id is not None:
+            for broadcast in self.broadcasts.values():
+                for message in broadcast.messages:
+                    if message.id == broadcast_message_id:
+                        message.status = BroadcastMessageStatus.SENT
+                        message.message_id = message_id
 
     async def update_status(self, task_id, status):
         self.broadcasts[task_id].status = status
@@ -119,8 +138,9 @@ def _flow(monkeypatch):  # noqa: C901
         if broadcast.messages:
             return broadcast.messages
         broadcast.messages = data.messages
-        for i, message in enumerate(broadcast.messages, start=1):
-            message.id = i
+        for message in broadcast.messages:
+            history.next_message_id += 1
+            message.id = history.next_message_id
         broadcast.total_count = len(broadcast.messages)
         return broadcast.messages
 
@@ -148,12 +168,17 @@ def _flow(monkeypatch):  # noqa: C901
     monkeypatch.setattr("src.infrastructure.taskiq.tasks.broadcast.BATCH_DELAY", 0)
     worker = send_broadcast_task.original_func.__dishka_orig_func__
 
-    async def send(broadcast, update_messages=None):
+    async def send(
+        broadcast,
+        update_messages=None,
+        excluded_telegram_ids=None,
+        exclude_registered_older_than_days=None,
+    ):
         await worker(
             broadcast,
             None,
-            [],
-            None,
+            excluded_telegram_ids or [],
+            exclude_registered_older_than_days,
             history,
             get_users,
             SimpleNamespace(system=initialize),
@@ -811,3 +836,195 @@ async def test_delayed_worker_cannot_revive_deleted_run(cleanup_database, status
         BroadcastStatus.DELETED if status == BroadcastStatus.DELETED else BroadcastStatus.ERROR
     )
     assert db.connection.scalar(select(db.broadcasts.c.status)) == expected
+
+
+async def test_repeat_everyone_and_undelivered_share_all_delivery_history(monkeypatch):
+    flow = _flow(monkeypatch)
+    payload = MessagePayloadDto(i18n_key="msg-broadcast", i18n_kwargs={"content": "Hello"})
+
+    async def launch(source=None, exclude_delivered=True, excluded=None):
+        task_id = await flow.start.system(
+            StartBroadcastDto(
+                BroadcastAudience.ALL,
+                payload,
+                source_task_id=source,
+                exclude_delivered=exclude_delivered,
+                excluded_telegram_ids=excluded or [],
+            )
+        )
+        broadcast = flow.history.broadcasts[task_id]
+        await flow.send(broadcast, excluded_telegram_ids=excluded)
+        return broadcast
+
+    original = await launch()
+    assert flow.sent == [101, 102]
+    flow.failed.clear()
+    flow.users.append(UserDto(id=104, telegram_id=104, name="new"))
+
+    everyone = await launch(original.task_id, exclude_delivered=False, excluded=[102])
+    assert everyone.campaign_id == original.campaign_id
+    assert everyone.exclude_delivered is False
+    assert everyone.total_count == 3
+    assert flow.sent == [101, 102, 101, 103, 104]
+    with pytest.raises(BroadcastAudienceUnavailableError):
+        await launch(everyone.task_id)
+
+    flow.users.append(UserDto(id=105, telegram_id=105, name="latest"))
+    undelivered = await launch(everyone.task_id)
+    assert undelivered.total_count == 1
+    assert undelivered.campaign_id == original.campaign_id
+    assert flow.sent[-1] == 105
+    assert flow.sent.count(104) == 1
+
+    second_everyone = await launch(undelivered.task_id, exclude_delivered=False)
+    assert second_everyone.total_count == 5
+    assert second_everyone.campaign_id == original.campaign_id
+    assert flow.sent.count(101) == 3
+    assert set(await flow.history.get_delivered_telegram_ids(original.campaign_id)) == {
+        101,
+        102,
+        103,
+        104,
+        105,
+    }
+
+
+async def test_everyone_worker_restart_does_not_resend_its_own_successes(monkeypatch):
+    flow = _flow(monkeypatch)
+    source = _completed_broadcast(uuid4())
+    await flow.history.create(source)
+    await flow.history.record_delivery(source.campaign_id, 101)
+    flow.failed.clear()
+    task_id = await flow.start.system(
+        StartBroadcastDto(
+            BroadcastAudience.ALL,
+            source.payload,
+            source_task_id=source.task_id,
+            exclude_delivered=False,
+        )
+    )
+    broadcast = flow.history.broadcasts[task_id]
+    await flow.send(broadcast, update_messages=AsyncMock(side_effect=RuntimeError("commit failed")))
+    assert broadcast.status == BroadcastStatus.ERROR
+    assert flow.sent == [101, 102, 103]
+    assert all(message.status == BroadcastMessageStatus.SENT for message in broadcast.messages)
+
+    broadcast.status = BroadcastStatus.PROCESSING
+    await flow.send(broadcast)
+    assert flow.sent == [101, 102, 103]
+    assert broadcast.status == BroadcastStatus.COMPLETED
+
+
+async def test_receipt_and_run_message_success_commit_together(monkeypatch):
+    dao = BroadcastDaoImpl.__new__(BroadcastDaoImpl)
+    connection, events = _engine_stub(monkeypatch, dao)
+    await dao.record_delivery(uuid4(), 101, broadcast_message_id=123, message_id=456)
+    assert events == ["transaction", "release_transaction"]
+    assert connection.execute.await_count == 2
+    update_stmt = connection.execute.call_args_list[1].args[0]
+    compiled = update_stmt.compile(dialect=postgresql.dialect())
+    assert "UPDATE broadcast_messages" in str(compiled)
+    assert {123, 456}.issubset(compiled.params.values())
+    assert BroadcastMessageStatus.SENT in compiled.params.values()
+
+
+def test_repeat_mode_migration_preserves_existing_broadcasts():
+    output = StringIO()
+    context = MigrationContext.configure(
+        dialect_name="postgresql", opts={"as_sql": True, "output_buffer": output}
+    )
+    migration = importlib.import_module(
+        "src.infrastructure.database.migrations.versions.0047_add_broadcast_repeat_mode"
+    )
+    assert migration.down_revision == "0046"
+    with Operations.context(context):
+        migration.upgrade()
+    assert "ADD COLUMN exclude_delivered BOOLEAN DEFAULT true NOT NULL" in output.getvalue()
+    output.seek(0)
+    output.truncate()
+    with Operations.context(context):
+        migration.downgrade()
+    assert "DROP COLUMN exclude_delivered" in output.getvalue()
+
+
+@pytest.mark.parametrize(
+    "button_id,exclude_delivered,total", [("repeat", True, 1), ("repeat_all", False, 3)]
+)
+async def test_repeat_button_selects_mode_through_confirmation_and_worker(
+    monkeypatch, button_id, exclude_delivered, total
+):
+    flow = _flow(monkeypatch)
+    source = _completed_broadcast(uuid4())
+    source.payload = MessagePayloadDto(i18n_key="msg-broadcast", i18n_kwargs={"content": "Hello"})
+    await flow.history.create(source)
+    for telegram_id in (101, 102):
+        await flow.history.record_delivery(source.campaign_id, telegram_id)
+    flow.failed.clear()
+    actor = SimpleNamespace(log="test-admin")
+    dialog = SimpleNamespace(
+        middleware_data={USER_KEY: actor},
+        dialog_data={"task_id": source.task_id, "excluded_telegram_ids": [999]},
+        switch_to=AsyncMock(),
+    )
+    retort = SimpleNamespace(
+        dump=lambda payload, kind: {"i18n_kwargs": payload.i18n_kwargs},
+        load=lambda payload, kind: source.payload,
+    )
+    notifier = SimpleNamespace(notify_user=AsyncMock())
+    await on_repeat.__dishka_orig_func__(
+        None, SimpleNamespace(widget_id=button_id), dialog, flow.history, retort, notifier
+    )
+    assert (await repeat_getter(dialog))["exclude_delivered"] is exclude_delivered
+    dialog.dialog_data["audience_type"] = BroadcastAudience.ALL
+
+    async def count(actor, data):
+        return await flow.count.system(data)
+
+    assert await _refresh_audience_count(dialog, actor, count) == total
+    assert (await send_getter(dialog))["exclude_delivered"] is exclude_delivered
+    monkeypatch.setattr(
+        "src.telegram.routers.dashboard.broadcast.handlers.is_double_click", lambda *a, **k: True
+    )
+    scheduled = []
+
+    async def start(actor, data):
+        scheduled.append(data)
+        return await flow.start.system(data)
+
+    await on_send.__dishka_orig_func__(None, None, dialog, retort, notifier, start)
+    assert scheduled[0].exclude_delivered is exclude_delivered
+    assert scheduled[0].source_task_id == source.task_id
+    created = flow.history.broadcasts[dialog.dialog_data["task_id"]]
+    assert created.campaign_id == source.campaign_id
+    assert created.total_count == total
+    await flow.send(created)
+    assert flow.sent == ([103] if exclude_delivered else [101, 102, 103])
+    notifier.notify_user.assert_not_awaited()
+
+
+@pytest.mark.parametrize("exclude_delivered", [0, 1])
+def test_repeat_screen_explains_selected_mode(exclude_delivered):
+    texts = [p.read_text("utf-8") for p in sorted(Path("assets/translations/ru").glob("*.ftl"))]
+    translator = FluentTranslator(
+        locale="ru",
+        translator=FluentBundle.from_string(
+            locale="ru", text="\n".join(texts), use_isolating=False
+        ),
+    )
+    rendered = translator.get(
+        "msg-broadcast-repeat", broadcast_id="test", exclude_delivered=exclude_delivered
+    )
+    confirmation = translator.get(
+        "msg-broadcast-send",
+        audience_type="ALL",
+        audience_count=3,
+        is_repeat=1,
+        exclude_delivered=exclude_delivered,
+    )
+    if exclude_delivered:
+        assert "будут исключены автоматически" in rendered
+        assert "только не получавшим" in confirmation
+    else:
+        assert "включая уже получавших" in rendered
+        assert "всем выбранным пользователям" in confirmation
+        assert "будут исключены автоматически" not in rendered

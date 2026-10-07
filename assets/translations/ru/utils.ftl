@@ -150,7 +150,7 @@ frg-subscription =
 frg-subscription-traffic-reset =
     { $next_reset_at ->
     [0] { empty }
-    *[DATE] • <b>Следующий сброс трафика</b>: { $next_reset_at }
+    *[DATE] • <b>Сброс трафика</b>: { $next_reset_at }
     }
 
 frg-subscription-user-editor =

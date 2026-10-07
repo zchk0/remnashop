@@ -28,6 +28,7 @@ class StartBroadcastDto:
     excluded_telegram_ids: list[int] = field(default_factory=list)
     exclude_registered_older_than_days: Optional[int] = None
     source_task_id: Optional[UUID] = None
+    exclude_delivered: bool = True
 
 
 class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
@@ -66,7 +67,7 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
                     data.plan_id,
                     data.excluded_telegram_ids,
                     data.exclude_registered_older_than_days,
-                    campaign_id,
+                    campaign_id if data.exclude_delivered else None,
                 )
             )
             if total_count <= 0:
@@ -79,6 +80,7 @@ class StartBroadcast(Interactor[StartBroadcastDto, UUID]):
                 audience=data.audience,
                 payload=data.payload,
                 campaign_id=campaign_id,
+                exclude_delivered=data.exclude_delivered,
             )
             broadcast = await self.broadcast_dao.create(broadcast)
             await self.uow.commit()

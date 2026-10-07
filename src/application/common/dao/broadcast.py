@@ -16,7 +16,14 @@ class BroadcastDao(Protocol):
 
     async def get_delivered_telegram_ids(self, campaign_id: UUID) -> list[int]: ...
 
-    async def record_delivery(self, campaign_id: UUID, telegram_id: int) -> None: ...
+    async def record_delivery(
+        self,
+        campaign_id: UUID,
+        telegram_id: int,
+        *,
+        broadcast_message_id: Optional[int] = None,
+        message_id: Optional[int] = None,
+    ) -> None: ...
 
     def lock_campaign(self, campaign_id: UUID) -> AbstractAsyncContextManager[None]: ...
 

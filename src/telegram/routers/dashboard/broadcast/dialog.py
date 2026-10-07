@@ -173,6 +173,14 @@ view = Window(
     ),
     Row(
         Button(
+            I18nFormat("btn-broadcast.repeat-all"),
+            id="repeat_all",
+            on_click=on_repeat,
+            when=F["can_repeat"],
+        ),
+    ),
+    Row(
+        Button(
             I18nFormat("btn-broadcast.cancel"),
             id="cancel",
             on_click=on_cancel,

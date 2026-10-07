@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey, Integer
+from sqlalchemy import BigInteger, ForeignKey, Integer, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import BroadcastAudience, BroadcastMessageStatus, BroadcastStatus
@@ -16,6 +16,7 @@ class Broadcast(BaseSql, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     task_id: Mapped[UUID] = mapped_column(unique=True)
     campaign_id: Mapped[UUID] = mapped_column(index=True)
+    exclude_delivered: Mapped[bool] = mapped_column(default=True, server_default=true())
 
     status: Mapped[BroadcastStatus] = mapped_column(index=True)
     audience: Mapped[BroadcastAudience]
