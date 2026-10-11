@@ -470,6 +470,7 @@ class PromocodeDaoImpl(PromocodeDao):
             status=activation.status,
             remote_action=activation.remote_action,
             target_remna_id=activation.target_remna_id,
+            target_panel_user_id=activation.target_panel_user_id,
             reset_traffic=activation.reset_traffic,
             last_error=activation.last_error,
             attempt_count=activation.attempt_count,

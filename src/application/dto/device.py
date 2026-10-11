@@ -10,6 +10,7 @@ class LinkedDeviceDto(BaseDto, TimestampMixin):
     device_id: str
     telegram_id: Optional[int] = None
     panel_user_uuid: Optional[str] = None
+    panel_user_id: Optional[int] = None
     short_uuid: Optional[str] = None
     anon_traffic_bytes: int = 0
     device_name: Optional[str] = None
@@ -25,6 +26,7 @@ class AuthTokenDto(BaseDto, TimestampMixin):
     telegram_id: Optional[int] = None
     short_uuid: Optional[str] = None
     panel_user_uuid: Optional[str] = None
+    panel_user_id: Optional[int] = None
 
 
 @dataclass(kw_only=True)

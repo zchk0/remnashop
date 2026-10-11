@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -101,6 +101,7 @@ class PromocodeActivation(BaseSql):
         server_default=PromocodeRemoteAction.NONE.value,
     )
     target_remna_id: Mapped[Optional[UUID]] = mapped_column(index=True)
+    target_panel_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
     reset_traffic: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

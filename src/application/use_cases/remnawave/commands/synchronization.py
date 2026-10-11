@@ -126,6 +126,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
 
         subscription = SubscriptionDto(
             user_remna_id=remna_subscription.uuid,
+            panel_user_id=remna_subscription.panel_user_id,
             status=status,
             traffic_limit=plan.traffic_limit,
             device_limit=plan.device_limit,

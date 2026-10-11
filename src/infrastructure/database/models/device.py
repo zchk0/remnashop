@@ -15,6 +15,7 @@ class LinkedDevice(BaseSql, TimestampMixin):
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
 
     panel_user_uuid: Mapped[Optional[str]] = mapped_column(Text)
+    panel_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
     short_uuid: Mapped[Optional[str]] = mapped_column(Text)
     anon_traffic_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
 

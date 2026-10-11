@@ -395,6 +395,10 @@ class RemnawaveImpl(Remnawave):
             old_value = getattr(target, field_name)
             new_value = getattr(source, field_name)
 
+            # Old cached DTOs may not have a numeric ID yet.
+            if field_name == "panel_user_id" and new_value is None:
+                continue
+
             if old_value != new_value:
                 logger.debug(f"Field '{field_name}' changed from '{old_value}' to '{new_value}'")
                 setattr(target, field_name, new_value)

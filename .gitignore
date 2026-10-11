@@ -16,6 +16,7 @@ tests/*
 !tests/test_menu_traffic_reset.py
 !tests/test_tobevpn_traffic_reset.py
 !tests/test_broadcast_repeats.py
+!tests/test_panel_v3_mapping.py
 .DS_Store
 traefik
 logs/*
@@ -45,6 +46,7 @@ __pycache__/
 htmlcov/
 
 # Backups
+remnawave_backup_panel_*.tar.gz
 backups/*
 !backups/.gitkeep
 

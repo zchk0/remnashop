@@ -62,6 +62,7 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
 
             new_subscription = SubscriptionDto(
                 user_remna_id=remna_user.uuid,
+                panel_user_id=remna_user.id,
                 status=SubscriptionStatus(remna_user.status),
                 traffic_limit=plan.traffic_limit,
                 device_limit=plan.device_limit,

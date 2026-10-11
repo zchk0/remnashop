@@ -61,6 +61,7 @@ class ActivateTrialSubscription(Interactor[ActivateTrialSubscriptionDto, None]):
 
         trial_subscription = SubscriptionDto(
             user_remna_id=created_user.uuid,
+            panel_user_id=created_user.id,
             status=SubscriptionStatus(created_user.status),
             is_trial=True,
             traffic_limit=plan.traffic_limit,
@@ -240,6 +241,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
     ) -> SubscriptionDto:
         return SubscriptionDto(
             user_remna_id=remna_user.uuid,
+            panel_user_id=remna_user.id,
             status=SubscriptionStatus(remna_user.status),
             is_trial=plan.is_trial,
             traffic_limit=plan.traffic_limit,

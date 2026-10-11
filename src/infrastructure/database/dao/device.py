@@ -5,9 +5,10 @@ from typing import Optional, cast
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from src.application.common.dao.device import (
     AuthTokenDao,
@@ -22,6 +23,16 @@ from src.application.dto.device import (
     TvPairingCodeDto,
 )
 from src.infrastructure.database.models import AuthToken, DeviceSession, LinkedDevice, TvPairingCode
+
+
+def _preserve_panel_user_id(
+    model: type[LinkedDevice] | type[AuthToken], panel_user_uuid: Optional[str]
+) -> ColumnElement[int]:
+    # v2 callers still bind by UUID. Keep the backfilled ID only for the same user.
+    return case(
+        (model.panel_user_uuid.is_not_distinct_from(panel_user_uuid), model.panel_user_id),
+        else_=None,
+    )
 
 
 class LinkedDeviceDaoImpl(LinkedDeviceDao):
@@ -61,6 +72,9 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
                 set_={
                     "telegram_id": data.get("telegram_id"),
                     "panel_user_uuid": data.get("panel_user_uuid"),
+                    "panel_user_id": _preserve_panel_user_id(
+                        LinkedDevice, data.get("panel_user_uuid")
+                    ),
                     "short_uuid": data.get("short_uuid"),
                     "device_name": data.get("device_name"),
                     "device_type": data.get("device_type"),
@@ -115,6 +129,7 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
             .values(
                 telegram_id=None,
                 panel_user_uuid=None,
+                panel_user_id=None,
                 short_uuid=None,
             )
             .returning(LinkedDevice.id)
@@ -164,6 +179,9 @@ class AuthTokenDaoImpl(AuthTokenDao):
                     "device_id": data["device_id"],
                     "status": "pending",
                     "panel_user_uuid": data.get("panel_user_uuid"),
+                    "panel_user_id": _preserve_panel_user_id(
+                        AuthToken, data.get("panel_user_uuid")
+                    ),
                 },
             )
             .returning(AuthToken)
