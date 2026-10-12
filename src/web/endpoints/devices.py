@@ -432,7 +432,7 @@ async def _build_duration_data(
         raise ValueError("Plan id is required to build ToBeVPN purchase link")
 
     prices_by_currency = {price.currency: price for price in duration.prices}
-    duration_discounts = {
+    list_discounts = {
         price.currency: pricing_service.get_duration_discount(plan, duration, price.currency)
         for price in duration.prices
     }
@@ -445,16 +445,19 @@ async def _build_duration_data(
             continue
 
         pricing = pricing_service.calculate(user, price.price, gateway.currency)
+        discount_percent = max(
+            pricing.discount_percent,
+            pricing_service.get_duration_discount(
+                plan, duration, gateway.currency, final_amount=pricing.final_amount
+            ),
+        )
         payment_methods.append(
             {
                 "gateway_type": gateway.type.value,
                 "currency": gateway.currency.value,
                 "original_amount": str(pricing.original_amount),
                 "final_amount": str(pricing.final_amount),
-                "discount_percent": pricing.discount_percent,
-                "duration_discount_percent": duration_discounts[gateway.currency]
-                if pricing.final_amount > 0
-                else 0,
+                "discount_percent": discount_percent,
             }
         )
 
@@ -468,7 +471,7 @@ async def _build_duration_data(
             {
                 "currency": price.currency.value,
                 "amount": str(price.price),
-                "duration_discount_percent": duration_discounts[price.currency],
+                "discount_percent": list_discounts[price.currency],
             }
             for price in duration.prices
         ],

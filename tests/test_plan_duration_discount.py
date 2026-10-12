@@ -86,9 +86,23 @@ def test_discount_uses_matching_currency_without_changing_baseline() -> None:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-@pytest.mark.parametrize("personal_discount", [0, 20, 100])
+@pytest.mark.parametrize(
+    ("personal_discount", "purchase_discount", "expected_discounts"),
+    [
+        (0, 0, (0, 11)),
+        (20, 0, (20, 28)),
+        (0, 20, (20, 28)),
+        (30, 20, (30, 37)),
+        (20, 30, (30, 37)),
+        (0, 100, (0, 0)),
+    ],
+)
 async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
-    translator: FluentTranslator, enabled: bool, personal_discount: int
+    translator: FluentTranslator,
+    enabled: bool,
+    personal_discount: int,
+    purchase_discount: int,
+    expected_discounts: tuple[int, int],
 ) -> None:
     retort = Retort()
     plan = PlanDto(
@@ -97,7 +111,13 @@ async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
         durations=[_duration(30, "450"), _duration(90, "1199")],
     )
     manager = SimpleNamespace(dialog_data={PlanDto.__name__: retort.dump(plan)})
-    user = TelegramUserDto(id=1, telegram_id=1, name="Test", personal_discount=personal_discount)
+    user = TelegramUserDto(
+        id=1,
+        telegram_id=1,
+        name="Test",
+        personal_discount=personal_discount,
+        purchase_discount=purchase_discount,
+    )
     settings_dao = SimpleNamespace(
         get=AsyncMock(return_value=SimpleNamespace(default_currency=Currency.RUB))
     )
@@ -110,17 +130,21 @@ async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
         settings_dao=settings_dao,
         pricing_service=service,
     )
-    for item, duration in zip(data["durations"], plan.durations):
+    for item, duration, expected_discount in zip(
+        data["durations"], plan.durations, expected_discounts
+    ):
         assert (
             item["final_amount"]
             == service.calculate(user, duration.get_price(Currency.RUB), Currency.RUB).final_amount
         )
         rendered = translator.get("btn-subscription.duration", **item)
-        expected_discount = enabled and duration.days == 90 and personal_discount < 100
-        assert ("(-11%)" in rendered) == expected_discount
-        assert "(-0%)" not in rendered
-        if not enabled or duration.days == 30 or personal_discount == 100:
+        expected_discount = expected_discount if enabled else 0
+        assert item["duration_discount_percent"] == expected_discount
+        if expected_discount:
+            assert f"(-{expected_discount}%)" in rendered
+        else:
             assert "(-" not in rendered
+        assert "(-0%)" not in rendered
 
 
 def test_flag_survives_serialization_and_old_plans_default_to_disabled() -> None:

@@ -8,9 +8,14 @@ from src.core.enums import Currency
 
 class PricingService:
     def get_duration_discount(
-        self, plan: PlanDto, duration: PlanDurationDto, currency: Currency
+        self,
+        plan: PlanDto,
+        duration: PlanDurationDto,
+        currency: Currency,
+        *,
+        final_amount: Decimal | None = None,
     ) -> int:
-        """Compare list prices per day with the plan's shortest finite duration."""
+        """Compare the final or list price with the shortest duration's list price per day."""
         if not plan.show_duration_discount or duration.days <= 0:
             return 0
 
@@ -19,14 +24,14 @@ class PricingService:
             key=lambda item: item.days,
             default=None,
         )
-        if shortest is None or duration.days <= shortest.days:
+        if shortest is None or duration.days < shortest.days:
             return 0
 
         base_price = next((p.price for p in shortest.prices if p.currency == currency), None)
         if base_price is None or base_price <= 0:
             return 0
 
-        price = duration.get_price(currency)
+        price = duration.get_price(currency) if final_amount is None else final_amount
         if price <= 0:
             return 0
 
