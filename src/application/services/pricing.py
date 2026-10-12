@@ -2,11 +2,39 @@ from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 from loguru import logger
 
-from src.application.dto import PlanDurationDto, PriceDetailsDto, UserDto
+from src.application.dto import PlanDto, PlanDurationDto, PriceDetailsDto, UserDto
 from src.core.enums import Currency
 
 
 class PricingService:
+    def get_duration_discount(
+        self, plan: PlanDto, duration: PlanDurationDto, currency: Currency
+    ) -> int:
+        """Compare list prices per day with the plan's shortest finite duration."""
+        if not plan.show_duration_discount or duration.days <= 0:
+            return 0
+
+        shortest = min(
+            (item for item in plan.durations if item.days > 0),
+            key=lambda item: item.days,
+            default=None,
+        )
+        if shortest is None or duration.days <= shortest.days:
+            return 0
+
+        base_price = next((p.price for p in shortest.prices if p.currency == currency), None)
+        if base_price is None or base_price <= 0:
+            return 0
+
+        price = duration.get_price(currency)
+        if price <= 0:
+            return 0
+
+        baseline = base_price * Decimal(duration.days)
+        savings = baseline - price * Decimal(shortest.days)
+        discount = savings * Decimal(100) / baseline
+        return max(0, int(discount))
+
     def is_largest_discount_personal(self, user: UserDto) -> bool:
         personal = user.personal_discount or 0
         purchase = user.purchase_discount or 0

@@ -234,6 +234,11 @@ async def duration_getter(
                 "period": i18n.get(key, **kw),
                 "final_amount": price.final_amount,
                 "discount_percent": price.discount_percent,
+                "duration_discount_percent": pricing_service.get_duration_discount(
+                    plan, duration, currency
+                )
+                if price.final_amount > 0
+                else 0,
                 "original_amount": price.original_amount,
                 "currency": currency.symbol,
             }

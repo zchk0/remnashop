@@ -84,6 +84,7 @@ class PlanDto(BaseDto, TrackableMixin, TimestampMixin):
     order_index: int = 0
     is_active: bool = False
     is_trial: bool = False
+    show_duration_discount: bool = False
 
     durations: list["PlanDurationDto"] = field(default_factory=list)
 
