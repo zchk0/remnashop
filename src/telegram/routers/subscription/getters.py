@@ -238,7 +238,7 @@ async def duration_getter(
                 "final_amount": price.final_amount,
                 "discount_percent": price.discount_percent,
                 "duration_discount_percent": pricing_service.get_duration_discount(
-                    plan, duration, currency, final_amount=price.final_amount
+                    plan, duration, currency, applied_discount_percent=price.discount_percent
                 ),
                 "original_amount": price.original_amount,
                 "currency": currency.symbol,

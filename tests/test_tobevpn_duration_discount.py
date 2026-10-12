@@ -19,7 +19,12 @@ from src.application.services import PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.enums import Currency, PaymentGatewayType
-from src.web.endpoints.devices import DeviceAuthContext, get_device_auth_context, router
+from src.web.endpoints.devices import (
+    DeviceAuthContext,
+    _build_duration_data,
+    get_device_auth_context,
+    router,
+)
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -125,3 +130,26 @@ def test_purchase_api_exposes_combined_discount_per_currency(
             assert method["discount_percent"] == (
                 final_discount if enabled else expected.discount_percent
             )
+
+
+@pytest.mark.parametrize("currency", [Currency.RUB, Currency.XTR])
+async def test_rounding_payable_amount_does_not_inflate_api_discount(currency: Currency) -> None:
+    duration = PlanDurationDto(
+        days=1,
+        prices=[PlanPriceDto(currency=currency, price=Decimal(15))],
+    )
+    plan = PlanDto(id=10, show_duration_discount=True, durations=[duration])
+    user = TelegramUserDto(id=1, telegram_id=123, name="User", purchase_discount=15)
+    offer = await _build_duration_data(
+        plan=plan,
+        duration=duration,
+        user=user,
+        gateways=[PaymentGatewayDto(type=PaymentGatewayType.PLATEGA, currency=currency)],
+        pricing_service=PricingService(),
+        bot_service=SimpleNamespace(get_purchase_url=AsyncMock(return_value="https://t.me/test")),
+    )
+    method = offer["payment_methods"][0]
+    assert method["original_amount"] == "15"
+    assert method["final_amount"] == "12"
+    assert method["discount_percent"] == 15
+    assert offer["prices"][0]["discount_percent"] == 0

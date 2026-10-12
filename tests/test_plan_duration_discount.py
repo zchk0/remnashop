@@ -87,14 +87,19 @@ def test_discount_uses_matching_currency_without_changing_baseline() -> None:
 
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize(
+    ("base_days", "base_price", "long_days", "long_price"),
+    [(30, "450", 90, "1199"), (1, "15", 7, "70")],
+)
+@pytest.mark.parametrize(
     ("personal_discount", "purchase_discount", "expected_discounts"),
     [
-        (0, 0, (0, 11)),
-        (20, 0, (20, 28)),
-        (0, 20, (20, 28)),
-        (30, 20, (30, 37)),
-        (20, 30, (30, 37)),
-        (0, 100, (0, 0)),
+        (0, 0, {30: (0, 11), 1: (0, 33)}),
+        (20, 0, {30: (20, 28), 1: (20, 46)}),
+        (0, 20, {30: (20, 28), 1: (20, 46)}),
+        (30, 20, {30: (30, 37), 1: (30, 53)}),
+        (20, 30, {30: (30, 37), 1: (30, 53)}),
+        (0, 15, {30: (15, 24), 1: (15, 43)}),
+        (0, 100, {30: (0, 0), 1: (0, 0)}),
     ],
 )
 async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
@@ -102,13 +107,17 @@ async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
     enabled: bool,
     personal_discount: int,
     purchase_discount: int,
-    expected_discounts: tuple[int, int],
+    expected_discounts: dict[int, tuple[int, int]],
+    base_days: int,
+    base_price: str,
+    long_days: int,
+    long_price: str,
 ) -> None:
     retort = Retort()
     plan = PlanDto(
         name="plan-default-name",
         show_duration_discount=enabled,
-        durations=[_duration(30, "450"), _duration(90, "1199")],
+        durations=[_duration(base_days, base_price), _duration(long_days, long_price)],
     )
     manager = SimpleNamespace(dialog_data={PlanDto.__name__: retort.dump(plan)})
     user = TelegramUserDto(
@@ -131,7 +140,7 @@ async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
         pricing_service=service,
     )
     for item, duration, expected_discount in zip(
-        data["durations"], plan.durations, expected_discounts
+        data["durations"], plan.durations, expected_discounts[base_days]
     ):
         assert (
             item["final_amount"]
@@ -145,6 +154,11 @@ async def test_duration_buttons_keep_purchase_prices_and_hide_zero_discount(
         else:
             assert "(-" not in rendered
         assert "(-0%)" not in rendered
+        if base_days == 1 and duration.days == 1 and purchase_discount == 15:
+            assert item["final_amount"] == Decimal(12)
+            if enabled:
+                assert "(-15%)" in rendered
+                assert "(-20%)" not in rendered
 
 
 def test_flag_survives_serialization_and_old_plans_default_to_disabled() -> None:

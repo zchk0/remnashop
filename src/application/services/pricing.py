@@ -13,9 +13,9 @@ class PricingService:
         duration: PlanDurationDto,
         currency: Currency,
         *,
-        final_amount: Decimal | None = None,
+        applied_discount_percent: int = 0,
     ) -> int:
-        """Compare the final or list price with the shortest duration's list price per day."""
+        """Combine duration and user savings before rounding the payable amount."""
         if not plan.show_duration_discount or duration.days <= 0:
             return 0
 
@@ -31,7 +31,11 @@ class PricingService:
         if base_price is None or base_price <= 0:
             return 0
 
-        price = duration.get_price(currency) if final_amount is None else final_amount
+        price = (
+            duration.get_price(currency)
+            * (Decimal(100) - Decimal(applied_discount_percent))
+            / Decimal(100)
+        )
         if price <= 0:
             return 0
 

@@ -448,7 +448,10 @@ async def _build_duration_data(
         discount_percent = max(
             pricing.discount_percent,
             pricing_service.get_duration_discount(
-                plan, duration, gateway.currency, final_amount=pricing.final_amount
+                plan,
+                duration,
+                gateway.currency,
+                applied_discount_percent=pricing.discount_percent,
             ),
         )
         payment_methods.append(
