@@ -21,6 +21,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_expire_time,
     i18n_format_traffic_limit,
 )
+from src.core.utils.i18n_keys import TimeUnitKey
 from src.telegram.states import Subscription
 
 
@@ -227,6 +228,8 @@ async def duration_getter(
 
     for duration in plan.durations:
         key, kw = i18n_format_days(duration.days)
+        if key == TimeUnitKey.MONTH:
+            key = "btn-subscription.duration-month"
         price = pricing_service.calculate(user, duration.get_price(currency), currency)
         durations.append(
             {
