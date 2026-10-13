@@ -425,6 +425,20 @@ async def on_active_toggle(
 
 
 @inject
+async def on_duration_discount_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    retort: FromDishka[Retort],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    plan = retort.load(dialog_manager.dialog_data[PlanDto.__name__], PlanDto)
+    plan.show_duration_discount = not plan.show_duration_discount
+    dialog_manager.dialog_data[PlanDto.__name__] = retort.dump(plan)
+    logger.info(f"{user.log} Toggled duration discount display to '{plan.show_duration_discount}'")
+
+
+@inject
 async def on_traffic_input(
     message: Message,
     widget: MessageInput,

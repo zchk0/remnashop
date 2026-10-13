@@ -142,7 +142,7 @@ def build_backfill_sql(users: list[PanelUserId], *, commit: bool = False) -> str
         raise ValueError("Duplicate UUID or numeric ID mapping")
 
     sql = [
-        "-- Run ONLY against the Remnashop database after Alembic revision 0048.",
+        "-- Run ONLY against the Remnashop database after Alembic revision 0049.",
         "-- Existing UUIDs are preserved. Preview rolls back every UPDATE.",
         "-- Stop the app, worker and scheduler when applying the final mapping.",
         "BEGIN;",

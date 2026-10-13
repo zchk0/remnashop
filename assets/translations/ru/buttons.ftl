@@ -504,6 +504,10 @@ btn-plans =
     .type = 🔖 Тип
     .availability = ✴️ Доступ
     .durations-prices = ⏳ Длительности и 💰 Цены
+    .duration-discount-toggle = { $show_duration_discount ->
+    [1] 🔘
+    *[0] ⚪
+    } Показывать скидку за срок
     .traffic = 🌐 Трафик
     .devices = 📱 Устройства
     .allowed = 👥 Разрешенные пользователи
@@ -578,6 +582,7 @@ btn-importer =
     .import-active = ❇️ Импортировать активных
 
 btn-subscription =
+    .duration-month = { $value } мес.
     .plan = 💳 Перейти к оформлению подписки
     .new = 💸 Купить подписку
     .renew = 🔄 Продлить
@@ -599,6 +604,9 @@ btn-subscription =
     .duration = { $period } | { $final_amount ->
     [0] 🎁
     *[HAS] { $final_amount }{ $currency }
+    }{ $duration_discount_percent ->
+    [0] { space }
+    *[HAS] { space }(-{ $duration_discount_percent }%)
     }
 
 btn-ad-links =

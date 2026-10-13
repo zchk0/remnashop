@@ -122,6 +122,7 @@ duration = Window(
             text=I18nFormat(
                 "btn-subscription.duration",
                 period=F["item"]["period"],
+                duration_discount_percent=F["item"]["duration_discount_percent"],
                 final_amount=F["item"]["final_amount"],
                 discount_percent=F["item"]["discount_percent"],
                 original_amount=F["item"]["original_amount"],

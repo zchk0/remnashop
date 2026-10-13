@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from remnapy.enums.users import TrafficLimitStrategy
-from sqlalchemy import ARRAY, BigInteger, ForeignKey, Numeric, Text
+from sqlalchemy import ARRAY, BigInteger, ForeignKey, Numeric, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import Currency, PlanAvailability, PlanType
@@ -37,6 +37,7 @@ class Plan(BaseSql, TimestampMixin):
     order_index: Mapped[int] = mapped_column(index=True)
     is_active: Mapped[bool]
     is_trial: Mapped[bool]
+    show_duration_discount: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     durations: Mapped[list["PlanDuration"]] = relationship(
         back_populates="plan",

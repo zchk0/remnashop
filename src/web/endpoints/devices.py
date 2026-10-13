@@ -420,17 +420,22 @@ def _get_plan_purchase_type(
 
 
 async def _build_duration_data(
-    plan_id: Optional[int],
+    plan: PlanDto,
     duration: PlanDurationDto,
     user: UserDto,
     gateways: list[PaymentGatewayDto],
     pricing_service: PricingService,
     bot_service: BotService,
 ) -> dict:
+    plan_id = plan.id
     if plan_id is None:
         raise ValueError("Plan id is required to build ToBeVPN purchase link")
 
     prices_by_currency = {price.currency: price for price in duration.prices}
+    list_discounts = {
+        price.currency: pricing_service.get_duration_discount(plan, duration, price.currency)
+        for price in duration.prices
+    }
     payment_methods = []
     bot_start_param = f"{Deeplink.BUY.with_underscore}{plan_id}_{duration.days}"
 
@@ -440,13 +445,22 @@ async def _build_duration_data(
             continue
 
         pricing = pricing_service.calculate(user, price.price, gateway.currency)
+        discount_percent = max(
+            pricing.discount_percent,
+            pricing_service.get_duration_discount(
+                plan,
+                duration,
+                gateway.currency,
+                applied_discount_percent=pricing.discount_percent,
+            ),
+        )
         payment_methods.append(
             {
                 "gateway_type": gateway.type.value,
                 "currency": gateway.currency.value,
                 "original_amount": str(pricing.original_amount),
                 "final_amount": str(pricing.final_amount),
-                "discount_percent": pricing.discount_percent,
+                "discount_percent": discount_percent,
             }
         )
 
@@ -460,6 +474,7 @@ async def _build_duration_data(
             {
                 "currency": price.currency.value,
                 "amount": str(price.price),
+                "discount_percent": list_discounts[price.currency],
             }
             for price in duration.prices
         ],
@@ -495,7 +510,7 @@ async def _build_purchase_plan_data(
         "external_squad_uuid": str(plan.external_squad) if plan.external_squad else None,
         "durations": [
             await _build_duration_data(
-                plan_id=plan.id,
+                plan=plan,
                 duration=duration,
                 user=user,
                 gateways=gateways,

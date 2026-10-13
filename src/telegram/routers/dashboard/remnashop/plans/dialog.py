@@ -50,6 +50,7 @@ from .handlers import (
     on_description_input,
     on_description_remove,
     on_devices_input,
+    on_duration_discount_toggle,
     on_duration_input,
     on_duration_move,
     on_duration_remove,
@@ -263,6 +264,16 @@ configurator = Window(
             text=I18nFormat("btn-plans.durations-prices"),
             id="durations_prices",
             state=RemnashopPlans.DURATIONS,
+        ),
+    ),
+    Row(
+        Button(
+            text=I18nFormat(
+                "btn-plans.duration-discount-toggle",
+                show_duration_discount=F["show_duration_discount"],
+            ),
+            id="duration_discount_toggle",
+            on_click=on_duration_discount_toggle,
         ),
     ),
     Row(

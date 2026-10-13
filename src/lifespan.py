@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     try:
         panel_version = await remnawave_service.try_connection()
-        if panel_version >= REMNAWAVE_MAX_VERSION:
+        if panel_version > REMNAWAVE_MAX_VERSION:
             await event_bus.publish(
                 RemnawaveVersionWarningEvent(
                     **config.build.data,

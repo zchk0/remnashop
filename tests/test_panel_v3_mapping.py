@@ -11,8 +11,10 @@ from uuid import UUID
 
 import pytest
 from adaptix import Retort
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from remnapy.enums import TrafficLimitStrategy
 from sqlalchemy import create_engine, insert, select, update
 
@@ -138,7 +140,7 @@ def test_generated_sql_is_transactional_and_preserves_legacy_ids() -> None:
 
 def test_migration_adds_nullable_bigints_and_can_be_reversed_offline() -> None:
     migration = importlib.import_module(
-        "src.infrastructure.database.migrations.versions.0048_add_panel_user_ids"
+        "src.infrastructure.database.migrations.versions.0049_add_panel_user_ids"
     )
     output = io.StringIO()
     context = MigrationContext.configure(
@@ -159,6 +161,18 @@ def test_migration_adds_nullable_bigints_and_can_be_reversed_offline() -> None:
         assert f"ALTER TABLE {table} DROP COLUMN {name};" in sql
         assert model.__table__.c[name].nullable
         assert str(model.__table__.c[name].type) == "BIGINT"
+
+
+def test_panel_id_migration_follows_main_without_duplicate_revisions() -> None:
+    scripts = ScriptDirectory.from_config(Config("src/infrastructure/database/alembic.ini"))
+    revisions = list(scripts.walk_revisions())
+
+    assert len(scripts.get_heads()) == 1
+    assert len({migration.revision for migration in revisions}) == len(revisions)
+    chain = list(scripts.walk_revisions(base="0047", head="0049"))
+    assert [migration.revision for migration in chain] == ["0049", "0048", "0047"]
+    assert chain[0].down_revision == "0048"
+    assert chain[1].path.endswith("0048_add_plan_show_duration_discount.py")
 
 
 def test_numeric_id_is_collected_from_panel_and_preserved_during_sync() -> None:
