@@ -4,7 +4,6 @@ from typing import Optional
 from uuid import UUID
 
 from loguru import logger
-from remnapy import RemnawaveSDK
 
 from src.application.common import Interactor, Remnawave
 from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
@@ -13,7 +12,9 @@ from src.application.common.uow import UnitOfWork
 from src.application.dto import RequirementSettingsDto, SettingsDto, UserDto
 from src.core.enums import SubscriptionStatus
 from src.core.utils.converters import gb_to_bytes
+from src.core.utils.panel_identity import subscription_ref
 from src.core.utils.time import datetime_now
+from src.infrastructure.remnawave_v3.compat import PanelClient
 
 
 class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
@@ -49,9 +50,9 @@ class ToggleSubscriptionStatus(Interactor[int, SubscriptionStatus]):
         async with self.uow:
             try:
                 if is_now_active:
-                    await self.remnawave.enable_user(subscription.user_remna_id)
+                    await self.remnawave.enable_user(subscription_ref(subscription))
                 else:
-                    await self.remnawave.disable_user(subscription.user_remna_id)
+                    await self.remnawave.disable_user(subscription_ref(subscription))
             except Exception as e:
                 logger.error(f"External API error for user '{user_id}' while toggling status: {e}")
                 raise
@@ -92,7 +93,7 @@ class DeleteSubscription(Interactor[int, None]):
 
         async with self.uow:
             try:
-                await self.remnawave.delete_user(subscription.user_remna_id)
+                await self.remnawave.delete_user(subscription_ref(subscription))
             except Exception as e:
                 logger.error(f"Failed to delete user {target_user.log} from remnapy: {e}")
                 raise
@@ -141,7 +142,7 @@ class UpdateTrafficLimit(Interactor[UpdateTrafficLimitDto, None]):
             subscription.traffic_limit = data.traffic_limit
             await self.subscription_dao.update(subscription)
             await self.remnawave.update_user_traffic_limit(
-                subscription.user_remna_id,
+                subscription_ref(subscription),
                 gb_to_bytes(data.traffic_limit),
             )
 
@@ -186,7 +187,7 @@ class UpdateDeviceLimit(Interactor[UpdateDeviceLimitDto, None]):
             subscription.device_limit = data.device_limit
             await self.subscription_dao.update(subscription)
             await self.remnawave.update_user_device_limit(
-                subscription.user_remna_id,
+                subscription_ref(subscription),
                 data.device_limit,
             )
             await self.uow.commit()
@@ -237,7 +238,7 @@ class ToggleInternalSquad(Interactor[ToggleInternalSquadDto, None]):
             subscription.internal_squads = squads
             await self.subscription_dao.update(subscription)
             await self.remnawave.update_user_internal_squads(
-                subscription.user_remna_id,
+                subscription_ref(subscription),
                 squads,
             )
             await self.uow.commit()
@@ -287,7 +288,7 @@ class ToggleExternalSquad(Interactor[ToggleExternalSquadDto, None]):
             subscription.external_squad = new_squad
             await self.subscription_dao.update(subscription)
             await self.remnawave.update_user_external_squad(
-                subscription.user_remna_id,
+                subscription_ref(subscription),
                 new_squad,
             )
             await self.uow.commit()
@@ -334,7 +335,7 @@ class AddSubscriptionDuration(Interactor[AddSubscriptionDurationDto, None]):
             subscription.expire_at = new_expire
             await self.subscription_dao.update(subscription)
             await self.remnawave.update_user_expire_at(
-                subscription.user_remna_id,
+                subscription_ref(subscription),
                 new_expire,
             )
 
@@ -362,7 +363,7 @@ class DisableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDt
         settings_dao: SettingsDao,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave_sdk: PanelClient,
     ) -> None:
         self.uow = uow
         self.settings_dao = settings_dao
@@ -392,7 +393,7 @@ class DisableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDt
 
         async with self.uow:
             try:
-                await self.remnawave_sdk.users.disable_user(subscription.user_remna_id)
+                await self.remnawave_sdk.users.disable_user(subscription_ref(subscription))
             except Exception as e:
                 logger.error(
                     f"Failed to disable trial in remnawave for user '{data.telegram_id}': {e}"
@@ -439,7 +440,7 @@ class EnableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDto
         settings_dao: SettingsDao,
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave_sdk: PanelClient,
     ) -> None:
         self.uow = uow
         self.settings_dao = settings_dao
@@ -481,7 +482,7 @@ class EnableTrialSubscription(Interactor[ChannelMemberEventDto, Optional[UserDto
 
         async with self.uow:
             try:
-                await self.remnawave_sdk.users.enable_user(subscription.user_remna_id)
+                await self.remnawave_sdk.users.enable_user(subscription_ref(subscription))
             except Exception as e:
                 logger.error(
                     f"Failed to enable trial in remnawave for user '{data.telegram_id}': {e}"

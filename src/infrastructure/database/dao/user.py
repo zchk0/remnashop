@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, cast
-from uuid import UUID
 
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
 from src.core.enums import Role, SubscriptionStatus
+from src.core.utils.panel_identity import PanelUserRef
 from src.infrastructure.database.models import Referral, Subscription, User
 
 
@@ -83,11 +83,17 @@ class UserDaoImpl(UserDao):
         logger.debug(f"User '{telegram_id}' not found")
         return None
 
-    async def get_by_remna_uuid(self, remna_uuid: UUID) -> Optional[UserDto]:
+    async def get_by_remna_uuid(self, remna_uuid: PanelUserRef) -> Optional[UserDto]:
         stmt = (
             select(User)
             .join(Subscription, User.current_subscription_id == Subscription.id)
-            .where(Subscription.user_remna_id == remna_uuid)
+            .where(
+                (
+                    Subscription.panel_user_id == remna_uuid
+                    if isinstance(remna_uuid, int)
+                    else Subscription.user_remna_id == remna_uuid
+                )
+            )
         )
         db_user = await self.session.scalar(stmt)
 

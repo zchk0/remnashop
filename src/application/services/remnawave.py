@@ -31,7 +31,7 @@ from src.application.use_cases.remnawave.commands.synchronization import (
     SyncRemnaUserDto,
 )
 from src.core.config import AppConfig
-from src.core.constants import DATETIME_VIEW_FORMAT, IMPORTED_TAG, T_ME, TIME_1H
+from src.core.constants import DATETIME_VIEW_FORMAT, IMPORTED_TAG, TIME_1H
 from src.core.enums import SubscriptionStatus, UserNotificationType
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import country_code_to_flag
@@ -42,7 +42,10 @@ from src.core.utils.i18n_helpers import (
     i18n_format_seconds,
 )
 from src.core.utils.i18n_keys import ByteUnitKey
+from src.core.utils.panel_identity import remote_user_ref
 from src.core.utils.time import datetime_now, get_traffic_reset_delta
+from src.infrastructure.remnawave_v3.models import HwidDevice
+from src.infrastructure.remnawave_v3.webhook import V3TorrentReport
 
 
 class RemnaWebhookService:
@@ -84,7 +87,7 @@ class RemnaWebhookService:
             await self._process_sync(event, remna_user)
             return
 
-        user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+        user = await self.user_dao.get_by_remna_uuid(remote_user_ref(remna_user))
         if not user:
             logger.warning(f"Local user not found for remna_uuid '{remna_user.uuid}'")
             return
@@ -142,7 +145,7 @@ class RemnaWebhookService:
                     name=user.name,
                     email=user.email,
                     is_trial=current_subscription.is_trial,
-                    subscription_id=remna_user.uuid,
+                    subscription_id=remote_user_ref(remna_user),
                     subscription_status=SubscriptionStatus(remna_user.status),
                     traffic_used=i18n_format_bytes_to_unit(
                         remna_user.used_traffic_bytes, min_unit=ByteUnitKey.MEGABYTE
@@ -156,11 +159,11 @@ class RemnaWebhookService:
             logger.warning(f"Unhandled user event '{event}' for '{remna_user.telegram_id}'")
 
     async def handle_device_event(
-        self, event: str, remna_user: RemnaUserDto, device: HwidUserDeviceDto
+        self, event: str, remna_user: RemnaUserDto, device: HwidUserDeviceDto | HwidDevice
     ) -> None:
         logger.info(f"Received device event '{event}' for RemnaUser '{remna_user.uuid}'")
 
-        user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+        user = await self.user_dao.get_by_remna_uuid(remote_user_ref(remna_user))
         if not user:
             logger.warning(f"Local user not found for remna_uuid '{remna_user.uuid}'")
             return
@@ -327,9 +330,7 @@ class RemnaWebhookService:
             -24: RemnaUserEvent.EXPIRES_IN_24_HOURS,
         }
         legacy_event = (
-            before_expiration_events.get(expiration_hours)
-            if expiration_hours is not None
-            else None
+            before_expiration_events.get(expiration_hours) if expiration_hours is not None else None
         )
 
         if legacy_event:
@@ -357,14 +358,16 @@ class RemnaWebhookService:
         )
 
     async def _process_not_connected(self, remna_user: RemnaUserDto) -> None:
-        user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+        user = await self.user_dao.get_by_remna_uuid(remote_user_ref(remna_user))
         if not user:
             logger.warning(f"Local user not found for remna_uuid '{remna_user.uuid}'")
             return
-        support_url = f"{T_ME}{self.config.bot.support_username.get_secret_value()}"
+        support_url = self.bot_service.get_support_url()
         await self.event_bus.publish(UserNotConnectedEvent(user=user, support_url=support_url))
 
-    async def handle_torrent_blocker_event(self, report: TorrentBlockerReportDto) -> None:
+    async def handle_torrent_blocker_event(
+        self, report: TorrentBlockerReportDto | V3TorrentReport
+    ) -> None:
         logger.info("Received torrent blocker webhook event")
 
         action_report = report.report.action_report
@@ -377,7 +380,9 @@ class RemnaWebhookService:
         remna_user = report.user
         telegram_id = remna_user.telegram_id
         user_identifier = (
-            str(telegram_id) if telegram_id else (action_report.user_id or str(remna_user.uuid))
+            str(telegram_id)
+            if telegram_id
+            else (action_report.user_id or str(remote_user_ref(remna_user)))
         )
         node_name = report.node.name
         blocked_ip = action_report.ip
@@ -448,7 +453,7 @@ class RemnaWebhookService:
 
     async def _process_delete_subscription(self, remna_user: RemnaUserDto) -> None:
         async with self.uow:
-            subscription = await self.subscription_dao.get_by_remna_id(remna_user.uuid)
+            subscription = await self.subscription_dao.get_by_remna_id(remote_user_ref(remna_user))
 
             if not subscription:
                 logger.warning(
@@ -463,7 +468,7 @@ class RemnaWebhookService:
             current_subscription = await self.subscription_dao.get_current(user_id)
 
             if current_subscription:
-                if current_subscription.user_remna_id != subscription.user_remna_id:
+                if current_subscription.id != subscription.id:
                     logger.debug(
                         f"Subscription '{subscription.user_remna_id}' "
                         f"is not current for user_id '{user_id}', skipping unlinking"
@@ -524,7 +529,7 @@ class RemnaWebhookService:
                     name=user.name,
                     email=user.email,
                     is_trial=current_subscription.is_trial,
-                    subscription_id=remna_user.uuid,
+                    subscription_id=remote_user_ref(remna_user),
                     subscription_status=SubscriptionStatus(remna_user.status),
                     traffic_used=i18n_format_bytes_to_unit(
                         remna_user.used_traffic_bytes, min_unit=ByteUnitKey.MEGABYTE

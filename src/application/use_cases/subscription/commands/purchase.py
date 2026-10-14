@@ -18,6 +18,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_device_limit,
     i18n_format_traffic_limit,
 )
+from src.core.utils.panel_identity import subscription_ref
 from src.core.utils.time import datetime_now
 
 
@@ -184,7 +185,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 subscription.external_squad = plan.external_squad
 
                 await self.remnawave.update_user_subscription(
-                    uuid=subscription.user_remna_id,
+                    uuid=subscription_ref(subscription),
                     subscription=subscription,
                     reset_traffic=reset_traffic,
                 )
@@ -210,7 +211,7 @@ class PurchaseSubscription(Interactor[PurchaseSubscriptionDto, None]):
                 )
 
                 updated_user = await self.remnawave.update_user_subscription(
-                    uuid=subscription.user_remna_id,
+                    uuid=subscription_ref(subscription),
                     plan=plan,
                     reset_traffic=reset_traffic,
                 )

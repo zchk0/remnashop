@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 
@@ -39,7 +40,7 @@ async def test_remnawave_28_upcoming_expiration_event(
 ) -> None:
     service, publish = _service()
     remna_user = SimpleNamespace(
-        uuid="remna-uuid",
+        uuid=UUID("00000000-0000-0000-0000-000000000042"),
         telegram_id=123,
         expire_at=datetime(2026, 8, 10, tzinfo=UTC),
     )
@@ -55,7 +56,7 @@ async def test_remnawave_28_upcoming_expiration_event(
 async def test_remnawave_28_expired_one_day_ago_event() -> None:
     service, publish = _service()
     remna_user = SimpleNamespace(
-        uuid="remna-uuid",
+        uuid=UUID("00000000-0000-0000-0000-000000000042"),
         telegram_id=123,
         expire_at=datetime(2026, 8, 10, tzinfo=UTC),
     )

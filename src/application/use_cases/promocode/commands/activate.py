@@ -29,7 +29,9 @@ from src.core.exceptions import (
     PromocodeNotAvailableError,
     PromocodeNotFoundError,
 )
+from src.core.types import RemnaUserDto
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
+from src.core.utils.panel_identity import panel_user_ref, subscription_ref
 from src.core.utils.time import datetime_now
 
 PROMOCODE_ACTIVATION_MAX_ATTEMPTS = 8
@@ -157,6 +159,8 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             )
             subscription = await self.subscription_dao.get_current(user.id)
             reward = self._prepare_reward(user, promo, subscription)
+            await self._persist_reward(user, reward)
+            target_subscription = reward.subscription_update or reward.subscription_create
             status = (
                 PromocodeActivationStatus.APPLIED
                 if reward.remote_action == PromocodeRemoteAction.NONE
@@ -177,6 +181,18 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
                     status=status,
                     remote_action=reward.remote_action,
                     target_remna_id=reward.target_remna_id,
+                    target_panel_user_id=(
+                        target_subscription.panel_user_id if target_subscription else None
+                    ),
+                    target_subscription_id=(
+                        target_subscription.id if target_subscription else None
+                    ),
+                    target_short_uuid=(
+                        request_id.hex
+                        if reward.subscription_create
+                        and getattr(self.remnawave, "api_version", 2) == 3
+                        else None
+                    ),
                     reset_traffic=reward.reset_traffic,
                     event_status=(
                         PromocodeActivationEventStatus.PENDING
@@ -187,7 +203,6 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
                 max_activations=promo.max_activations,
                 is_reusable=promo.is_reusable,
             )
-            await self._persist_reward(user, reward)
             await self.uow.commit()
 
         return activation, self._promo_from_snapshot(activation, promo)
@@ -265,66 +280,95 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             await self._record_activation_error(request_id, error)
             raise
 
-    async def _apply_remote_action(
+    async def _get_activation_subscription(
         self,
         user: UserDto,
         activation: PromocodeActivationDto,
-    ) -> None:
-        target_remna_id = activation.target_remna_id
-        if target_remna_id is None:
-            raise _PermanentActivationError(
-                "Promocode activation has no target Remnawave user"
+    ) -> SubscriptionDto:
+        local_id = getattr(activation, "target_subscription_id", None)
+        numeric_id = getattr(activation, "target_panel_user_id", None)
+        if local_id is not None:
+            subscription = await self.subscription_dao.get_by_id(local_id)
+        elif activation.target_remna_id is not None or numeric_id is not None:
+            subscription = await self.subscription_dao.get_by_remna_id(
+                panel_user_ref(activation.target_remna_id, numeric_id)
             )
-
-        subscription = await self.subscription_dao.get_by_remna_id(target_remna_id)
+        else:
+            raise _PermanentActivationError("Promocode activation has no target subscription")
         if subscription is None:
-            raise _PermanentActivationError(
-                f"Subscription for Remnawave user '{target_remna_id}' not found"
-            )
+            raise _PermanentActivationError("Reserved subscription no longer exists")
+        if getattr(subscription, "user_id", None) is not None and subscription.user_id != user.id:
+            raise _PermanentActivationError("Promocode subscription owner does not match")
+        return subscription
 
-        if activation.remote_action == PromocodeRemoteAction.UPDATE_SUBSCRIPTION:
-            match activation.reward_type_snapshot:
-                case PromocodeRewardType.DURATION:
-                    remna_user = await self.remnawave.update_user_expire_at(
-                        target_remna_id,
-                        subscription.expire_at,
-                    )
-                case PromocodeRewardType.TRAFFIC:
-                    remna_user = await self.remnawave.update_user_traffic_limit(
-                        target_remna_id,
-                        gb_to_bytes(subscription.traffic_limit),
-                    )
-                case PromocodeRewardType.DEVICES:
-                    remna_user = await self.remnawave.update_user_device_limit(
-                        target_remna_id,
-                        subscription.device_limit,
-                    )
-                case PromocodeRewardType.SUBSCRIPTION:
-                    remna_user = await self.remnawave.update_user_subscription(
-                        uuid=target_remna_id,
-                        subscription=subscription,
-                        reset_traffic=activation.reset_traffic,
-                    )
-                case _:
-                    raise _PermanentActivationError(
-                        "Promocode reward type cannot update a subscription: "
-                        f"'{activation.reward_type_snapshot}'"
-                    )
-        elif activation.remote_action == PromocodeRemoteAction.CREATE_SUBSCRIPTION:
-            existing_remna_user = await self.remnawave.get_user_by_uuid(target_remna_id)
-            if existing_remna_user is None:
-                remna_user = await self.remnawave.create_user(
-                    user=user,
-                    subscription=subscription,
+    async def _update_reserved_subscription(
+        self,
+        subscription: SubscriptionDto,
+        activation: PromocodeActivationDto,
+    ) -> RemnaUserDto:
+        reference = subscription_ref(subscription)
+        match activation.reward_type_snapshot:
+            case PromocodeRewardType.DURATION:
+                return await self.remnawave.update_user_expire_at(reference, subscription.expire_at)
+            case PromocodeRewardType.TRAFFIC:
+                return await self.remnawave.update_user_traffic_limit(
+                    reference, gb_to_bytes(subscription.traffic_limit)
                 )
-            else:
-                remna_user = existing_remna_user
+            case PromocodeRewardType.DEVICES:
+                return await self.remnawave.update_user_device_limit(
+                    reference, subscription.device_limit
+                )
+            case PromocodeRewardType.SUBSCRIPTION:
+                return await self.remnawave.update_user_subscription(
+                    uuid=reference,
+                    subscription=subscription,
+                    reset_traffic=activation.reset_traffic,
+                )
+            case _:
+                raise _PermanentActivationError("Promocode reward cannot update a subscription")
+
+    async def _create_reserved_subscription(
+        self,
+        user: UserDto,
+        subscription: SubscriptionDto,
+        activation: PromocodeActivationDto,
+    ) -> RemnaUserDto:
+        marker = getattr(activation, "target_short_uuid", None)
+        if marker is not None:
+            existing = await self.remnawave.get_user_by_short_uuid(marker)
+            if existing is not None and (
+                existing.short_uuid != marker or existing.telegram_id != user.telegram_id
+            ):
+                raise _PermanentActivationError("Reserved promocode user identity does not match")
+        else:
+            existing = await self.remnawave.get_user_by_uuid(subscription_ref(subscription))
+        if existing is not None:
+            return existing
+        if marker is not None:
+            return await self.remnawave.create_user(
+                user=user, subscription=subscription, short_uuid=marker
+            )
+        return await self.remnawave.create_user(user=user, subscription=subscription)
+
+    async def _apply_remote_action(self, user: UserDto, activation: PromocodeActivationDto) -> None:
+        subscription = await self._get_activation_subscription(user, activation)
+        if activation.remote_action == PromocodeRemoteAction.UPDATE_SUBSCRIPTION:
+            remna_user = await self._update_reserved_subscription(subscription, activation)
+        elif activation.remote_action == PromocodeRemoteAction.CREATE_SUBSCRIPTION:
+            remna_user = await self._create_reserved_subscription(user, subscription, activation)
         else:
             return
-
         subscription.status = SubscriptionStatus(remna_user.status)
         subscription.expire_at = remna_user.expire_at
         subscription.url = remna_user.subscription_url
+        if getattr(remna_user, "id", None) is not None:
+            subscription.panel_user_id = remna_user.id
+            if activation.request_id is not None:
+                await self.promocode_dao.set_activation_panel_id(
+                    activation.request_id, remna_user.id
+                )
+        if getattr(remna_user, "uuid", None) is not None:
+            subscription.user_remna_id = remna_user.uuid
         await self.subscription_dao.update(subscription)
 
     async def _record_activation_error(self, request_id: UUID, error: Exception) -> None:
@@ -334,10 +378,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
                     request_id,
                     for_update=True,
                 )
-                if (
-                    activation is None
-                    or activation.status != PromocodeActivationStatus.PENDING
-                ):
+                if activation is None or activation.status != PromocodeActivationStatus.PENDING:
                     await self.uow.rollback()
                     return
 
@@ -466,7 +507,7 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
             )
 
         new_subscription = SubscriptionDto(
-            user_remna_id=uuid4(),
+            user_remna_id=(None if getattr(self.remnawave, "api_version", 2) == 3 else uuid4()),
             status=SubscriptionStatus.ACTIVE,
             is_trial=False,
             traffic_limit=plan.traffic_limit,
@@ -502,9 +543,11 @@ class ActivatePromocode(Interactor[ActivatePromocodeDto, PromocodeDto]):
         if reward.subscription_update is not None:
             await self.subscription_dao.update(reward.subscription_update)
         if reward.subscription_create is not None:
-            await self.subscription_dao.create(
+            created = await self.subscription_dao.create(
                 subscription=reward.subscription_create,
                 user_id=user.id,
             )
+            reward.subscription_create.id = created.id
+            reward.subscription_create.user_id = user.id
         if reward.user_update is not None:
             await self.user_dao.update(reward.user_update)

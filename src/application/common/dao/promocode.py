@@ -77,6 +77,8 @@ class PromocodeDao(Protocol):
 
     async def mark_activation_applied(self, request_id: UUID) -> PromocodeActivationDto: ...
 
+    async def set_activation_panel_id(self, request_id: UUID, panel_user_id: int) -> None: ...
+
     async def record_activation_failure(
         self,
         request_id: UUID,

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.application.common.dao import SubscriptionDao, UserDao
 from src.application.dto import PlanSubStatsDto, SubscriptionDto, SubscriptionStatsDto
 from src.core.enums import SubscriptionStatus
+from src.core.utils.panel_identity import PanelUserRef
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Subscription, User
 
@@ -67,7 +68,7 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         logger.debug(f"Subscription '{subscription_id}' not found")
         return None
 
-    async def get_by_remna_id(self, user_remna_id: UUID) -> Optional[SubscriptionDto]:
+    async def get_by_remna_id(self, user_remna_id: PanelUserRef) -> Optional[SubscriptionDto]:
         stmt = self._get_by_remna_id_stmt(user_remna_id)
         db_subscription = await self.session.scalar(stmt)
 
@@ -79,11 +80,17 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         return None
 
     @staticmethod
-    def _get_by_remna_id_stmt(user_remna_id: UUID) -> Select[Any]:
+    def _get_by_remna_id_stmt(user_remna_id: PanelUserRef) -> Select[Any]:
         return (
             select(Subscription)
             .join(User, User.id == Subscription.user_id)
-            .where(Subscription.user_remna_id == user_remna_id)
+            .where(
+                (
+                    Subscription.panel_user_id == user_remna_id
+                    if isinstance(user_remna_id, int)
+                    else Subscription.user_remna_id == user_remna_id
+                )
+            )
             .order_by(
                 case(
                     (User.current_subscription_id == Subscription.id, 0),
@@ -178,9 +185,17 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
         logger.warning(f"Failed to update subscription '{subscription_id}': not found")
         return None
 
-    async def exists(self, user_remna_id: UUID) -> bool:
+    async def exists(self, user_remna_id: PanelUserRef) -> bool:
         stmt = select(
-            select(Subscription).where(Subscription.user_remna_id == user_remna_id).exists()
+            select(Subscription)
+            .where(
+                (
+                    Subscription.panel_user_id == user_remna_id
+                    if isinstance(user_remna_id, int)
+                    else Subscription.user_remna_id == user_remna_id
+                )
+            )
+            .exists()
         )
         is_exists = await self.session.scalar(stmt) or False
 
@@ -205,10 +220,7 @@ class SubscriptionDaoImpl(SubscriptionDao, BaseDaoImpl):
                 User.is_bot_blocked.is_(False),
             )
         )
-        if (
-            excluded_telegram_ids is not None
-            or exclude_registered_older_than_days is not None
-        ):
+        if excluded_telegram_ids is not None or exclude_registered_older_than_days is not None:
             stmt = stmt.where(User.telegram_id.is_not(None))
         if excluded_telegram_ids:
             stmt = stmt.where(User.telegram_id.not_in(excluded_telegram_ids))

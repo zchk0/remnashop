@@ -6,7 +6,6 @@ from uuid import UUID
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from remnapy import RemnawaveSDK
 from remnapy.enums import TrafficLimitStrategy
 
 from src.application.common import BotService, Remnawave
@@ -15,6 +14,7 @@ from src.application.dto import PlanSnapshotDto, SubscriptionDto
 from src.application.use_cases.plan.queries.match import MatchPlan
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.enums import PlanType
+from src.infrastructure.remnawave_v3.compat import PanelClient
 from src.web.endpoints.devices import DeviceAuthContext, get_device_auth_context, router
 
 
@@ -66,7 +66,7 @@ def api(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         MatchPlan: SimpleNamespace(system=AsyncMock(return_value=None)),
         BotService: SimpleNamespace(),
         Remnawave: SimpleNamespace(get_user_by_uuid=fetch_user),
-        RemnawaveSDK: SimpleNamespace(
+        PanelClient: SimpleNamespace(
             subscription=SimpleNamespace(get_subscription_info_by_short_uuid=fetch_info),
             users=SimpleNamespace(get_user_by_short_uuid=sdk_fetch_user),
         ),

@@ -8,6 +8,7 @@ from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, SubscriptionDto, UserDto
 from src.core.enums import SubscriptionStatus
+from src.core.utils.panel_identity import subscription_ref
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ class SetUserSubscription(Interactor[SetUserSubscriptionDto, None]):
 
             if subscription:
                 remna_user = await self.remnawave.update_user_subscription(
-                    uuid=subscription.user_remna_id,
+                    uuid=subscription_ref(subscription),
                     plan=plan_snapshot,
                     reset_traffic=True,
                 )

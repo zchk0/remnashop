@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
-from uuid import UUID
 
 from loguru import logger
 
@@ -12,6 +11,7 @@ from src.application.common.remnawave import Remnawave
 from src.application.common.uow import UnitOfWork
 from src.application.dto import RemnaSubscriptionDto, UserDto
 from src.core.exceptions import CooldownError, PermissionDeniedError
+from src.core.utils.panel_identity import PanelUserRef, subscription_ref
 from src.core.utils.time import datetime_now
 
 
@@ -64,10 +64,10 @@ class DeleteUserDevice(Interactor[DeleteUserDeviceDto, bool]):
 
         async with self.uow:
             remaining_devices = await self.remnawave.delete_device(
-                current_subscription.user_remna_id,
+                subscription_ref(current_subscription),
                 data.hwid,
             )
-            await self.remnawave.drop_connections(current_subscription.user_remna_id)
+            await self.remnawave.drop_connections(subscription_ref(current_subscription))
             current_subscription.device_single_reset_at = datetime_now()
             await self.subscription_dao.update(current_subscription)
             await self.uow.commit()
@@ -112,8 +112,8 @@ class DeleteUserAllDevices(Interactor[None, None]):
                 raise CooldownError(available_at)
 
         async with self.uow:
-            await self.remnawave.delete_all_devices(current_subscription.user_remna_id)
-            await self.remnawave.drop_connections(current_subscription.user_remna_id)
+            await self.remnawave.delete_all_devices(subscription_ref(current_subscription))
+            await self.remnawave.drop_connections(subscription_ref(current_subscription))
             current_subscription.device_all_reset_at = datetime_now()
             await self.subscription_dao.update(current_subscription)
             await self.uow.commit()
@@ -144,7 +144,7 @@ class ResetUserTraffic(Interactor[int, None]):
             raise ValueError(f"Subscription for user '{target_user.remna_name}' not found")
 
         try:
-            await self.remnawave.reset_traffic(subscription.user_remna_id)
+            await self.remnawave.reset_traffic(subscription_ref(subscription))
         except Exception as e:
             logger.error(
                 f"Failed to reset traffic in Remnawave for user '{target_user.remna_name}': {e}"
@@ -156,7 +156,7 @@ class ResetUserTraffic(Interactor[int, None]):
 
 async def _fetch_reissued_subscription(
     remnawave: Remnawave,
-    user_remna_id: UUID,
+    user_remna_id: PanelUserRef,
     previous_url: str,
     attempts: int = 5,
     delay_seconds: int = 1,
@@ -208,10 +208,10 @@ class ReissueSubscription(Interactor[None, None]):
                 raise CooldownError(available_at)
 
         previous_url = current_subscription.url
-        await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
+        await self.remnawave.revoke_subscription(subscription_ref(current_subscription))
         reissued = await _fetch_reissued_subscription(
             self.remnawave,
-            current_subscription.user_remna_id,
+            subscription_ref(current_subscription),
             previous_url,
         )
 
@@ -257,10 +257,10 @@ class ReissueUserSubscription(Interactor[int, None]):
             raise ValueError(f"No active subscription for user '{target_user.remna_name}'")
 
         previous_url = current_subscription.url
-        await self.remnawave.revoke_subscription(current_subscription.user_remna_id)
+        await self.remnawave.revoke_subscription(subscription_ref(current_subscription))
         reissued = await _fetch_reissued_subscription(
             self.remnawave,
-            current_subscription.user_remna_id,
+            subscription_ref(current_subscription),
             previous_url,
         )
 

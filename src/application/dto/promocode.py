@@ -42,6 +42,8 @@ class PromocodeActivationDto(BaseDto):
     remote_action: PromocodeRemoteAction = PromocodeRemoteAction.NONE
     target_remna_id: Optional[UUID] = None
     target_panel_user_id: Optional[int] = None
+    target_subscription_id: Optional[int] = None
+    target_short_uuid: Optional[str] = None
     reset_traffic: bool = False
     last_error: Optional[str] = None
     attempt_count: int = 0

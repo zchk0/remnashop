@@ -5,17 +5,17 @@ from aiogram_dialog.widgets.common import ManagedScroll
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
-from remnapy import RemnawaveSDK
 
 from src.application.common import TranslatorRunner
 from src.core.utils.converters import country_code_to_flag, percent
 from src.core.utils.i18n_helpers import i18n_format_bytes_to_unit, i18n_format_seconds
+from src.infrastructure.remnawave_v3.compat import PanelClient
 
 
 @inject
 async def system_getter(
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     **kwargs: Any,
 ) -> dict[str, Any]:
     stats = await remnawave_sdk.system.get_stats()
@@ -37,7 +37,7 @@ async def system_getter(
 @inject
 async def users_getter(
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     **kwargs: Any,
 ) -> dict[str, Any]:
     result = await remnawave_sdk.system.get_stats()
@@ -58,7 +58,7 @@ async def users_getter(
 @inject
 async def hosts_getter(
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -97,7 +97,7 @@ async def hosts_getter(
 @inject
 async def nodes_getter(
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -142,7 +142,7 @@ async def nodes_getter(
 @inject
 async def inbounds_getter(
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:

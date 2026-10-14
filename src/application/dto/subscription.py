@@ -23,7 +23,7 @@ class SquadInfoDto:
 
 @dataclass(kw_only=True)
 class RemnaSubscriptionDto:
-    uuid: UUID
+    uuid: Optional[UUID] = None
     panel_user_id: Optional[int] = None
     status: SubscriptionStatus
     expire_at: datetime
@@ -57,7 +57,7 @@ class RemnaSubscriptionDto:
 @dataclass(kw_only=True)
 class SubscriptionDto(BaseDto, TrackableMixin, TimestampMixin):
     user_id: int = 0
-    user_remna_id: UUID
+    user_remna_id: Optional[UUID] = None
     panel_user_id: Optional[int] = None
 
     status: SubscriptionStatus = SubscriptionStatus.ACTIVE

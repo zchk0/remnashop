@@ -3,7 +3,6 @@ from typing import Optional
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, HTTPException, status
-from remnapy.models.hwid import HwidDeviceDto
 
 from src.application.common import Remnawave
 from src.application.common.dao import (
@@ -48,6 +47,8 @@ from src.core.exceptions import (
     PromocodeNotFoundError,
     TrialNotAvailableError,
 )
+from src.core.types import RemnaDeviceDto
+from src.core.utils.panel_identity import subscription_ref
 from src.web.schemas import (
     DeviceDeleteResponse,
     DeviceResponse,
@@ -74,7 +75,7 @@ from ._common import CurrentUser
 router = APIRouter(prefix="/subscription", tags=["Public - Subscription"])
 
 
-def _to_device_response(device: HwidDeviceDto) -> DeviceResponse:
+def _to_device_response(device: RemnaDeviceDto) -> DeviceResponse:
     return DeviceResponse(
         hwid=device.hwid,
         platform=device.platform,
@@ -142,10 +143,13 @@ async def get_current_subscription(
     if not current_subscription:
         return None
 
-    remna_user = await remnawave.get_user_by_uuid(current_subscription.user_remna_id)
+    remna_user = await remnawave.get_user_by_uuid(subscription_ref(current_subscription))
 
     return SubscriptionInfoResponse(
-        user_remna_id=str(current_subscription.user_remna_id),
+        user_remna_id=str(current_subscription.user_remna_id)
+        if current_subscription.user_remna_id
+        else None,
+        panel_user_id=current_subscription.panel_user_id,
         status=current_subscription.current_status.value,
         is_trial=current_subscription.is_trial,
         traffic_limit=current_subscription.traffic_limit,
@@ -172,7 +176,7 @@ async def get_subscription_devices(
     if not current_subscription:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
 
-    devices = await remnawave.get_devices(current_subscription.user_remna_id)
+    devices = await remnawave.get_devices(subscription_ref(current_subscription))
     return DevicesResponse(
         devices=[_to_device_response(device) for device in devices],
         current_count=len(devices),

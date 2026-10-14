@@ -17,7 +17,7 @@ class Subscription(BaseSql, TimestampMixin):
     __tablename__ = "subscriptions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_remna_id: Mapped[UUID] = mapped_column(index=True)
+    user_remna_id: Mapped[Optional[UUID]] = mapped_column(index=True)
     panel_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
     user_id: Mapped[int] = mapped_column(
         Integer,

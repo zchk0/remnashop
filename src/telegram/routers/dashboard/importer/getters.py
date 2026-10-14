@@ -3,7 +3,8 @@ from typing import Any
 from aiogram_dialog import DialogManager
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
-from remnapy import RemnawaveSDK
+
+from src.infrastructure.remnawave_v3.compat import PanelClient
 
 
 async def from_xui_getter(
@@ -28,7 +29,7 @@ async def from_xui_getter(
 @inject
 async def squads_getter(
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     **kwargs: Any,
 ) -> dict[str, Any]:
     result = await remnawave_sdk.internal_squads.get_internal_squads()

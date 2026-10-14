@@ -1,3 +1,5 @@
+from typing import Literal
+
 from httpx import Cookies
 from pydantic import SecretStr, field_validator
 from pydantic_core.core_schema import FieldValidationInfo
@@ -9,6 +11,7 @@ from .validators import validate_not_change_me
 
 
 class RemnawaveConfig(BaseConfig, env_prefix="REMNAWAVE_"):
+    api_version: Literal[2, 3] = 2
     host: SecretStr = SecretStr("http://remnawave:3000")
     token: SecretStr
     caddy_token: SecretStr = SecretStr("")

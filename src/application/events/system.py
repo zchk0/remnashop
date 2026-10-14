@@ -18,6 +18,7 @@ from src.core.enums import (
     SystemNotificationType,
 )
 from src.core.types import NotificationType
+from src.core.utils.panel_identity import PanelUserRef
 
 from .base import BaseEvent, SystemEvent
 
@@ -311,7 +312,7 @@ class UserFirstConnectionEvent(UserEvent):
     )
 
     is_trial: bool
-    subscription_id: UUID
+    subscription_id: PanelUserRef
     subscription_status: SubscriptionStatus
     traffic_used: Any
     traffic_limit: Any
@@ -518,7 +519,7 @@ class SubscriptionRevokedEvent(UserEvent):
     )
 
     is_trial: bool
-    subscription_id: UUID
+    subscription_id: PanelUserRef
     subscription_status: SubscriptionStatus
     traffic_used: Any
     traffic_limit: Any

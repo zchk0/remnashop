@@ -18,6 +18,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_traffic_limit,
 )
 from src.core.utils.i18n_keys import UtilKey
+from src.core.utils.panel_identity import subscription_ref
 
 
 @inject
@@ -164,7 +165,7 @@ async def devices_getter(
     if not current_subscription:
         raise ValueError(f"Current subscription for user '{user.telegram_id}' not found")
 
-    devices = await remnawave.get_devices(current_subscription.user_remna_id)
+    devices = await remnawave.get_devices(subscription_ref(current_subscription))
 
     formatted_devices = [
         {

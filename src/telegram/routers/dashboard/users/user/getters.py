@@ -5,7 +5,6 @@ from adaptix import Retort
 from aiogram_dialog import DialogManager
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
-from remnapy import RemnawaveSDK
 from remnapy.exceptions import NotFoundError
 
 from src.application.common import TranslatorRunner
@@ -50,6 +49,8 @@ from src.core.utils.i18n_helpers import (
     i18n_format_traffic_limit,
 )
 from src.core.utils.i18n_keys import ByteUnitKey
+from src.core.utils.panel_identity import subscription_display_id
+from src.infrastructure.remnawave_v3.compat import PanelClient
 
 
 @inject
@@ -131,7 +132,7 @@ async def subscription_getter(
         "has_traffic_limit": subscription.has_traffic_limit,
         "url": remna_user.subscription_url,
         #
-        "subscription_id": subscription.user_remna_id,
+        "subscription_id": subscription_display_id(subscription),
         "subscription_status": subscription.current_status,
         "traffic_used": i18n_format_bytes_to_unit(
             remna_user.used_traffic_bytes,
@@ -640,7 +641,7 @@ async def sync_getter(  # noqa: C901
     i18n: FromDishka[TranslatorRunner],
     user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     **kwargs: Any,
 ) -> dict[str, Any]:
     target_user_id = dialog_manager.dialog_data[TARGET_USER_ID]
@@ -672,7 +673,7 @@ async def sync_getter(  # noqa: C901
         if not sub:
             return ""
 
-        sub_id = str(getattr(sub, "user_remna_id", getattr(sub, "uuid", "")))
+        sub_id = subscription_display_id(sub)
 
         squad_names = ", ".join(squads_map.get(s, str(s)) for s in sub.internal_squads)
 

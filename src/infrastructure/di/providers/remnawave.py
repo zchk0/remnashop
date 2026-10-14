@@ -6,10 +6,17 @@ from loguru import logger
 from remnapy import RemnawaveSDK
 
 from src.core.config import AppConfig
+from src.infrastructure.remnawave_v3.client import RemnawaveV3Client
+from src.infrastructure.remnawave_v3.compat import PanelClient
 
 
 class RemnawaveProvider(Provider):
     scope = Scope.APP
+
+    @provide
+    def get_panel_client(self, sdk: RemnawaveSDK, config: AppConfig) -> PanelClient:
+        assert sdk._client is not None
+        return PanelClient(sdk, RemnawaveV3Client(sdk._client), config.remnawave.api_version)
 
     @provide
     async def get_remnawave(self, config: AppConfig) -> AsyncIterator[RemnawaveSDK]:

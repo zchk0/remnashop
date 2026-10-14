@@ -1,5 +1,5 @@
 import json
-from typing import cast
+from typing import Any, cast
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
@@ -11,6 +11,7 @@ from remnapy.models.webhook import (
     TorrentBlockerReportDto,
     UserDto,
     UserHwidDeviceEventDto,
+    WebhookPayloadDto,
 )
 
 from src.application.common import EventPublisher
@@ -19,8 +20,53 @@ from src.application.services import RemnaWebhookService
 from src.core.config import AppConfig
 from src.core.constants import API_V1, REMNAWAVE_WEBHOOK_PATH
 from src.core.utils.remnawave import extract_expiration_hours
+from src.infrastructure.remnawave_v3.models import User as V3User
+from src.infrastructure.remnawave_v3.webhook import V3DeviceEvent, V3TorrentReport, parse_v3_event
 
 router = APIRouter(prefix=API_V1, include_in_schema=False)
+
+
+def _validate_webhook(
+    raw_body_text: str, headers: dict[str, str], config: AppConfig
+) -> WebhookPayloadDto | None:
+    if getattr(config.remnawave, "api_version", 2) == 3:
+        if not WebhookUtility.validate_webhook_with_headers(
+            body=raw_body_text,
+            headers=headers,
+            webhook_secret=config.remnawave.webhook_secret.get_secret_value(),
+        ):
+            raise ValueError("Invalid webhook signature")
+        payload = None
+    else:
+        payload = WebhookUtility.parse_webhook(
+            body=raw_body_text,
+            headers=headers,
+            webhook_secret=config.remnawave.webhook_secret.get_secret_value(),
+            validate=True,
+        )
+    if payload is None and getattr(config.remnawave, "api_version", 2) == 2:
+        raise ValueError("Invalid webhook signature")
+    return payload
+
+
+async def _dispatch_v3_webhook(
+    raw_payload: dict[str, Any], remna_webhook_service: RemnaWebhookService
+) -> None:
+    event_name, data = parse_v3_event(raw_payload)
+    if isinstance(data, V3User):
+        await remna_webhook_service.handle_user_event(
+            event_name, data, expiration_hours=extract_expiration_hours(raw_payload)
+        )
+    elif isinstance(data, V3DeviceEvent):
+        await remna_webhook_service.handle_device_event(
+            event_name, data.user, data.hwid_user_device
+        )
+    elif isinstance(data, NodeDto):
+        await remna_webhook_service.handle_node_event(event_name, data)
+    elif isinstance(data, V3TorrentReport):
+        await remna_webhook_service.handle_torrent_blocker_event(data)
+    else:
+        logger.warning(f"Unhandled Remnawave event type '{event_name}'")
 
 
 async def _process_remnawave_webhook(
@@ -33,22 +79,17 @@ async def _process_remnawave_webhook(
         raw_body = await request.body()
         raw_body_text = raw_body.decode("utf-8")
         raw_payload = json.loads(raw_body_text)
-        logger.debug(f"Received Remnawave webhook raw body: '{raw_body_text[:500]}'")
-        payload = WebhookUtility.parse_webhook(
-            body=raw_body_text,
-            headers=dict(request.headers),
-            webhook_secret=config.remnawave.webhook_secret.get_secret_value(),
-            validate=True,
-        )
+        payload = _validate_webhook(raw_body_text, dict(request.headers), config)
     except Exception as e:
         logger.exception(f"Webhook validation failed with error '{e}'")
         raise HTTPException(status_code=401)
 
-    if not payload:
-        logger.warning("Payload is empty after validation")
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
     try:
+        if getattr(config.remnawave, "api_version", 2) == 3:
+            await _dispatch_v3_webhook(raw_payload, remna_webhook_service)
+            return Response(status_code=status.HTTP_200_OK)
+
+        assert payload is not None
         if WebhookUtility.is_user_event(payload.event):
             user = cast(UserDto, WebhookUtility.get_typed_data(payload))
             await remna_webhook_service.handle_user_event(

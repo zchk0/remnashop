@@ -14,6 +14,7 @@ from src.application.use_cases.subscription.queries.match import (
     MatchSubscriptionDto,
 )
 from src.core.enums import SubscriptionStatus
+from src.core.utils.panel_identity import remote_user_ref, subscription_ref
 
 
 class CheckSubscriptionSyncState(Interactor[int, bool]):
@@ -40,7 +41,7 @@ class CheckSubscriptionSyncState(Interactor[int, bool]):
 
         remna_user = None
         if bot_sub:
-            remna_user = await self.remnawave.get_user_by_uuid(bot_sub.user_remna_id)
+            remna_user = await self.remnawave.get_user_by_uuid(subscription_ref(bot_sub))
         elif target_user.telegram_id:
             remna_users = await self.remnawave.get_users_by_telegram_id(target_user.telegram_id)
             remna_user = remna_users[0] if remna_users else None
@@ -96,7 +97,7 @@ class SyncSubscriptionFromRemnawave(Interactor[int, None]):
                 logger.info(f"{actor.log} Imported subscription from panel for user '{user_id}'")
                 return
 
-            remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
+            remna_user = await self.remnawave.get_user_by_uuid(subscription_ref(subscription))
 
             if not remna_user:
                 await self.subscription_dao.update_status(
@@ -148,17 +149,17 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
                         target_user.telegram_id
                     )
                     if remna_users:
-                        await self.remnawave.delete_user(remna_users[0].uuid)
+                        await self.remnawave.delete_user(remote_user_ref(remna_users[0]))
                         logger.info(
                             f"{actor.log} Deleted user '{remna_users[0].uuid}' from remnapy "
                             f"due to missing local subscription"
                         )
             else:
-                remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
+                remna_user = await self.remnawave.get_user_by_uuid(subscription_ref(subscription))
 
                 if remna_user:
                     await self.remnawave.update_user_subscription(
-                        uuid=subscription.user_remna_id,
+                        uuid=subscription_ref(subscription),
                         subscription=subscription,
                     )
                     logger.info(
@@ -170,7 +171,7 @@ class SyncSubscriptionFromRemnashop(Interactor[int, None]):
                         subscription=subscription,
                     )
                     await self.sync_remna_user.system(
-                        SyncRemnaUserDto(created_user, creating=False)
+                        SyncRemnaUserDto(created_user, creating=False, allow_rebind=True)
                     )
                     logger.info(
                         f"{actor.log} Recreated user '{user_id}' in Remnawave with local data"

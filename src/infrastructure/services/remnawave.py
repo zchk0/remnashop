@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timedelta
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 from uuid import UUID
 
 import httpx
@@ -17,7 +17,6 @@ from remnapy.models import (
     GetMetadataResponseDto,
     TargetAllNodes,
     UpdateUserRequestDto,
-    UserResponseDto,
 )
 from remnapy.models.hwid import HwidDeviceDto
 
@@ -32,18 +31,27 @@ from src.application.dto import (
 )
 from src.core.constants import REMNAWAVE_MIN_VERSION
 from src.core.enums import SubscriptionStatus
+from src.core.types import RemnaDeviceDto, RemnaUserDto
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
+from src.core.utils.panel_identity import PanelApiVersionMismatchError, PanelUserRef
 from src.core.utils.time import datetime_now
 
 
 class RemnawaveImpl(Remnawave):
+    api_version = 2
+
     def __init__(self, sdk: RemnawaveSDK) -> None:
         self.sdk = sdk
+
+    async def _legacy_uuid(self, reference: PanelUserRef) -> UUID:
+        if isinstance(reference, UUID):
+            return reference
+        return (await self.sdk.users.get_user_by_id(reference)).uuid
 
     @staticmethod
     def _extract_response_data(payload: Any) -> dict[str, Any]:
         if isinstance(payload, dict) and isinstance(payload.get("response"), dict):
-            return payload["response"]
+            return cast(dict[str, Any], payload["response"])
         if isinstance(payload, dict):
             return payload
 
@@ -52,7 +60,7 @@ class RemnawaveImpl(Remnawave):
     @staticmethod
     def _normalize_hwid_devices_response(
         payload: Any,
-        user_uuid: UUID,
+        user_uuid: PanelUserRef,
     ) -> tuple[int, list[HwidDeviceDto]]:
         data = RemnawaveImpl._extract_response_data(payload)
         raw_devices = data.get("devices", [])
@@ -103,6 +111,10 @@ class RemnawaveImpl(Remnawave):
             raise ValueError(f"Invalid response from Remnawave panel: {metadata}")
 
         panel_version = Version(metadata.version)
+        if panel_version.major != 2:
+            raise PanelApiVersionMismatchError(
+                "REMNAWAVE_API_VERSION=2 requires a panel running 2.x"
+            )
         if panel_version < REMNAWAVE_MIN_VERSION:
             logger.error(
                 f"Remnawave panel version '{panel_version}' is not compatible. "
@@ -121,8 +133,12 @@ class RemnawaveImpl(Remnawave):
         user: UserDto,
         plan: Optional[PlanSnapshotDto] = None,
         subscription: Optional[SubscriptionDto] = None,
-    ) -> UserResponseDto:
+        *,
+        short_uuid: Optional[str] = None,
+    ) -> RemnaUserDto:
         request_dto = self._build_create_request(user, plan, subscription)
+        if short_uuid is not None:
+            request_dto.short_uuid = short_uuid
 
         try:
             remna_user = await self.sdk.users.create_user(request_dto)
@@ -148,11 +164,12 @@ class RemnawaveImpl(Remnawave):
 
     async def update_user_subscription(
         self,
-        uuid: UUID,
+        uuid: PanelUserRef,
         plan: Optional[PlanSnapshotDto] = None,
         subscription: Optional[SubscriptionDto] = None,
         reset_traffic: bool = False,
-    ) -> UserResponseDto:
+    ) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
         request_dto = self._build_update_request(uuid, plan, subscription)
         remna_user = await self._patch_user(request_dto)
         logger.info(f"Subscription fields for RemnaUser '{uuid}' updated successfully")
@@ -162,7 +179,8 @@ class RemnawaveImpl(Remnawave):
 
         return remna_user
 
-    async def update_user_description(self, uuid: UUID, description: str) -> UserResponseDto:
+    async def update_user_description(self, uuid: PanelUserRef, description: str) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
         remna_user = await self._patch_user(
             UpdateUserRequestDto(uuid=uuid, description=description)
         )
@@ -171,9 +189,10 @@ class RemnawaveImpl(Remnawave):
 
     async def update_user_traffic_limit(
         self,
-        uuid: UUID,
+        uuid: PanelUserRef,
         traffic_limit_bytes: int,
-    ) -> UserResponseDto:
+    ) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
         remna_user = await self._patch_user(
             UpdateUserRequestDto(uuid=uuid, traffic_limit_bytes=traffic_limit_bytes)
         )
@@ -184,9 +203,10 @@ class RemnawaveImpl(Remnawave):
 
     async def update_user_device_limit(
         self,
-        uuid: UUID,
+        uuid: PanelUserRef,
         device_limit: int,
-    ) -> UserResponseDto:
+    ) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
         remna_user = await self._patch_user(
             UpdateUserRequestDto(uuid=uuid, hwid_device_limit=device_limit)
         )
@@ -195,20 +215,20 @@ class RemnawaveImpl(Remnawave):
 
     async def update_user_expire_at(
         self,
-        uuid: UUID,
+        uuid: PanelUserRef,
         expire_at: datetime,
-    ) -> UserResponseDto:
-        remna_user = await self._patch_user(
-            UpdateUserRequestDto(uuid=uuid, expire_at=expire_at)
-        )
+    ) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
+        remna_user = await self._patch_user(UpdateUserRequestDto(uuid=uuid, expire_at=expire_at))
         logger.info(f"Expiration time for RemnaUser '{uuid}' updated to '{expire_at}'")
         return remna_user
 
     async def update_user_internal_squads(
         self,
-        uuid: UUID,
+        uuid: PanelUserRef,
         squad_ids: list[UUID],
-    ) -> UserResponseDto:
+    ) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
         remna_user = await self._patch_user(
             UpdateUserRequestDto(uuid=uuid, active_internal_squads=squad_ids)
         )
@@ -217,16 +237,17 @@ class RemnawaveImpl(Remnawave):
 
     async def update_user_external_squad(
         self,
-        uuid: UUID,
+        uuid: PanelUserRef,
         squad_id: Optional[UUID],
-    ) -> UserResponseDto:
+    ) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
         remna_user = await self._patch_user(
             UpdateUserRequestDto(uuid=uuid, external_squad_uuid=squad_id)
         )
         logger.info(f"External squad for RemnaUser '{uuid}' updated to '{squad_id}'")
         return remna_user
 
-    async def _patch_user(self, request_dto: UpdateUserRequestDto) -> UserResponseDto:
+    async def _patch_user(self, request_dto: UpdateUserRequestDto) -> RemnaUserDto:
         try:
             return await self.sdk.users.update_user(request_dto)
         except NotFoundError:
@@ -234,24 +255,27 @@ class RemnawaveImpl(Remnawave):
             logger.warning(f"RemnaUser '{identifier}' not found")
             raise
 
-    async def enable_user(self, uuid: UUID) -> None:
+    async def enable_user(self, uuid: PanelUserRef) -> None:
         try:
+            uuid = await self._legacy_uuid(uuid)
             await self.sdk.users.enable_user(uuid)
             logger.info(f"RemnaUser '{uuid}' enabled successfully")
         except NotFoundError:
             logger.debug(f"RemnaUser '{uuid}' not found in panel")
             raise
 
-    async def disable_user(self, uuid: UUID) -> None:
+    async def disable_user(self, uuid: PanelUserRef) -> None:
         try:
+            uuid = await self._legacy_uuid(uuid)
             await self.sdk.users.disable_user(uuid)
             logger.info(f"RemnaUser '{uuid}' disabled successfully")
         except NotFoundError:
             logger.debug(f"RemnaUser '{uuid}' not found in panel")
             raise
 
-    async def delete_user(self, uuid: UUID) -> bool:
+    async def delete_user(self, uuid: PanelUserRef) -> bool:
         try:
+            uuid = await self._legacy_uuid(uuid)
             response = await self.sdk.users.delete_user(uuid)
         except NotFoundError:
             logger.debug(f"RemnaUser '{uuid}' not found in panel")
@@ -264,40 +288,60 @@ class RemnawaveImpl(Remnawave):
 
         return response.is_deleted
 
-    async def get_user_by_uuid(self, uuid: UUID) -> Optional[UserResponseDto]:
+    async def get_user_by_uuid(self, uuid: PanelUserRef) -> Optional[RemnaUserDto]:
         try:
-            remna_user = await self.sdk.users.get_user_by_uuid(uuid)
+            remna_user = (
+                await self.sdk.users.get_user_by_id(uuid)
+                if isinstance(uuid, int)
+                else await self.sdk.users.get_user_by_uuid(uuid)
+            )
             logger.info(f"Fetched RemnaUser '{uuid}' from panel")
             return remna_user
         except NotFoundError:
             logger.debug(f"RemnaUser '{uuid}' not found in panel")
             return None
 
-    async def get_users_by_telegram_id(self, telegram_id: int) -> list[UserResponseDto]:
+    async def get_users_by_telegram_id(self, telegram_id: int) -> list[RemnaUserDto]:
         response = await self.sdk.users.get_users_by_telegram_id(telegram_id)
         logger.debug(f"Fetched {len(response.root)} RemnaUsers for telegram_id '{telegram_id}'")
-        return response.root
+        return list(response.root)
 
-    async def get_all_users(self, limit: int, offset: int) -> list[UserResponseDto]:
+    async def get_all_users(self, limit: int, offset: int) -> list[RemnaUserDto]:
         response = await self.sdk.users.get_all_users(start=offset, size=limit)
         logger.debug(f"Fetched {len(response.users)} RemnaUsers (limit={limit}, offset={offset})")
-        return response.users
+        return list(response.users)
 
-    async def get_users_by_email(self, email: str) -> list[UserResponseDto]:
+    async def get_users_by_email(self, email: str) -> list[RemnaUserDto]:
         response = await self.sdk.users.get_users_by_email(email)
         logger.debug(f"Fetched {len(response.root)} RemnaUsers for email '{email}'")
-        return response.root
+        return list(response.root)
 
-    async def get_devices(self, user_uuid: UUID) -> list[HwidDeviceDto]:
+    async def get_user_by_username(self, username: str) -> Optional[RemnaUserDto]:
+        try:
+            return await self.sdk.users.get_user_by_username(username)
+        except NotFoundError:
+            return None
+
+    async def get_user_by_short_uuid(self, short_uuid: str) -> Optional[RemnaUserDto]:
+        try:
+            return await self.sdk.users.get_user_by_short_uuid(short_uuid)
+        except NotFoundError:
+            return None
+
+    async def get_devices(self, user_uuid: PanelUserRef) -> list[RemnaDeviceDto]:
+        user_uuid = await self._legacy_uuid(user_uuid)
+        assert self.sdk._client is not None
         response = await self.sdk._client.get(f"/hwid/devices/{user_uuid}")  # noqa: SLF001
         self._raise_remnawave_error(response)
 
         total, devices = self._normalize_hwid_devices_response(response.json(), user_uuid)
         logger.debug(f"Fetched {total} devices for RemnaUser '{user_uuid}'")
-        return devices if total else []
+        return list(devices) if total else []
 
-    async def delete_device(self, user_uuid: UUID, hwid_uuid: str) -> Optional[int]:
+    async def delete_device(self, user_uuid: PanelUserRef, hwid_uuid: str) -> Optional[int]:
         try:
+            user_uuid = await self._legacy_uuid(user_uuid)
+            assert self.sdk._client is not None
             response = await self.sdk._client.post(  # noqa: SLF001
                 "/hwid/devices/delete",
                 json={"userUuid": str(user_uuid), "hwid": hwid_uuid},
@@ -314,8 +358,10 @@ class RemnawaveImpl(Remnawave):
 
         return total
 
-    async def delete_all_devices(self, user_uuid: UUID) -> None:
+    async def delete_all_devices(self, user_uuid: PanelUserRef) -> None:
         try:
+            user_uuid = await self._legacy_uuid(user_uuid)
+            assert self.sdk._client is not None
             response = await self.sdk._client.post(  # noqa: SLF001
                 "/hwid/devices/delete-all",
                 json={"userUuid": str(user_uuid)},
@@ -327,8 +373,9 @@ class RemnawaveImpl(Remnawave):
             return
         logger.info(f"Deleted all HWID devices ({total}) for RemnaUser '{user_uuid}'")
 
-    async def drop_connections(self, user_uuid: UUID) -> None:
+    async def drop_connections(self, user_uuid: PanelUserRef) -> None:
         try:
+            user_uuid = await self._legacy_uuid(user_uuid)
             await self.sdk.ip_control.drop_connections(
                 body=DropConnectionsRequestDto(
                     drop_by=DropByUserUuids(user_uuids=[user_uuid]),
@@ -339,8 +386,9 @@ class RemnawaveImpl(Remnawave):
         except Exception as e:
             logger.warning(f"Failed to drop connections for RemnaUser '{user_uuid}': {e}")
 
-    async def reset_traffic(self, uuid: UUID) -> Optional[UserResponseDto]:
+    async def reset_traffic(self, uuid: PanelUserRef) -> Optional[RemnaUserDto]:
         try:
+            uuid = await self._legacy_uuid(uuid)
             remna_user = await self.sdk.users.reset_user_traffic(uuid)
             logger.info(f"Traffic for RemnaUser '{remna_user.uuid}' reset successfully")
             return remna_user
@@ -348,8 +396,9 @@ class RemnawaveImpl(Remnawave):
             logger.debug(f"RemnaUser '{uuid}' not found in panel")
             return None
 
-    async def revoke_subscription(self, uuid: UUID) -> Optional[UserResponseDto]:
+    async def revoke_subscription(self, uuid: PanelUserRef) -> Optional[RemnaUserDto]:
         try:
+            uuid = await self._legacy_uuid(uuid)
             remna_user = await self.sdk.users.revoke_user_subscription(uuid)
             logger.info(f"Subscription for RemnaUser '{uuid}' revoked successfully")
             return remna_user
@@ -383,6 +432,10 @@ class RemnawaveImpl(Remnawave):
                 old_value = getattr(target, target_field)
                 new_value = getattr(source, source_field)
 
+                if new_value is None and getattr(target, "panel_user_id", None) == getattr(
+                    source, "panel_user_id", None
+                ):
+                    continue
                 if old_value != new_value:
                     logger.debug(
                         f"Field '{target_field}' changed from '{old_value}' to '{new_value}'"
@@ -452,7 +505,7 @@ class RemnawaveImpl(Remnawave):
 
     def _build_update_request(
         self,
-        uuid: UUID,
+        uuid: Optional[UUID],
         plan: Optional[PlanSnapshotDto],
         subscription: Optional[SubscriptionDto],
     ) -> UpdateUserRequestDto:

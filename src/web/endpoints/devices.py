@@ -8,11 +8,11 @@ sensitive credentials (Remnawave API token) server-side.
 import hashlib
 import html
 import secrets
+from collections.abc import Awaitable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from typing import Annotated, Optional
-from uuid import UUID
+from typing import Annotated, Optional, cast
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
@@ -23,10 +23,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, 
 from loguru import logger
 from pydantic import UUID4, BaseModel, EmailStr, Field
 from redis.asyncio import Redis
-from remnapy import RemnawaveSDK
 from remnapy.exceptions import ConflictError, NotFoundError
-from remnapy.models import CreateUserRequestDto, UpdateUserRequestDto, UserResponseDto
-from remnapy.models.hwid import HwidDeviceDto
+from remnapy.models import CreateUserRequestDto
 
 from src.application.common import BotService, Cryptographer, Notifier, Remnawave
 from src.application.common.dao import (
@@ -78,11 +76,14 @@ from src.core.config import AppConfig
 from src.core.constants import TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
 from src.core.enums import Deeplink, PlanAvailability, PurchaseType
 from src.core.exceptions import PromocodeError, PromocodeIdempotencyConflictError
+from src.core.types import RemnaDeviceDto, RemnaUserDto
 from src.core.utils.converters import days_to_datetime, gb_to_bytes
 from src.core.utils.device_description import (
     append_device_id_to_description,
     append_saved_anon_traffic_to_description,
 )
+from src.core.utils.panel_identity import device_user_ref, panel_user_ref, remote_user_ref
+from src.infrastructure.remnawave_v3.compat import PanelClient
 from src.web.schemas import (
     ToBeVpnReferralDataResponse,
     ToBeVpnReferralListItemResponse,
@@ -96,6 +97,7 @@ class DeviceAuthContext:
     device_id: Optional[str] = None
     telegram_id: Optional[int] = None
     panel_user_uuid: Optional[str] = None
+    panel_user_id: Optional[int] = None
     short_uuid: Optional[str] = None
     platform: Optional[str] = None
 
@@ -140,10 +142,15 @@ def _build_session_response(
         "device_id": linked_device.device_id if linked_device else None,
         "telegram_id": linked_device.telegram_id if linked_device else None,
         "panel_user_uuid": linked_device.panel_user_uuid if linked_device else None,
+        "panel_user_id": linked_device.panel_user_id if linked_device else None,
         "short_uuid": linked_device.short_uuid if linked_device else None,
         "is_linked": bool(
             linked_device
-            and (linked_device.telegram_id is not None or linked_device.panel_user_uuid)
+            and (
+                linked_device.telegram_id is not None
+                or linked_device.panel_user_uuid
+                or linked_device.panel_user_id
+            )
         ),
     }
 
@@ -265,6 +272,7 @@ async def get_device_auth_context(
         device_id=session.device_id,
         telegram_id=linked_device.telegram_id if linked_device else None,
         panel_user_uuid=linked_device.panel_user_uuid if linked_device else None,
+        panel_user_id=linked_device.panel_user_id if linked_device else None,
         short_uuid=linked_device.short_uuid if linked_device else None,
         platform=session.platform,
     )
@@ -293,12 +301,16 @@ _avatar_cache: TTLCache[int, bytes] = TTLCache(
 
 async def _enforce_avatar_rate_limit(redis: Redis, device_id: str) -> None:
     key = f"rate_limit:tobevpn:avatar:{device_id}"
-    count, ttl = await redis.eval(
-        _AVATAR_RATE_LIMIT_SCRIPT,
-        1,
-        key,
-        TIME_1M,
+    result = cast(
+        Awaitable[list[int]],
+        redis.eval(
+            _AVATAR_RATE_LIMIT_SCRIPT,
+            1,
+            key,
+            TIME_1M,
+        ),
     )
+    count, ttl = await result
     if int(count) <= _AVATAR_RATE_LIMIT:
         return
 
@@ -390,8 +402,8 @@ def _build_anonymous_description(
 
 
 async def _ensure_panel_user_device_comment(
-    remnawave_sdk: RemnawaveSDK,
-    user: UserResponseDto,
+    remnawave_sdk: PanelClient,
+    user: RemnaUserDto,
     device_id: str,
     saved_anon_traffic: int = 0,
 ) -> None:
@@ -400,9 +412,7 @@ async def _ensure_panel_user_device_comment(
     if description == (user.description or "").strip():
         return
 
-    await remnawave_sdk.users.update_user(
-        UpdateUserRequestDto(uuid=user.uuid, description=description)
-    )
+    await remnawave_sdk.users.update_user_fields(remote_user_ref(user), description=description)
 
 
 def _get_plan_purchase_type(
@@ -577,7 +587,10 @@ def _build_current_plan_data(
         },
         "subscription": {
             "id": subscription.id,
-            "user_remna_id": str(subscription.user_remna_id),
+            "user_remna_id": str(subscription.user_remna_id)
+            if subscription.user_remna_id
+            else None,
+            "panel_user_id": subscription.panel_user_id,
             "status": subscription.current_status.value,
             "stored_status": subscription.status.value,
             "is_active": subscription.is_active,
@@ -604,13 +617,12 @@ def _build_current_plan_data(
 async def _get_panel_user_by_telegram_id(
     telegram_id: int,
     remnawave: Remnawave,
-) -> Optional[UserResponseDto]:
+) -> Optional[RemnaUserDto]:
     try:
         panel_users = await remnawave.get_users_by_telegram_id(telegram_id)
     except Exception as e:
         logger.warning(
-            f"Could not read panel user for telegram '{telegram_id}': "
-            f"{type(e).__name__}: {e}"
+            f"Could not read panel user for telegram '{telegram_id}': {type(e).__name__}: {e}"
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -622,8 +634,8 @@ async def _get_panel_user_by_telegram_id(
 
 async def _get_anonymous_panel_user_by_device_id(
     device_id: str,
-    remnawave_sdk: RemnawaveSDK,
-) -> Optional[UserResponseDto]:
+    remnawave_sdk: PanelClient,
+) -> Optional[RemnaUserDto]:
     try:
         return await remnawave_sdk.users.get_user_by_username(_build_device_username(device_id))
     except NotFoundError:
@@ -635,11 +647,14 @@ def _get_saved_anon_traffic(device: Optional[LinkedDeviceDto]) -> int:
 
 
 def _is_linked_device_bound(device: Optional[LinkedDeviceDto]) -> bool:
-    return bool(device and (device.telegram_id is not None or device.panel_user_uuid))
+    return bool(
+        device
+        and (device.telegram_id is not None or device.panel_user_uuid or device.panel_user_id)
+    )
 
 
 def _build_panel_user_data(
-    user: UserResponseDto,
+    user: RemnaUserDto,
     *,
     extra_traffic_used_bytes: int = 0,
     anon_traffic_bytes: int = 0,
@@ -650,7 +665,8 @@ def _build_panel_user_data(
     anon_traffic_bytes = anon_traffic_bytes or extra_traffic_used_bytes
     data = {
         "short_uuid": str(user.short_uuid),
-        "panel_user_uuid": str(user.uuid),
+        "panel_user_uuid": str(user.uuid) if user.uuid else None,
+        "panel_user_id": getattr(user, "id", None),
         "traffic_limit_bytes": traffic_limit_bytes
         if traffic_limit_bytes is not None
         else user.traffic_limit_bytes or 0,
@@ -667,7 +683,7 @@ def _build_panel_user_data(
     return data
 
 
-def _build_hwid_device_data(device: HwidDeviceDto) -> dict:
+def _build_hwid_device_data(device: RemnaDeviceDto) -> dict:
     return {
         "device_id": device.hwid,
         "hwid": device.hwid,
@@ -682,7 +698,7 @@ def _build_hwid_device_data(device: HwidDeviceDto) -> dict:
 
 
 async def _get_panel_device_ids(
-    panel_user: UserResponseDto,
+    panel_user: RemnaUserDto,
     remnawave: Remnawave,
 ) -> Optional[list[str]]:
     """HWIDs the panel currently knows for this account.
@@ -690,17 +706,15 @@ async def _get_panel_device_ids(
     Returns None when the panel cannot be reached, so the caller falls back to
     the local table instead of wrongly treating the account as empty.
     """
-    if panel_user.uuid is None:
-        return None
     try:
-        devices = await remnawave.get_devices(panel_user.uuid)
+        devices = await remnawave.get_devices(remote_user_ref(panel_user))
     except Exception as e:
         logger.warning(f"Could not read panel devices for '{panel_user.uuid}': {e}")
         return None
     return [device.hwid for device in devices if device.hwid]
 
 
-def _get_device_limit(panel_user: UserResponseDto) -> int:
+def _get_device_limit(panel_user: RemnaUserDto) -> int:
     return panel_user.hwid_device_limit or 0
 
 
@@ -720,8 +734,8 @@ def _ensure_subscription_short_uuid_access(auth: DeviceAuthContext, short_uuid: 
 
 async def _get_panel_user_by_subscription_short_uuid(
     short_uuid: str,
-    remnawave_sdk: RemnawaveSDK,
-) -> Optional[UserResponseDto]:
+    remnawave_sdk: PanelClient,
+) -> Optional[RemnaUserDto]:
     try:
         return await remnawave_sdk.users.get_user_by_short_uuid(short_uuid)
     except NotFoundError:
@@ -732,13 +746,15 @@ async def _get_panel_user_for_subscription_action(
     auth: DeviceAuthContext,
     short_uuid: str,
     remnawave: Remnawave,
-    remnawave_sdk: RemnawaveSDK,
-) -> Optional[UserResponseDto]:
+    remnawave_sdk: PanelClient,
+) -> Optional[RemnaUserDto]:
     _ensure_subscription_short_uuid_access(auth, short_uuid)
 
-    if auth.panel_user_uuid:
+    if auth.panel_user_id is not None or auth.panel_user_uuid:
         try:
-            panel_user = await remnawave.get_user_by_uuid(UUID(auth.panel_user_uuid))
+            panel_user = await remnawave.get_user_by_uuid(
+                panel_user_ref(auth.panel_user_uuid, auth.panel_user_id)
+            )
         except ValueError:
             logger.warning(f"Invalid panel_user_uuid in device session: '{auth.panel_user_uuid}'")
             return None
@@ -754,7 +770,7 @@ async def _get_panel_user_for_subscription_action(
     return await _get_panel_user_by_subscription_short_uuid(short_uuid, remnawave_sdk)
 
 
-def _get_panel_user_telegram_id(panel_user: UserResponseDto) -> Optional[int]:
+def _get_panel_user_telegram_id(panel_user: RemnaUserDto) -> Optional[int]:
     if panel_user.telegram_id is None:
         return None
 
@@ -768,7 +784,7 @@ def _get_panel_user_telegram_id(panel_user: UserResponseDto) -> Optional[int]:
 
 
 async def _sync_subscription_from_panel_user(
-    panel_user: UserResponseDto,
+    panel_user: RemnaUserDto,
     user_dao: UserDao,
     subscription_dao: SubscriptionDao,
     remnawave: Remnawave,
@@ -797,7 +813,7 @@ async def _sync_subscription_from_panel_user(
 
 
 async def _sync_linked_devices_subscription_identity(
-    panel_user: UserResponseDto,
+    panel_user: RemnaUserDto,
     device_dao: LinkedDeviceDao,
 ) -> int:
     telegram_id = _get_panel_user_telegram_id(panel_user)
@@ -805,18 +821,19 @@ async def _sync_linked_devices_subscription_identity(
         return 0
 
     devices = await device_dao.get_by_telegram_id(telegram_id)
-    panel_user_uuid = str(panel_user.uuid)
+    panel_user_uuid = str(panel_user.uuid) if panel_user.uuid else None
     short_uuid = str(panel_user.short_uuid)
 
     updated_count = 0
     for device in devices:
-        if device.panel_user_uuid == panel_user_uuid and device.short_uuid == short_uuid:
+        if device.panel_user_id == panel_user.id and device.short_uuid == short_uuid:
             continue
 
         await device_dao.upsert(
             replace(
                 device,
                 panel_user_uuid=panel_user_uuid,
+                panel_user_id=panel_user.id,
                 short_uuid=short_uuid,
             )
         )
@@ -847,6 +864,7 @@ class AuthRequest(BaseModel):
     device_id: Optional[str] = None
     auth_token: Optional[str] = None
     panel_user_uuid: Optional[str] = None
+    panel_user_id: Optional[int] = None
 
 
 class DeviceBootstrapRequest(BaseModel):
@@ -899,24 +917,72 @@ async def request_auth(
     device_dao: FromDishka[LinkedDeviceDao],
     auth_dao: FromDishka[AuthTokenDao],
     uow: FromDishka[UnitOfWork],
+    remnawave_sdk: FromDishka[PanelClient],
+) -> dict:
+    return await _create_auth_token(request, auth, device_dao, auth_dao, uow, remnawave_sdk)
+
+
+async def _create_auth_token(
+    request: AuthRequest,
+    auth: DeviceAuthContext,
+    device_dao: LinkedDeviceDao,
+    auth_dao: AuthTokenDao,
+    uow: UnitOfWork,
+    remnawave_sdk: PanelClient,
 ) -> dict:
     device_id = _resolve_device_id(auth, request.device_id)
     auth_token = request.auth_token or secrets.token_urlsafe(24)
+    prior_token = await auth_dao.get_by_token(auth_token)
+    if prior_token is not None and prior_token.device_id != device_id:
+        raise HTTPException(status_code=403, detail="Auth token belongs to a different device")
 
     existing = await device_dao.get_by_device_id(device_id)
     if not existing:
         await device_dao.upsert(LinkedDeviceDto(device_id=device_id))
 
+    anonymous_user = await _get_anonymous_panel_user_by_device_id(device_id, remnawave_sdk)
+    legacy_alias = str(anonymous_user.uuid) if anonymous_user and anonymous_user.uuid else None
+    if anonymous_user and existing and existing.panel_user_id == anonymous_user.id:
+        legacy_alias = legacy_alias or existing.panel_user_uuid
+    _validate_auth_panel_identity(request, auth, anonymous_user, legacy_alias)
+
     await auth_dao.create(
         AuthTokenDto(
             token=auth_token,
             device_id=device_id,
-            panel_user_uuid=request.panel_user_uuid,
+            panel_user_uuid=legacy_alias,
+            panel_user_id=anonymous_user.id if anonymous_user else None,
         )
     )
     await uow.commit()
 
     return {"success": True, "data": {"auth_token": auth_token}}
+
+
+def _matches_auth_panel_identity(
+    request: AuthRequest, user_id: int | None, legacy_uuid: str | None
+) -> bool:
+    return (request.panel_user_id is None or request.panel_user_id == user_id) and (
+        request.panel_user_uuid is None or request.panel_user_uuid == legacy_uuid
+    )
+
+
+def _validate_auth_panel_identity(
+    request: AuthRequest,
+    auth: DeviceAuthContext,
+    anonymous_user: RemnaUserDto | None,
+    legacy_alias: str | None,
+) -> None:
+    anonymous_matches = anonymous_user is not None and _matches_auth_panel_identity(
+        request, anonymous_user.id, legacy_alias
+    )
+    current_matches = auth.telegram_id is not None and _matches_auth_panel_identity(
+        request, auth.panel_user_id, auth.panel_user_uuid
+    )
+    if (request.panel_user_id is not None or request.panel_user_uuid is not None) and not (
+        anonymous_matches or current_matches
+    ):
+        raise HTTPException(status_code=403, detail="Panel user does not belong to this device")
 
 
 @router.get("/auth/status")
@@ -986,6 +1052,7 @@ async def register_device(
         telegram_id=telegram_id,
         device_limit=_get_device_limit(panel_user),
         panel_user_uuid=panel_user_uuid,
+        panel_user_id=getattr(panel_user, "id", None),
         short_uuid=short_uuid,
         panel_device_ids=await _get_panel_device_ids(panel_user, remnawave),
         device_name=request.device_name,
@@ -1211,7 +1278,7 @@ async def unlink_device(
             detail="telegram_id not authenticated",
         )
 
-    devices = await remnawave.get_devices(panel_user.uuid)
+    devices = await remnawave.get_devices(remote_user_ref(panel_user))
     if not any(device.hwid == device_id for device in devices):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1226,13 +1293,13 @@ async def unlink_device(
             detail="Device is linked to another Telegram user",
         )
 
-    remaining_devices = await remnawave.delete_device(panel_user.uuid, device_id)
+    remaining_devices = await remnawave.delete_device(remote_user_ref(panel_user), device_id)
     await device_dao.unlink(device_id, telegram_id)
     await session_dao.revoke(device_id)
 
     should_reset_subscription_link = device_id != auth.device_id
     revoked_user = (
-        await remnawave.revoke_subscription(panel_user.uuid)
+        await remnawave.revoke_subscription(remote_user_ref(panel_user))
         if should_reset_subscription_link
         else None
     )
@@ -1308,7 +1375,7 @@ async def get_devices(
             detail="telegram_id not authenticated",
         )
 
-    devices = await remnawave.get_devices(panel_user.uuid)
+    devices = await remnawave.get_devices(remote_user_ref(panel_user))
     return {
         "success": True,
         "data": {
@@ -1586,9 +1653,7 @@ async def get_applied_promocodes_for_device(
                     "code": activation.code,
                     "reward_type": activation.reward_type.value,
                     "reward": activation.reward,
-                    "plan_snapshot": _build_promocode_plan_snapshot(
-                        activation.plan_snapshot
-                    ),
+                    "plan_snapshot": _build_promocode_plan_snapshot(activation.plan_snapshot),
                     "activated_at": _datetime_to_iso(activation.activated_at),
                 }
                 for activation in activations
@@ -1664,6 +1729,7 @@ async def tv_pair_confirm(
         telegram_id=telegram_id,
         device_limit=_get_device_limit(panel_user),
         panel_user_uuid=panel_user_uuid,
+        panel_user_id=getattr(panel_user, "id", None),
         short_uuid=short_uuid,
         panel_device_ids=await _get_panel_device_ids(panel_user, remnawave),
     )
@@ -1703,7 +1769,10 @@ async def tv_pair_status(
                 "status": "completed",
                 "telegram_id": pairing.telegram_id,
                 "short_uuid": (str(panel_user.short_uuid) if panel_user else None),
-                "panel_user_uuid": (str(panel_user.uuid) if panel_user else None),
+                "panel_user_uuid": (
+                    str(panel_user.uuid) if panel_user and panel_user.uuid else None
+                ),
+                "panel_user_id": panel_user.id if panel_user else None,
             },
         }
 
@@ -1744,7 +1813,7 @@ async def proxy_user_by_telegram(
 @inject
 async def proxy_nodes(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
 ) -> dict:
     del auth
     try:
@@ -1760,7 +1829,7 @@ async def proxy_nodes(
 async def proxy_sub_info(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     short_uuid: str,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
 ) -> dict:
     _ensure_subscription_short_uuid_access(auth, short_uuid)
     try:
@@ -1811,7 +1880,7 @@ async def reset_panel_subscription(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     short_uuid: str,
     remnawave: FromDishka[Remnawave],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     user_dao: FromDishka[UserDao],
     subscription_dao: FromDishka[SubscriptionDao],
     device_dao: FromDishka[LinkedDeviceDao],
@@ -1826,7 +1895,7 @@ async def reset_panel_subscription(
     if panel_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Panel user not found")
 
-    revoked_user = await remnawave.revoke_subscription(panel_user.uuid)
+    revoked_user = await remnawave.revoke_subscription(remote_user_ref(panel_user))
     if revoked_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Panel user not found")
 
@@ -1863,6 +1932,7 @@ class EnsureUserRequest(BaseModel):
 
 class SaveEmailRequest(BaseModel):
     panel_user_uuid: Optional[str] = None
+    panel_user_id: Optional[int] = None
     email: EmailStr
 
 
@@ -1976,7 +2046,7 @@ async def ensure_user(  # noqa: C901
     plan_dao: FromDishka[PlanDao],
     device_dao: FromDishka[LinkedDeviceDao],
     remnawave: FromDishka[Remnawave],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
 ) -> dict:
     """Find or create an anonymous panel user for a device."""
     device_id = _resolve_device_id(auth, request.device_id)
@@ -1986,8 +2056,13 @@ async def ensure_user(  # noqa: C901
 
     if _is_linked_device_bound(linked_device):
         linked_user = None
-        if linked_device and linked_device.panel_user_uuid:
-            linked_user = await remnawave.get_user_by_uuid(linked_device.panel_user_uuid)
+        if linked_device and (
+            linked_device.panel_user_id is not None or linked_device.panel_user_uuid
+        ):
+            try:
+                linked_user = await remnawave.get_user_by_uuid(device_user_ref(linked_device))
+            except ValueError:
+                linked_user = None
         if not linked_user and linked_device and linked_device.telegram_id is not None:
             linked_user = await _get_panel_user_by_telegram_id(
                 linked_device.telegram_id,
@@ -2112,36 +2187,35 @@ async def save_email(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
     remnawave: FromDishka[Remnawave],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
 ) -> dict:
     """Update email on a panel user."""
-    panel_user_uuid = auth.panel_user_uuid
-    if auth.device_id and panel_user_uuid is None:
-        linked_device = await device_dao.get_by_device_id(auth.device_id)
-        if linked_device and linked_device.panel_user_uuid:
-            panel_user_uuid = linked_device.panel_user_uuid
-        elif linked_device and linked_device.telegram_id is not None:
-            linked_user = await _get_panel_user_by_telegram_id(linked_device.telegram_id, remnawave)
-            panel_user_uuid = str(linked_user.uuid) if linked_user else None
-
-    if panel_user_uuid is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Current device session is not linked to a panel user",
-        )
-
-    if request.panel_user_uuid is not None and request.panel_user_uuid != panel_user_uuid:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="panel_user_uuid does not match current device session",
-        )
-    resolved_panel_user_uuid = panel_user_uuid
-    try:
-        await remnawave_sdk.users.update_user(
-            UpdateUserRequestDto(
-                uuid=resolved_panel_user_uuid,
-                email=request.email,
+    panel_user = None
+    if auth.panel_user_id is not None or auth.panel_user_uuid:
+        try:
+            panel_user = await remnawave.get_user_by_uuid(
+                panel_user_ref(auth.panel_user_uuid, auth.panel_user_id)
             )
+        except ValueError:
+            panel_user = None
+    if panel_user is None and auth.telegram_id is not None:
+        panel_user = await _get_panel_user_by_telegram_id(auth.telegram_id, remnawave)
+    if panel_user is None and auth.device_id:
+        panel_user = await _get_anonymous_panel_user_by_device_id(auth.device_id, remnawave_sdk)
+    if panel_user is None:
+        raise HTTPException(status_code=403, detail="Current device session has no panel user")
+    legacy_alias = str(panel_user.uuid) if panel_user.uuid else auth.panel_user_uuid
+    if request.panel_user_uuid is not None and request.panel_user_uuid != legacy_alias:
+        raise HTTPException(
+            status_code=403, detail="panel_user_uuid does not match current device session"
+        )
+    if request.panel_user_id is not None and request.panel_user_id != panel_user.id:
+        raise HTTPException(
+            status_code=403, detail="panel_user_id does not match current device session"
+        )
+    try:
+        await remnawave_sdk.users.update_user_fields(
+            remote_user_ref(panel_user), email=request.email
         )
         return {"success": True, "data": None}
     except NotFoundError:

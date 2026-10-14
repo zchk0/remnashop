@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from fluent_compiler.bundle import FluentBundle
@@ -17,7 +18,7 @@ def _menu_data(
     panel_user: SimpleNamespace | None = None,
 ) -> tuple[GetMenuData, SimpleNamespace, AsyncMock]:
     subscription = SimpleNamespace(
-        user_remna_id="panel-user-id",
+        user_remna_id=UUID("00000000-0000-0000-0000-000000000042"),
         created_at=datetime(2026, 10, 3, tzinfo=UTC),
         has_traffic_limit=True,
         current_status=SubscriptionStatus.ACTIVE,
@@ -58,7 +59,7 @@ async def test_menu_uses_panel_creation_date_instead_of_shop_subscription(
 
     assert result.traffic_reset_at == datetime(2026, 10, 15, 0, 10, tzinfo=UTC)
     assert result.current_subscription is subscription
-    fetch_user.assert_awaited_once_with("panel-user-id")
+    fetch_user.assert_awaited_once_with(UUID("00000000-0000-0000-0000-000000000042"))
 
 
 @pytest.mark.parametrize(

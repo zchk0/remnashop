@@ -23,8 +23,13 @@ class MatchSubscription(Interactor[MatchSubscriptionDto, bool]):
         if not bot_sub or not remna_sub:
             return False
 
+        identity_matches = (
+            bot_sub.panel_user_id == remna_sub.panel_user_id
+            if bot_sub.panel_user_id is not None and remna_sub.panel_user_id is not None
+            else bot_sub.user_remna_id is not None and bot_sub.user_remna_id == remna_sub.uuid
+        )
         is_match = (
-            bot_sub.user_remna_id == remna_sub.uuid
+            identity_matches
             and bot_sub.status == remna_sub.status
             and bot_sub.url == remna_sub.url
             and bot_sub.traffic_limit == remna_sub.traffic_limit

@@ -5,7 +5,7 @@ from typing import Optional, cast
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -26,13 +26,29 @@ from src.infrastructure.database.models import AuthToken, DeviceSession, LinkedD
 
 
 def _preserve_panel_user_id(
-    model: type[LinkedDevice] | type[AuthToken], panel_user_uuid: Optional[str]
+    model: type[LinkedDevice] | type[AuthToken],
+    panel_user_uuid: Optional[str],
+    panel_user_id: Optional[int] = None,
 ) -> ColumnElement[int]:
+    if panel_user_id is not None:
+        return literal(panel_user_id)
+    if panel_user_uuid is None:
+        return literal(None)
     # v2 callers still bind by UUID. Keep the backfilled ID only for the same user.
     return case(
         (model.panel_user_uuid.is_not_distinct_from(panel_user_uuid), model.panel_user_id),
         else_=None,
     )
+
+
+def _preserve_legacy_alias(
+    model: type[LinkedDevice] | type[AuthToken],
+    panel_user_uuid: Optional[str],
+    panel_user_id: Optional[int],
+) -> str | None | ColumnElement[str]:
+    if panel_user_uuid is None and panel_user_id is not None:
+        return case((model.panel_user_id == panel_user_id, model.panel_user_uuid), else_=None)
+    return panel_user_uuid
 
 
 class LinkedDeviceDaoImpl(LinkedDeviceDao):
@@ -71,9 +87,11 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
                 index_elements=[LinkedDevice.device_id],
                 set_={
                     "telegram_id": data.get("telegram_id"),
-                    "panel_user_uuid": data.get("panel_user_uuid"),
+                    "panel_user_uuid": _preserve_legacy_alias(
+                        LinkedDevice, data.get("panel_user_uuid"), data.get("panel_user_id")
+                    ),
                     "panel_user_id": _preserve_panel_user_id(
-                        LinkedDevice, data.get("panel_user_uuid")
+                        LinkedDevice, data.get("panel_user_uuid"), data.get("panel_user_id")
                     ),
                     "short_uuid": data.get("short_uuid"),
                     "device_name": data.get("device_name"),
@@ -82,8 +100,10 @@ class LinkedDeviceDaoImpl(LinkedDeviceDao):
                 },
             )
             .returning(LinkedDevice)
+            .execution_options(populate_existing=True)
         )
         db_device = await self.session.scalar(stmt)
+        assert db_device is not None
         await self.session.flush()
 
         logger.debug(f"Upserted device '{device.device_id}'")
@@ -178,15 +198,19 @@ class AuthTokenDaoImpl(AuthTokenDao):
                 set_={
                     "device_id": data["device_id"],
                     "status": "pending",
-                    "panel_user_uuid": data.get("panel_user_uuid"),
+                    "panel_user_uuid": _preserve_legacy_alias(
+                        AuthToken, data.get("panel_user_uuid"), data.get("panel_user_id")
+                    ),
                     "panel_user_id": _preserve_panel_user_id(
-                        AuthToken, data.get("panel_user_uuid")
+                        AuthToken, data.get("panel_user_uuid"), data.get("panel_user_id")
                     ),
                 },
             )
             .returning(AuthToken)
+            .execution_options(populate_existing=True)
         )
         db_token = await self.session.scalar(stmt)
+        assert db_token is not None
         await self.session.flush()
 
         logger.debug(f"Created/updated auth token for device '{auth_token.device_id}'")
@@ -266,8 +290,10 @@ class DeviceSessionDaoImpl(DeviceSessionDao):
                 },
             )
             .returning(DeviceSession)
+            .execution_options(populate_existing=True)
         )
         db_session = await self.session.scalar(stmt)
+        assert db_session is not None
         await self.session.flush()
 
         logger.debug(f"Upserted device session for '{session.device_id}'")

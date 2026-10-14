@@ -15,7 +15,6 @@ from aiogram.types import Message
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
-from remnapy.models import UserResponseDto
 
 from src.application.common import Remnawave, TranslatorRunner
 from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao
@@ -28,10 +27,17 @@ from src.application.use_cases.subscription.commands.purchase import (
 )
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
 from src.core.enums import Deeplink
+from src.core.types import RemnaUserDto
 from src.core.utils.converters import gb_to_bytes
 from src.core.utils.device_description import (
     append_device_id_to_description,
     extract_device_id_from_description,
+)
+from src.core.utils.panel_identity import (
+    PanelUserRef,
+    anonymous_panel_username,
+    device_user_ref,
+    remote_user_ref,
 )
 
 router = Router(name=__name__)
@@ -39,13 +45,11 @@ router = Router(name=__name__)
 
 async def _panel_device_ids(
     remnawave: Remnawave,
-    panel_user: UserResponseDto,
+    panel_user: RemnaUserDto,
 ) -> Optional[list[str]]:
     """HWIDs the panel knows for this account, or None if it cannot be read."""
-    if panel_user.uuid is None:
-        return None
     try:
-        devices = await remnawave.get_devices(panel_user.uuid)
+        devices = await remnawave.get_devices(remote_user_ref(panel_user))
     except Exception as e:
         logger.warning(f"Could not read panel devices for '{panel_user.uuid}': {e}")
         return None
@@ -67,7 +71,7 @@ def _is_auth_token(args: str) -> bool:
 
 async def _update_panel_user_device_comment(
     remnawave: Remnawave,
-    panel_user_uuid: UUID,
+    panel_user_uuid: PanelUserRef,
     panel_user_description: str | None,
     device_id: str,
 ) -> None:
@@ -80,9 +84,9 @@ async def _update_panel_user_device_comment(
 
 
 async def _transfer_anon_subscription_and_delete(
-    anon_uuid: str,
+    anon_uuid: PanelUserRef | str,
     device_id: str,
-    panel_user_uuid: UUID,
+    panel_user_uuid: PanelUserRef,
     panel_user_description: str | None,
     device_dao: LinkedDeviceDao,
     remnawave: Remnawave,
@@ -92,7 +96,9 @@ async def _transfer_anon_subscription_and_delete(
     anon_traffic = 0
 
     try:
-        anon_user = await remnawave.get_user_by_uuid(UUID(anon_uuid))
+        anon_user = await remnawave.get_user_by_uuid(
+            anon_uuid if isinstance(anon_uuid, int) else UUID(str(anon_uuid))
+        )
     except Exception as e:
         logger.warning(f"Failed to fetch anon user '{anon_uuid}': {e}")
 
@@ -122,7 +128,11 @@ async def _transfer_anon_subscription_and_delete(
         logger.warning(f"Failed to save anon traffic for device '{device_id}': {e}")
 
     try:
-        await remnawave.delete_user(UUID(anon_uuid))
+        if anon_user is None:
+            return anon_traffic
+        await remnawave.delete_user(
+            anon_uuid if isinstance(anon_uuid, int) else UUID(str(anon_uuid))
+        )
         logger.info(f"Deleted anon panel user '{anon_uuid}'")
     except Exception as e:
         logger.warning(f"Failed to clean up anon user '{anon_uuid}': {e}")
@@ -132,7 +142,7 @@ async def _transfer_anon_subscription_and_delete(
 
 async def _apply_anon_traffic_to_trial_limit(
     remnawave: Remnawave,
-    panel_user_uuid: UUID,
+    panel_user_uuid: PanelUserRef,
     trial_traffic_limit_gb: int,
     anon_traffic_bytes: int,
 ) -> None:
@@ -173,6 +183,8 @@ async def on_device_auth(  # noqa: C901
     args = command.args or ""
     if not _is_auth_token(args):
         return
+    if message.from_user is None:
+        return
 
     auth_token = args
     telegram_id = message.from_user.id
@@ -186,7 +198,14 @@ async def on_device_auth(  # noqa: C901
         await message.answer(i18n.get("msg-device-auth-already-authorized"))
         return
 
-    anon_uuid = token_record.panel_user_uuid
+    anon_uuid = None
+    if token_record.panel_user_uuid is not None or token_record.panel_user_id is not None:
+        anon_uuid = device_user_ref(token_record)
+    if getattr(remnawave, "api_version", 2) == 3 and not isinstance(anon_uuid, int):
+        # Old pending tokens may outlive their anonymous account; use its device-specific name.
+        username = anonymous_panel_username(token_record.device_id)
+        anonymous_user = await remnawave.get_user_by_username(username)
+        anon_uuid = remote_user_ref(anonymous_user) if anonymous_user else None
 
     existing_users = await remnawave.get_users_by_telegram_id(telegram_id)
     existing_user = existing_users[0] if existing_users else None
@@ -243,6 +262,7 @@ async def on_device_auth(  # noqa: C901
         telegram_id=telegram_id,
         device_limit=panel_user.hwid_device_limit or 0,
         panel_user_uuid=panel_uuid,
+        panel_user_id=getattr(panel_user, "id", None),
         short_uuid=short_uuid,
         panel_device_ids=await _panel_device_ids(remnawave, panel_user),
     )
@@ -261,11 +281,11 @@ async def on_device_auth(  # noqa: C901
 
     anon_traffic = 0
     if anon_uuid:
-        if str(anon_uuid) == str(panel_user.uuid):
+        if anon_uuid == remote_user_ref(panel_user):
             try:
                 await _update_panel_user_device_comment(
                     remnawave=remnawave,
-                    panel_user_uuid=panel_user.uuid,
+                    panel_user_uuid=remote_user_ref(panel_user),
                     panel_user_description=panel_user.description,
                     device_id=token_record.device_id,
                 )
@@ -275,7 +295,7 @@ async def on_device_auth(  # noqa: C901
             anon_traffic = await _transfer_anon_subscription_and_delete(
                 anon_uuid=anon_uuid,
                 device_id=token_record.device_id,
-                panel_user_uuid=panel_user.uuid,
+                panel_user_uuid=remote_user_ref(panel_user),
                 panel_user_description=panel_user.description,
                 device_dao=device_dao,
                 remnawave=remnawave,
@@ -286,7 +306,7 @@ async def on_device_auth(  # noqa: C901
         try:
             await _apply_anon_traffic_to_trial_limit(
                 remnawave=remnawave,
-                panel_user_uuid=panel_user.uuid,
+                panel_user_uuid=remote_user_ref(panel_user),
                 trial_traffic_limit_gb=trial.traffic_limit,
                 anon_traffic_bytes=anon_traffic,
             )

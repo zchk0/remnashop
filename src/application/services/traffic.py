@@ -8,6 +8,7 @@ from src.application.common import Remnawave
 from src.application.dto import SubscriptionDto
 from src.core.enums import SubscriptionStatus
 from src.core.types import RemnaUserDto
+from src.core.utils.panel_identity import subscription_ref
 from src.core.utils.time import get_next_traffic_reset_at
 
 
@@ -34,12 +35,13 @@ async def get_subscription_traffic_reset_at(
         return None
 
     try:
-        user = await remnawave.get_user_by_uuid(subscription.user_remna_id)
+        user = await remnawave.get_user_by_uuid(subscription_ref(subscription))
         if user is not None:
             return get_panel_traffic_reset_at(user)
     except Exception as e:
         logger.warning(
-            f"Could not fetch traffic reset data for '{subscription.user_remna_id}': {e}"
+            "Could not fetch traffic reset data for local subscription "
+            f"'{getattr(subscription, 'id', None)}': {e}"
         )
 
     # Rolling resets need the panel user's creation date, not a shop subscription's date.

@@ -7,7 +7,6 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 from redis.asyncio import Redis
-from remnapy import RemnawaveSDK
 
 from src.application.common import Notifier
 from src.application.dto import MessagePayloadDto, TelegramUserDto
@@ -17,6 +16,7 @@ from src.application.use_cases.importer.commands.processing import (
 )
 from src.core.constants import USER_KEY
 from src.infrastructure.redis.keys import ImportRunningKey, SyncBotRunningKey, SyncPanelRunningKey
+from src.infrastructure.remnawave_v3.compat import PanelClient
 from src.infrastructure.taskiq.tasks.importer import (
     import_exported_users_task,
     sync_all_users_from_bot_task,
@@ -73,7 +73,7 @@ async def on_squads(
     callback: CallbackQuery,
     widget: Button,
     dialog_manager: DialogManager,
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
     notifier: FromDishka[Notifier],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]

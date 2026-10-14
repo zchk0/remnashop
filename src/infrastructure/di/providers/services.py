@@ -1,4 +1,5 @@
 from dishka import AnyOf, Provider, Scope, alias, provide
+from remnapy import RemnawaveSDK
 
 from src.application.common import (
     BotService,
@@ -20,6 +21,8 @@ from src.application.services import (
     PricingService,
     RemnaWebhookService,
 )
+from src.core.config import AppConfig
+from src.infrastructure.remnawave_v3.compat import PanelClient
 from src.infrastructure.services import (
     AiogramFileDownloader,
     AiohttpClient,
@@ -40,6 +43,7 @@ from src.infrastructure.services import (
     WebhookService,
     XuiDbReaderImpl,
 )
+from src.infrastructure.services.remnawave_v3 import RemnawaveV3Impl
 
 
 class ServicesProvider(Provider):
@@ -61,7 +65,12 @@ class ServicesProvider(Provider):
     command = provide(source=CommandService)
     webhook = provide(source=WebhookService)
 
-    remnawave = provide(source=RemnawaveImpl, provides=Remnawave)
+    @provide
+    def remnawave(self, sdk: RemnawaveSDK, panel: PanelClient, config: AppConfig) -> Remnawave:
+        if config.remnawave.api_version == 3:
+            return RemnawaveV3Impl(sdk, panel.v3)
+        return RemnawaveImpl(sdk)
+
     remna_webhook = provide(source=RemnaWebhookService, scope=Scope.REQUEST)
 
     notification_queue = provide(source=NotificationQueue)

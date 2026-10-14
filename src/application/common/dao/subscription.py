@@ -4,6 +4,7 @@ from uuid import UUID
 
 from src.application.dto import PlanSubStatsDto, SubscriptionDto, SubscriptionStatsDto
 from src.core.enums import SubscriptionStatus
+from src.core.utils.panel_identity import PanelUserRef
 
 
 @runtime_checkable
@@ -12,7 +13,7 @@ class SubscriptionDao(Protocol):
 
     async def get_by_id(self, subscription_id: int) -> Optional[SubscriptionDto]: ...
 
-    async def get_by_remna_id(self, remna_id: UUID) -> Optional[SubscriptionDto]: ...
+    async def get_by_remna_id(self, remna_id: PanelUserRef) -> Optional[SubscriptionDto]: ...
 
     async def get_all_by_user(self, user_id: int) -> list[SubscriptionDto]: ...
 
@@ -26,7 +27,7 @@ class SubscriptionDao(Protocol):
         status: SubscriptionStatus,
     ) -> Optional[SubscriptionDto]: ...
 
-    async def exists(self, remna_id: UUID) -> bool: ...
+    async def exists(self, remna_id: PanelUserRef) -> bool: ...
 
     async def count_active_by_plan(
         self,

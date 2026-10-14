@@ -2,7 +2,18 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,9 +69,7 @@ class PromocodeActivation(BaseSql):
             "uq_promocode_activations_pending_user",
             "user_id",
             unique=True,
-            postgresql_where=text(
-                "status IN ('PENDING', 'FAILED', 'REQUIRES_REVIEW')"
-            ),
+            postgresql_where=text("status IN ('PENDING', 'FAILED', 'REQUIRES_REVIEW')"),
         ),
         Index("ix_promocode_activations_retry_due", "status", "next_retry_at"),
         Index(
@@ -102,6 +111,10 @@ class PromocodeActivation(BaseSql):
     )
     target_remna_id: Mapped[Optional[UUID]] = mapped_column(index=True)
     target_panel_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
+    target_subscription_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="SET NULL"), index=True
+    )
+    target_short_uuid: Mapped[Optional[str]] = mapped_column(String(32))
     reset_traffic: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

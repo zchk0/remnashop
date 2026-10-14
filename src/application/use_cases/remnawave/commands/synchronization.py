@@ -12,6 +12,7 @@ from src.core.constants import IMPORTED_TAG
 from src.core.enums import Role, SubscriptionStatus
 from src.core.types import RemnaUserDto
 from src.core.utils.converters import limits_to_plan_type
+from src.core.utils.panel_identity import remote_user_ref, subscription_ref
 from src.core.utils.time import datetime_now
 
 
@@ -19,6 +20,7 @@ from src.core.utils.time import datetime_now
 class SyncRemnaUserDto:
     remna_user: RemnaUserDto
     creating: bool
+    allow_rebind: bool = False
 
 
 class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
@@ -44,7 +46,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
         remna_user = data.remna_user
 
         async with self.uow:
-            user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+            user = await self.user_dao.get_by_remna_uuid(remote_user_ref(remna_user))
 
             if not user and remna_user.telegram_id:
                 user = await self.user_dao.get_by_telegram_id(remna_user.telegram_id)
@@ -72,6 +74,16 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
                 return False
 
             subscription = await self.subscription_dao.get_current(user.id)
+            if subscription is not None and not data.creating and not data.allow_rebind:
+                same_identity = (
+                    subscription.panel_user_id == remna_user.id
+                    if subscription.panel_user_id is not None
+                    else subscription.user_remna_id is not None
+                    and subscription.user_remna_id == remna_user.uuid
+                )
+                if not same_identity:
+                    logger.warning("Skipping sync for a different current panel user")
+                    return False
             remna_subscription = RemnaSubscriptionDto.from_remna_user(remna_user)
 
             if not subscription:
@@ -93,7 +105,7 @@ class SyncRemnaUser(Interactor[SyncRemnaUserDto, bool]):
         return UserDto(
             telegram_id=data.telegram_id,
             referral_code=referral_code,
-            name=str(data.telegram_id) if data.telegram_id else str(data.uuid),
+            name=str(data.telegram_id) if data.telegram_id else str(remote_user_ref(data)),
             role=Role.USER,
             language=self.config.default_locale,
         )
@@ -186,11 +198,11 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
                     skipped += 1
                     continue
 
-                remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
+                remna_user = await self.remnawave.get_user_by_uuid(subscription_ref(subscription))
 
                 if remna_user:
                     updated_user = await self.remnawave.update_user_subscription(
-                        uuid=subscription.user_remna_id,
+                        uuid=subscription_ref(subscription),
                         subscription=subscription,
                     )
                     if updated_user.subscription_url != subscription.url:
@@ -205,7 +217,7 @@ class SyncAllUsersFromBot(Interactor[None, dict[str, int]]):
                         subscription=subscription,
                     )
                     await self.sync_remna_user.system(
-                        SyncRemnaUserDto(created_user, creating=False)
+                        SyncRemnaUserDto(created_user, creating=False, allow_rebind=True)
                     )
                     recreated += 1
 
@@ -274,7 +286,7 @@ class SyncAllUsersFromPanel(Interactor[None, dict[str, int]]):
                 if remna_user.telegram_id:
                     user = bot_users_map.get(remna_user.telegram_id)
                 else:
-                    user = await self.user_dao.get_by_remna_uuid(remna_user.uuid)
+                    user = await self.user_dao.get_by_remna_uuid(remote_user_ref(remna_user))
 
                 if not user:
                     await self.sync_remna_user.system(SyncRemnaUserDto(remna_user, True))

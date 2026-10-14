@@ -2,16 +2,16 @@ from dataclasses import dataclass
 from typing import Optional
 
 from loguru import logger
-from remnapy import RemnawaveSDK
 from remnapy.models import GetExternalSquadByUuidResponseDto
-from remnapy.models.hwid import HwidDeviceDto
 
 from src.application.common import Interactor, Remnawave
 from src.application.common.dao import SettingsDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.dto import SubscriptionDto, UserDto
 from src.core.config import AppConfig
-from src.core.types import RemnaUserDto
+from src.core.types import RemnaDeviceDto, RemnaUserDto
+from src.core.utils.panel_identity import subscription_ref
+from src.infrastructure.remnawave_v3.compat import PanelClient
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,7 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         remnawave: Remnawave,
-        remnawave_sdk: RemnawaveSDK,
+        remnawave_sdk: PanelClient,
     ) -> None:
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
@@ -109,7 +109,7 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
         if not subscription:
             raise ValueError(f"Current subscription for user '{user_id}' not found")
 
-        remna_user = await self.remnawave.get_user_by_uuid(subscription.user_remna_id)
+        remna_user = await self.remnawave.get_user_by_uuid(subscription_ref(subscription))
         if not remna_user:
             raise ValueError(f"User Remnawave for '{user_id}' not found")
 
@@ -140,7 +140,7 @@ class GetUserProfileSubscription(Interactor[int, GetUserProfileSubscriptionResul
 
 @dataclass(frozen=True)
 class GetUserDevicesResultDto:
-    devices: list[HwidDeviceDto]
+    devices: list[RemnaDeviceDto]
     current_count: int
     max_count: int
     subscription: SubscriptionDto
@@ -168,7 +168,7 @@ class GetUserDevices(Interactor[int, GetUserDevicesResultDto]):
         if not subscription:
             raise ValueError(f"Subscription for '{user_id}' not found")
 
-        devices = await self.remnawave.get_devices(subscription.user_remna_id)
+        devices = await self.remnawave.get_devices(subscription_ref(subscription))
 
         logger.info(f"{actor.log} Retrieved '{len(devices)}' devices for user '{user_id}'")
 

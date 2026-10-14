@@ -17,6 +17,8 @@ tests/*
 !tests/test_tobevpn_traffic_reset.py
 !tests/test_broadcast_repeats.py
 !tests/test_panel_v3_mapping.py
+!tests/test_remnawave_v3_client.py
+!tests/test_panel_v3_integration.py
 !tests/test_plan_duration_discount.py
 !tests/test_tobevpn_duration_discount.py
 .DS_Store

@@ -4,7 +4,6 @@ from adaptix import Retort
 from dishka.integrations.taskiq import FromDishka, inject
 from loguru import logger
 from redis.asyncio import Redis
-from remnapy import RemnawaveSDK
 from remnapy.exceptions import BadRequestError
 from remnapy.models import CreateUserRequestDto
 
@@ -14,6 +13,7 @@ from src.application.use_cases.remnawave.commands.synchronization import (
     SyncAllUsersFromPanel,
 )
 from src.infrastructure.redis.keys import SyncBotRunningKey, SyncPanelRunningKey
+from src.infrastructure.remnawave_v3.compat import PanelClient
 from src.infrastructure.taskiq.broker import broker
 
 
@@ -22,7 +22,7 @@ from src.infrastructure.taskiq.broker import broker
 async def import_exported_users_task(
     imported_users: list[ExportedUserDto],
     active_internal_squads: list[UUID],
-    remnawave_sdk: FromDishka[RemnawaveSDK],
+    remnawave_sdk: FromDishka[PanelClient],
 ) -> tuple[int, int]:
     logger.info(f"Starting import of '{len(imported_users)}' users")
 

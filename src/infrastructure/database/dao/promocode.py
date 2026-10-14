@@ -97,9 +97,7 @@ class PromocodeDaoImpl(PromocodeDao):
             db.is_active = False
             db.deleted_at = datetime_now()
             await self.session.flush()
-            logger.debug(
-                f"Promocode id={promocode_id} soft-deleted to preserve activation history"
-            )
+            logger.debug(f"Promocode id={promocode_id} soft-deleted to preserve activation history")
             return True
 
         await self.session.execute(delete(Promocode).where(Promocode.id == promocode_id))
@@ -116,11 +114,7 @@ class PromocodeDaoImpl(PromocodeDao):
         return self._to_dto(db) if db else None
 
     async def get_by_code_for_update(self, code: str) -> Optional[PromocodeDto]:
-        stmt = (
-            select(Promocode)
-            .where(Promocode.code == code.strip().upper())
-            .with_for_update()
-        )
+        stmt = select(Promocode).where(Promocode.code == code.strip().upper()).with_for_update()
         db = await self.session.scalar(stmt)
         return self._to_dto(db) if db else None
 
@@ -290,9 +284,7 @@ class PromocodeDaoImpl(PromocodeDao):
         request_id: UUID,
         for_update: bool = False,
     ) -> Optional[PromocodeActivationDto]:
-        stmt = select(PromocodeActivation).where(
-            PromocodeActivation.request_id == request_id
-        )
+        stmt = select(PromocodeActivation).where(PromocodeActivation.request_id == request_id)
         if for_update:
             stmt = stmt.with_for_update()
         db = await self.session.scalar(stmt)
@@ -348,8 +340,7 @@ class PromocodeDaoImpl(PromocodeDao):
         due_ids = (
             select(PromocodeActivation.id)
             .where(
-                PromocodeActivation.event_status
-                == PromocodeActivationEventStatus.PENDING,
+                PromocodeActivation.event_status == PromocodeActivationEventStatus.PENDING,
                 or_(
                     PromocodeActivation.event_next_retry_at.is_(None),
                     PromocodeActivation.event_next_retry_at <= datetime_now(),
@@ -374,9 +365,7 @@ class PromocodeDaoImpl(PromocodeDao):
         return [self._act_to_dto(row) for row in rows.all()]
 
     async def lock_activation_user(self, user_id: int) -> None:
-        await self.session.execute(
-            select(User.id).where(User.id == user_id).with_for_update()
-        )
+        await self.session.execute(select(User.id).where(User.id == user_id).with_for_update())
 
     async def lock_activation_request(self, request_id: UUID) -> None:
         # A transaction-scoped advisory lock also serializes the first insertion,
@@ -471,6 +460,8 @@ class PromocodeDaoImpl(PromocodeDao):
             remote_action=activation.remote_action,
             target_remna_id=activation.target_remna_id,
             target_panel_user_id=activation.target_panel_user_id,
+            target_subscription_id=activation.target_subscription_id,
+            target_short_uuid=activation.target_short_uuid,
             reset_traffic=activation.reset_traffic,
             last_error=activation.last_error,
             attempt_count=activation.attempt_count,
@@ -488,6 +479,13 @@ class PromocodeDaoImpl(PromocodeDao):
             f"user_id={activation.user_id}"
         )
         return self._act_to_dto(db)
+
+    async def set_activation_panel_id(self, request_id: UUID, panel_user_id: int) -> None:
+        await self.session.execute(
+            update(PromocodeActivation)
+            .where(PromocodeActivation.request_id == request_id)
+            .values(target_panel_user_id=panel_user_id)
+        )
 
     async def mark_activation_applied(self, request_id: UUID) -> PromocodeActivationDto:
         db = await self.session.scalar(
@@ -536,8 +534,7 @@ class PromocodeDaoImpl(PromocodeDao):
             update(PromocodeActivation)
             .where(
                 PromocodeActivation.id == activation_id,
-                PromocodeActivation.event_status
-                == PromocodeActivationEventStatus.PENDING,
+                PromocodeActivation.event_status == PromocodeActivationEventStatus.PENDING,
             )
             .values(
                 event_status=PromocodeActivationEventStatus.SENT,
@@ -563,8 +560,7 @@ class PromocodeDaoImpl(PromocodeDao):
             update(PromocodeActivation)
             .where(
                 PromocodeActivation.id == activation_id,
-                PromocodeActivation.event_status
-                == PromocodeActivationEventStatus.PENDING,
+                PromocodeActivation.event_status == PromocodeActivationEventStatus.PENDING,
             )
             .values(
                 event_status=status,
