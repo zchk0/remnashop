@@ -29,7 +29,7 @@ class Subscription(BaseSql, TimestampMixin):
     is_trial: Mapped[bool]
     disabled_by_channel_leave: Mapped[bool] = mapped_column(default=False, server_default="false")
 
-    traffic_limit: Mapped[int]
+    traffic_limit: Mapped[int] = mapped_column(BigInteger)
     device_limit: Mapped[int]
     traffic_limit_strategy: Mapped[TrafficLimitStrategy]
 

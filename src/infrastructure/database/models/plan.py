@@ -26,7 +26,7 @@ class Plan(BaseSql, TimestampMixin):
     availability: Mapped[PlanAvailability]
     traffic_limit_strategy: Mapped[TrafficLimitStrategy]
 
-    traffic_limit: Mapped[int]
+    traffic_limit: Mapped[int] = mapped_column(BigInteger)
     device_limit: Mapped[int]
 
     allowed_telegram_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), server_default="{}")
