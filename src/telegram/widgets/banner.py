@@ -23,15 +23,16 @@ def get_banner(
     locale: Locale,
     default_locale: Locale,
 ) -> tuple[Path, ContentType]:
+    page_names = (name, BannerName.MENU) if name == BannerName.EARNING else (name,)
     search_targets = [
-        (banners_dir / locale, name),
+        *((banners_dir / locale, page_name) for page_name in page_names),
         (banners_dir / locale, BannerName.DEFAULT),
-        (banners_dir / default_locale, name),
+        *((banners_dir / default_locale, page_name) for page_name in page_names),
         (banners_dir / default_locale, BannerName.DEFAULT),
         (banners_dir, BannerName.DEFAULT),
-        (default_banners_dir / locale, name),
+        *((default_banners_dir / locale, page_name) for page_name in page_names),
         (default_banners_dir / locale, BannerName.DEFAULT),
-        (default_banners_dir / default_locale, name),
+        *((default_banners_dir / default_locale, page_name) for page_name in page_names),
         (default_banners_dir / default_locale, BannerName.DEFAULT),
         (default_banners_dir, BannerName.DEFAULT),
     ]

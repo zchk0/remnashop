@@ -2,9 +2,10 @@ from aiogram_dialog import Dialog
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
+from src.core.enums import BannerName
 from src.telegram.keyboards import back_main_menu_button
 from src.telegram.states import Earning
-from src.telegram.widgets import I18nFormat, IgnoreUpdate
+from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import Button, Row, ScrollingGroup, Select, SwitchTo, Url
 from src.telegram.window import Window
 
@@ -13,6 +14,7 @@ from .handlers import on_check, on_task_select
 
 router = Dialog(
     Window(
+        Banner(BannerName.EARNING),
         I18nFormat("msg-earning-main"),
         I18nFormat("msg-earning-empty", ~F["has_tasks"]),
         ScrollingGroup(
@@ -42,6 +44,7 @@ router = Dialog(
         getter=earning_getter,
     ),
     Window(
+        Banner(BannerName.EARNING),
         I18nFormat("msg-earning-task", F["task_available"]),
         I18nFormat("msg-earning-empty", ~F["task_available"]),
         Row(
@@ -65,6 +68,7 @@ router = Dialog(
         getter=earning_getter,
     ),
     Window(
+        Banner(BannerName.EARNING),
         I18nFormat("msg-earning-advertise", F["allowed"]),
         Row(Url(I18nFormat("btn-menu.support"), Format("{support_url}"), when=F["allowed"])),
         Row(SwitchTo(I18nFormat("btn-back.general"), id="back", state=Earning.MAIN)),

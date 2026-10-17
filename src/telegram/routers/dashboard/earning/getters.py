@@ -74,7 +74,7 @@ async def admin_getter(
         "button_text": escape(settings.button_text),
         "price": escape(settings.subscriber_price),
         "title": escape(task.title),
-        "channel_id": task.channel_id or unset,
+        "channel_id": str(task.channel_id) if task.channel_id else unset,
         "channel_url": escape(task.channel_url or unset),
         "active_label": yes if task.active else no,
         "reward": reward_text(task, None, i18n) or unset,
