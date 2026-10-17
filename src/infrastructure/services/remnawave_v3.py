@@ -5,6 +5,7 @@ from uuid import UUID
 from loguru import logger
 from packaging.version import Version
 from remnapy import RemnawaveSDK
+from remnapy.enums import ErrorCode
 from remnapy.exceptions import ConflictError, NotFoundError
 
 from src.application.dto import PlanSnapshotDto, SubscriptionDto, UserDto
@@ -115,7 +116,12 @@ class RemnawaveV3Impl(RemnawaveImpl):
         return list(await self.client.get_all_users(limit, offset))
 
     async def enable_user(self, uuid: PanelUserRef) -> None:
-        await self.client.enable_user(PanelUsers.numeric_id(uuid))
+        try:
+            await self.client.enable_user(PanelUsers.numeric_id(uuid))
+        except ConflictError as error:
+            if error.code != ErrorCode.USER_ALREADY_ENABLED:
+                raise
+            logger.debug(f"Panel user '{uuid}' is already enabled")
 
     async def disable_user(self, uuid: PanelUserRef) -> None:
         await self.client.disable_user(PanelUsers.numeric_id(uuid))

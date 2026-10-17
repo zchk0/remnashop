@@ -15,7 +15,8 @@ from dishka import make_async_container
 from fastapi import FastAPI, HTTPException
 from pydantic import SecretStr
 from remnapy import RemnawaveSDK
-from remnapy.enums import TrafficLimitStrategy
+from remnapy.enums import ErrorCode, TrafficLimitStrategy
+from remnapy.exceptions import ConflictError
 from starlette.requests import Request
 
 from src.application.common import Remnawave
@@ -196,6 +197,31 @@ async def test_v2_resolves_numeric_reference_before_patching():
         "uuid": legacy,
         "traffic_limit_bytes": 500,
     }
+
+
+@pytest.mark.parametrize("already_enabled", [True, False])
+async def test_v3_enable_user_accepts_only_already_enabled_conflict(panel, already_enabled):
+    code = (
+        ErrorCode.USER_ALREADY_ENABLED
+        if already_enabled
+        else ErrorCode.USER_USERNAME_ALREADY_EXISTS
+    )
+    panel.responses.append(
+        httpx.Response(
+            400,
+            json={
+                "message": "User already enabled" if already_enabled else "Username already exists",
+                "errorCode": code.value,
+            },
+        )
+    )
+    if already_enabled:
+        await panel.service.enable_user(42)
+    else:
+        with pytest.raises(ConflictError):
+            await panel.service.enable_user(42)
+    assert len(panel.requests) == 1
+    assert panel.requests[0].url.path == "/api/users/42/actions/enable"
 
 
 async def test_v3_refuses_unmapped_uuid_without_sending_request(panel):

@@ -25,6 +25,26 @@ class EarningError(ValueError):
     """A translation key safe to display to the user."""
 
 
+def _panel_expiration(value: datetime) -> datetime:
+    # The panel stores JavaScript dates with millisecond precision.
+    return value.replace(microsecond=value.microsecond // 1000 * 1000)
+
+
+def _review_required(claim: ChannelClaimDto, reason: str, **details: Any) -> EarningError:
+    logger.warning(
+        "Earning reward requires review: task_id={} user_id={} reason={} "
+        "subscription_applied={} reset_started={} reset_applied={} details={}",
+        claim.task_id,
+        claim.user_id,
+        reason,
+        claim.subscription_applied,
+        claim.reset_started,
+        claim.reset_applied,
+        details,
+    )
+    return EarningError("ntf-earning.review-required")
+
+
 @dataclass(frozen=True)
 class EarningTasksDto:
     tasks: list[ChannelTaskDto]
@@ -212,6 +232,8 @@ class ClaimChannelReward(Interactor[int, None]):
                 target.status = SubscriptionStatus.ACTIVE
         payload["days"] = days
         if target and (task.days or task.reset_traffic):
+            if days:
+                target.expire_at = _panel_expiration(target.expire_at)
             payload["subscription"] = self.retort.dump(target, SubscriptionDto)
         return payload
 
@@ -224,13 +246,16 @@ class ClaimChannelReward(Interactor[int, None]):
                 raise EarningError("ntf-earning.already-claimed")
             if claim.reset_started and not claim.reset_applied:
                 # Telegram callbacks cannot safely replay a reset with a lost panel reply.
-                raise EarningError("ntf-earning.review-required")
+                raise _review_required(claim, "traffic_reset_result_unknown")
             payload = claim.payload
             target = (
                 self.retort.load(payload["subscription"], SubscriptionDto)
                 if ("subscription" in payload)
                 else None
             )
+            if target and payload["days"]:
+                # Older reservations may still contain Python's microseconds.
+                target.expire_at = _panel_expiration(target.expire_at)
             if target and not claim.subscription_applied:
                 await self._apply_subscription(actor, claim, target)
                 payload = claim.payload
@@ -309,10 +334,17 @@ class ClaimChannelReward(Interactor[int, None]):
             await self.earning_dao.lock_user(actor.id)
             current = await self.subscription_dao.get_current(actor.id)
             if not current or current.id != target.id:
-                raise EarningError("ntf-earning.review-required")
+                raise _review_required(
+                    claim,
+                    "subscription_changed_before_reset",
+                    expected_id=target.id,
+                    current_id=current.id if current else None,
+                )
             result = await self.remnawave.reset_traffic(subscription_ref(target))
             if result is None:
-                raise EarningError("ntf-earning.review-required")
+                raise _review_required(
+                    claim, "panel_user_not_found", panel_user_id=str(subscription_ref(target))
+                )
             claim.reset_applied = True
             payload["traffic_after"] = self._traffic_used(result)
         if "traffic_after" not in payload:
@@ -331,17 +363,28 @@ class ClaimChannelReward(Interactor[int, None]):
         payload = claim.payload
         current = await self.subscription_dao.get_current(actor.id)
         if (current.id if current else None) != payload["old_subscription_id"]:
-            raise EarningError("ntf-earning.review-required")
+            raise _review_required(
+                claim,
+                "subscription_changed",
+                expected_id=payload["old_subscription_id"],
+                current_id=current.id if current else None,
+            )
         if (
             payload["days"]
             and current
-            and current.expire_at.isoformat()
+            and _panel_expiration(current.expire_at)
             not in (
-                payload["old_expire_at"],
-                target.expire_at.isoformat(),
+                _panel_expiration(datetime.fromisoformat(payload["old_expire_at"])),
+                _panel_expiration(target.expire_at),
             )
         ):
-            raise EarningError("ntf-earning.review-required")
+            raise _review_required(
+                claim,
+                "subscription_expiration_changed",
+                original_expire_at=payload["old_expire_at"],
+                target_expire_at=target.expire_at.isoformat(),
+                current_expire_at=current.expire_at.isoformat(),
+            )
         if payload["replace"]:
             if current:
                 remote = await self.remnawave.update_user_subscription(
@@ -367,14 +410,19 @@ class ClaimChannelReward(Interactor[int, None]):
         elif payload["days"] and current:
             # Absolute expiration makes retrying a lost response idempotent.
             was_expired = current.is_expired
-            await self.remnawave.update_user_expire_at(subscription_ref(current), target.expire_at)
+            remote = await self.remnawave.update_user_expire_at(
+                subscription_ref(current), target.expire_at
+            )
             current.expire_at = target.expire_at
             if was_expired and current.status in (
                 SubscriptionStatus.ACTIVE,
                 SubscriptionStatus.EXPIRED,
             ):
-                await self.remnawave.enable_user(subscription_ref(current))
-                current.status = SubscriptionStatus.ACTIVE
+                # Extending an expired account can activate it in the panel already.
+                current.status = SubscriptionStatus(remote.status)
+                if current.status == SubscriptionStatus.EXPIRED:
+                    await self.remnawave.enable_user(subscription_ref(current))
+                    current.status = SubscriptionStatus.ACTIVE
             await self.subscription_dao.update(current)
         claim.subscription_applied = True
         claim.payload = {**payload, "subscription": self.retort.dump(target, SubscriptionDto)}

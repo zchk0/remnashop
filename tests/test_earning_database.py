@@ -13,14 +13,18 @@ import pytest
 from aiogram.enums import ChatMemberStatus
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from remnapy.enums import TrafficLimitStrategy
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from src.application.dto import SettingsDto, UserDto
+from src.application.dto import PlanSnapshotDto, SettingsDto, SubscriptionDto, UserDto
 from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningSettingsDto
 from src.application.use_cases.earning.rewards import ClaimChannelReward, EarningError
+from src.core.enums import SubscriptionStatus
 from src.infrastructure.database.dao.earning import EarningDaoImpl
+from src.infrastructure.database.dao.subscription import SubscriptionDaoImpl
+from src.infrastructure.database.models import Subscription
 from src.infrastructure.database.models.earning import ChannelClaim
 from src.infrastructure.database.uow import UnitOfWorkImpl
 from src.infrastructure.di.providers.retort import RetortProvider
@@ -141,6 +145,110 @@ async def test_postgres_double_click_has_one_ledger_entry(earning_database):
     async with AsyncSession(earning_database) as session:
         rows = (await session.scalars(select(ChannelClaim))).all()
         assert len(rows) == 1 and rows[0].status == "completed"
+
+
+@pytest.mark.parametrize("is_trial", [False, True])
+@pytest.mark.parametrize("expired", [False, True])
+async def test_postgres_days_and_traffic_reset_with_real_subscription_dao(
+    earning_database,
+    is_trial,
+    expired,
+    monkeypatch,
+):
+    async with earning_database.begin() as connection:
+        await connection.execute(
+            text("ALTER TABLE users ADD COLUMN current_subscription_id INTEGER")
+        )
+        await connection.run_sync(Subscription.__table__.create)
+    task = await seed_task(earning_database)
+    retort_provider = RetortProvider()
+    retort = retort_provider.get_retort()
+    conversion = retort_provider.get_conversion_retort(retort, SimpleNamespace())
+    actor = UserDto(id=1, telegram_id=123, name="User")
+    now = datetime(2026, 10, 17, 12, 34, 56, 123456, tzinfo=UTC)
+    monkeypatch.setattr("src.application.use_cases.earning.rewards.datetime_now", lambda: now)
+    original_expire = datetime(2020 if expired else 2030, 10, 17, 12, 34, 56, 123456, tzinfo=UTC)
+    expected_expire = (now if expired else original_expire) + timedelta(days=3)
+    expected_expire = expected_expire.replace(microsecond=123000)
+
+    async with AsyncSession(earning_database, expire_on_commit=False, autoflush=False) as session:
+
+        async def set_current(user_id, subscription_id):
+            await session.execute(
+                text("UPDATE users SET current_subscription_id=:sid WHERE id=:uid"),
+                {"sid": subscription_id, "uid": user_id},
+            )
+
+        user_dao = SimpleNamespace(
+            get_by_id=AsyncMock(return_value=actor),
+            update=AsyncMock(),
+            set_current_subscription_by_id=set_current,
+        )
+        subscriptions = SubscriptionDaoImpl(session, retort, conversion, AsyncMock(), user_dao)
+        await subscriptions.create(
+            SubscriptionDto(
+                is_trial=is_trial,
+                status=SubscriptionStatus.EXPIRED if expired else SubscriptionStatus.ACTIVE,
+                user_remna_id=uuid4(),
+                panel_user_id=42,
+                traffic_limit=100,
+                device_limit=2,
+                traffic_limit_strategy=TrafficLimitStrategy.NO_RESET,
+                expire_at=original_expire,
+                url="https://example.org/sub/test",
+                plan_snapshot=PlanSnapshotDto.test(),
+            ),
+            actor.id,
+        )
+        task.days = 3
+        task.reset_traffic = True
+        task.discount = 0
+        dao = EarningDaoImpl(session)
+        await dao.save_task(task)
+        await session.commit()
+        session.expunge_all()
+        remote = SimpleNamespace(
+            status=SubscriptionStatus.ACTIVE,
+            user_traffic=SimpleNamespace(used_traffic_bytes=0),
+        )
+        panel = SimpleNamespace(
+            update_user_expire_at=AsyncMock(return_value=remote),
+            enable_user=AsyncMock(side_effect=AssertionError("Panel already enabled the user")),
+            get_user_by_uuid=AsyncMock(return_value=remote),
+            reset_traffic=AsyncMock(return_value=remote),
+        )
+        publish = AsyncMock()
+        service = ClaimChannelReward(
+            dao,
+            SimpleNamespace(
+                get=AsyncMock(
+                    return_value=SettingsDto(
+                        earning=EarningSettingsDto(enabled=True, audience="all"),
+                    )
+                )
+            ),
+            user_dao,
+            subscriptions,
+            SimpleNamespace(),
+            SimpleNamespace(
+                get_chat_member=AsyncMock(
+                    return_value=SimpleNamespace(
+                        status=ChatMemberStatus.MEMBER,
+                    )
+                )
+            ),
+            panel,
+            retort,
+            UnitOfWorkImpl(session),
+            SimpleNamespace(publish=publish),
+        )
+        await service(actor, task.id)
+        assert (await dao.get_claim(task.id, actor.id)).status == "completed"
+        assert (await subscriptions.get_current(actor.id)).expire_at == expected_expire
+        assert (await subscriptions.get_current(actor.id)).status == SubscriptionStatus.ACTIVE
+        panel.enable_user.assert_not_awaited()
+        panel.reset_traffic.assert_awaited_once_with(42)
+        publish.assert_awaited_once()
 
 
 async def test_postgres_migration_defaults_and_unique_constraint(earning_database):

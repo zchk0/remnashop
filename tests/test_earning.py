@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -122,11 +122,12 @@ class RewardHarness:
         remote = SimpleNamespace(
             uuid=uuid4(),
             id=42,
+            status=SubscriptionStatus.ACTIVE,
             subscription_url="https://example.org/sub/new",
             user_traffic=SimpleNamespace(used_traffic_bytes=0),
         )
         self.remnawave = SimpleNamespace(
-            update_user_expire_at=AsyncMock(),
+            update_user_expire_at=AsyncMock(return_value=remote),
             enable_user=AsyncMock(),
             update_user_subscription=AsyncMock(return_value=remote),
             create_user=AsyncMock(return_value=remote),
@@ -331,7 +332,80 @@ async def test_expired_days_start_from_now_and_disabled_subscription_stays_disab
             h.remnawave.enable_user.assert_not_awaited()
         else:
             assert h.state["subscription"].status == SubscriptionStatus.ACTIVE
-            h.remnawave.enable_user.assert_awaited_once()
+            h.remnawave.enable_user.assert_not_awaited()
+
+
+async def test_expired_reward_finishes_when_panel_activates_user_after_extending_expiration():
+    h = RewardHarness()
+    h.task = replace(h.task, days=7, reset_traffic=True)
+    h.state["subscription"] = subscription(
+        expire_at=NOW - timedelta(days=4),
+        status=SubscriptionStatus.EXPIRED,
+    )
+    h.remnawave.update_user_expire_at.return_value = SimpleNamespace(
+        status=SubscriptionStatus.ACTIVE,
+    )
+    h.remnawave.enable_user.side_effect = AssertionError("The panel already activated this user")
+    await h.service(h.actor, 1)
+    assert h.state["claims"][(1, 1)].status == "completed"
+    assert h.state["subscription"].status == SubscriptionStatus.ACTIVE
+    assert h.state["subscription"].expire_at == NOW + timedelta(days=7)
+    h.remnawave.enable_user.assert_not_awaited()
+    h.remnawave.reset_traffic.assert_awaited_once_with(42)
+    h.event_publisher.publish.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "panel_status",
+    [SubscriptionStatus.LIMITED, SubscriptionStatus.DISABLED, SubscriptionStatus.EXPIRED],
+)
+async def test_expired_reward_preserves_panel_status_and_enables_only_when_needed(panel_status):
+    h = RewardHarness()
+    h.state["subscription"] = subscription(
+        expire_at=NOW - timedelta(days=4),
+        status=SubscriptionStatus.EXPIRED,
+    )
+    h.remnawave.update_user_expire_at.return_value = SimpleNamespace(status=panel_status)
+    await h.service(h.actor, 1)
+    if panel_status == SubscriptionStatus.EXPIRED:
+        h.remnawave.enable_user.assert_awaited_once_with(42)
+        assert h.state["subscription"].status == SubscriptionStatus.ACTIVE
+    else:
+        h.remnawave.enable_user.assert_not_awaited()
+        assert h.state["subscription"].status == panel_status
+    assert h.state["claims"][(1, 1)].status == "completed"
+
+
+@pytest.mark.parametrize("extra_microseconds", [0, 1000])
+async def test_legacy_pending_reward_handles_panel_millisecond_precision(extra_microseconds):
+    h = RewardHarness()
+    h.task = replace(h.task, days=7, reset_traffic=True)
+    h.state["subscription"] = subscription(
+        expire_at=NOW - timedelta(days=4),
+        status=SubscriptionStatus.EXPIRED,
+    )
+    await h.service._reserve(h.actor, 1)
+    # A failed enable request was followed by the panel's successful expiry webhook.
+    target = (NOW + timedelta(days=7)).replace(microsecond=867123)
+    claim = h.state["claims"][(1, 1)]
+    claim.payload["subscription"]["expire_at"] = target.isoformat()
+    panel_expire = target.replace(microsecond=867000) + timedelta(microseconds=extra_microseconds)
+    h.state["subscription"].expire_at = panel_expire
+    h.state["subscription"].status = SubscriptionStatus.ACTIVE
+    if extra_microseconds:
+        with pytest.raises(EarningError, match="review-required"):
+            await h.service(h.actor, 1)
+        h.remnawave.reset_traffic.assert_not_awaited()
+        h.remnawave.update_user_expire_at.assert_not_awaited()
+        return
+    await h.service(h.actor, 1)
+    assert h.state["subscription"].expire_at == panel_expire
+    assert h.state["claims"][(1, 1)].status == "completed"
+    h.remnawave.reset_traffic.assert_awaited_once()
+    h.remnawave.enable_user.assert_not_awaited()
+    with pytest.raises(EarningError, match="already-claimed"):
+        await h.service(h.actor, 1)
+    h.remnawave.reset_traffic.assert_awaited_once()
 
 
 async def test_remote_timeout_retries_absolute_expiration_without_rechecking_membership():
@@ -355,7 +429,7 @@ async def test_remote_timeout_retries_absolute_expiration_without_rechecking_mem
     assert event.subscription_after.expire_at == NOW + timedelta(days=11)
 
 
-async def test_reset_lost_reply_requires_review_instead_of_repeating_reset():
+async def test_reset_lost_reply_requires_review_instead_of_repeating_reset(monkeypatch):
     h = RewardHarness()
     h.task.reset_traffic = True
     h.remnawave.reset_traffic.side_effect = TimeoutError("lost reply")
@@ -363,11 +437,14 @@ async def test_reset_lost_reply_requires_review_instead_of_repeating_reset():
         await h.service(h.actor, 1)
     assert h.state["subscription"].expire_at == NOW + timedelta(days=11)
     assert h.state["claims"][(1, 1)].reset_started
+    warning = Mock()
+    monkeypatch.setattr("src.application.use_cases.earning.rewards.logger.warning", warning)
     with pytest.raises(EarningError, match="review-required"):
         await h.service(h.actor, 1)
     h.remnawave.reset_traffic.assert_awaited_once()
     h.remnawave.update_user_expire_at.assert_awaited_once()
     h.event_publisher.publish.assert_not_awaited()
+    assert warning.call_args.args[1:4] == (1, 1, "traffic_reset_result_unknown")
 
 
 async def test_admin_can_confirm_reset_and_finish_discount_without_repeating_days():
@@ -427,13 +504,16 @@ async def test_retry_uses_reward_snapshot_even_after_task_edit_and_deletion():
     assert event.channel_title == original_title
 
 
-async def test_changed_subscription_is_never_overwritten_on_retry():
+async def test_changed_subscription_is_never_overwritten_on_retry(monkeypatch):
     h = RewardHarness()
     await h.service._reserve(h.actor, 1)
     h.state["subscription"].expire_at += timedelta(days=100)
+    warning = Mock()
+    monkeypatch.setattr("src.application.use_cases.earning.rewards.logger.warning", warning)
     with pytest.raises(EarningError, match="review-required"):
         await h.service(h.actor, 1)
     h.remnawave.update_user_expire_at.assert_not_awaited()
+    assert warning.call_args.args[1:4] == (1, 1, "subscription_expiration_changed")
 
 
 async def test_pending_other_task_prevents_lost_days():

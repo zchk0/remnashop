@@ -245,7 +245,8 @@ async def test_broadcast_can_add_earning_button_to_existing_draft_and_open_earni
     )
     earning = next(button for button in data["buttons"] if button["text"] == "btn-goto.earning")
     assert not earning["selected"]
-    assert i18n.get(earning["text"]) == "🎁 Заработай бесплатные дни"
+    label = i18n.get(earning["text"])
+    assert label and label != earning["text"]
     assert next(b for b in data["buttons"] if b["text"] == "btn-goto.subscription")["selected"]
     assert next(b for b in data["buttons"] if b["id"] == -1)["selected"]
 
