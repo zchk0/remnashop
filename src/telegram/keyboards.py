@@ -10,7 +10,7 @@ from magic_filter import F
 
 from src.core.constants import DOCS, GOTO_PREFIX, PAYMENT_PREFIX, REPOSITORY, T_ME
 from src.core.enums import ButtonType, PurchaseType
-from src.telegram.states import DashboardUser, MainMenu, Notification, Subscription
+from src.telegram.states import DashboardUser, Earning, MainMenu, Notification, Subscription
 from src.telegram.widgets import I18nFormat
 from src.telegram.widgets.kbd import Button, CopyText, Group, ListGroup, Row, Start, Url, WebApp
 
@@ -165,6 +165,12 @@ def get_broadcast_buttons(support_url: str, is_referral_enable: bool) -> list[In
             )
         )
 
+    buttons.append(
+        InlineKeyboardButton(
+            text="btn-goto.earning",
+            callback_data=f"{GOTO_PREFIX}{Earning.MAIN.state}",
+        )
+    )
     buttons.append(get_close_notification_button())
 
     return buttons

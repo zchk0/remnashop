@@ -587,7 +587,8 @@ async def test_completion_event_is_published_after_commit_once_with_actual_chang
     assert event.discount_before == event.discount_after == 30
     text = render_earning_event(earning_event_translator, event)
     assert text.count("<blockquote>") == text.count("</blockquote>") == 3
-    assert "27.10.2026 12:00 UTC → 30.10.2026 12:00 UTC" in text
+    assert "27.10.2026 → 30.10.2026" in text
+    assert "12:00" not in text and "UTC" not in text
     assert "5 ГБ → 0 ГБ" in text
     assert "30% → 30%" in text
     assert "<code>123</code>" in text and "<code>-100123</code>" in text
@@ -631,7 +632,7 @@ async def test_notification_for_new_subscription_shows_no_previous_subscription(
     assert event.subscription_before_known
     text = render_earning_event(earning_event_translator, event)
     assert "Нет подписки → Reward" in text
-    assert "Нет подписки → 18.10.2026 12:00 UTC" in text
+    assert "Нет подписки → 18.10.2026" in text
     assert "Нет подписки → 25 ГБ" in text
 
 
@@ -674,7 +675,7 @@ async def test_old_pending_claim_without_before_snapshot_can_finish(earning_even
     event = h.event_publisher.publish.await_args.args[0]
     assert not event.subscription_before_known
     text = render_earning_event(earning_event_translator, event)
-    assert "Нет данных → 28.10.2026 12:00 UTC" in text
+    assert "Нет данных → 28.10.2026" in text
 
 
 async def test_failed_notification_does_not_report_failed_reward_or_allow_another_claim():

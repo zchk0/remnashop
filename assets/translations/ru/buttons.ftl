@@ -265,6 +265,7 @@ btn-goto =
     .subscription = 💳 Купить подписку
     .promocode = 🎟 Активировать промокод
     .invite = 👥 Пригласить
+    .earning = 🎁 Открыть задачник
     .subscription-renew = 🔄 Продлить подписку
     .user-profile = 👤 Перейти к пользователю
     .referrer-profile = 🤝 Перейти к пригласителю

@@ -626,7 +626,7 @@ class EarningTaskCompletedEvent(UserEvent):
                 return no_subscription
             if subscription.is_unlimited:
                 return UtilKey.UNLIMITED, {}
-            return subscription.expire_at.astimezone(TIMEZONE).strftime("%d.%m.%Y %H:%M UTC")
+            return subscription.expire_at.astimezone(TIMEZONE).strftime("%d.%m.%Y")
 
         def traffic(value: int | None) -> Any:
             return i18n_format_bytes_to_unit(value) if value is not None else unknown

@@ -116,22 +116,22 @@ async def buttons_getter(
     user = dialog_manager.middleware_data[USER_KEY]
     settings = await settings_dao.get()
 
-    if not buttons:
-        all_buttons = get_broadcast_buttons(
-            support_url=bot_service.get_support_url(
-                text=i18n.get("message.help", telegram_id=user.telegram_id)
-            ),
-            is_referral_enable=settings.referral.enable,
-        )
-        buttons = [
-            {
-                "id": CLOSE_BUTTON_ID if index == len(all_buttons) - 1 else index,
-                "text": btn.text,
-                "selected": index == len(all_buttons) - 1,
-            }
-            for index, btn in enumerate(all_buttons)
-        ]
-        dialog_manager.dialog_data["buttons"] = buttons
+    all_buttons = get_broadcast_buttons(
+        support_url=bot_service.get_support_url(
+            text=i18n.get("message.help", telegram_id=user.telegram_id)
+        ),
+        is_referral_enable=settings.referral.enable,
+    )
+    selected_by_text = {button["text"]: button["selected"] for button in buttons}
+    buttons = [
+        {
+            "id": CLOSE_BUTTON_ID if index == len(all_buttons) - 1 else index,
+            "text": btn.text,
+            "selected": selected_by_text.get(btn.text, index == len(all_buttons) - 1),
+        }
+        for index, btn in enumerate(all_buttons)
+    ]
+    dialog_manager.dialog_data["buttons"] = buttons
 
     custom_button: dict[str, Any] = dialog_manager.dialog_data.get("custom_button", {})
     custom_text = custom_button.get("text")

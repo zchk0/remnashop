@@ -8,16 +8,20 @@ from aiogram.enums import ButtonStyle, ContentType
 from fluent_compiler.bundle import FluentBundle
 from fluentogram.translator import FluentTranslator
 
-from src.application.dto import PlanDto, SettingsDto, UserDto
+from src.application.dto import MessagePayloadDto, PlanDto, SettingsDto, UserDto
 from src.application.dto.earning import ChannelTaskDto, EarningStatisticsDto
 from src.application.use_cases.earning.channels import EarningChannelsDto
 from src.core.constants import CONFIG_KEY, CONTAINER_KEY, USER_KEY
 from src.core.enums import BannerName, Locale, Role
+from src.infrastructure.di.providers.retort import RetortProvider
+from src.telegram.routers.dashboard.broadcast.getters import buttons_getter
+from src.telegram.routers.dashboard.broadcast.handlers import on_button_select
 from src.telegram.routers.dashboard.earning.dialog import router as admin_dialog
 from src.telegram.routers.dashboard.earning.getters import admin_getter, channels_getter
 from src.telegram.routers.dashboard.earning.handlers import on_plan_select
 from src.telegram.routers.earning.dialog import router as user_dialog
 from src.telegram.routers.earning.handlers import on_task_select
+from src.telegram.routers.extra.goto import on_goto
 from src.telegram.routers.menu.dialog import custom_buttons, menu
 from src.telegram.states import DashboardEarning, Earning
 from src.telegram.widgets.banner import get_banner
@@ -202,3 +206,68 @@ async def test_earning_windows_render_banner_using_the_global_banner_setting(tmp
                 assert media is None
     finally:
         get_banner.cache_clear()
+
+
+@pytest.mark.parametrize("referral_enabled", [True, False])
+async def test_broadcast_can_add_earning_button_to_existing_draft_and_open_earning(
+    referral_enabled,
+):
+    i18n = FluentTranslator(
+        locale="ru",
+        translator=FluentBundle.from_string(
+            locale="ru",
+            text="\n".join(
+                path.read_text("utf-8")
+                for path in sorted(Path("assets/translations/ru").glob("*.ftl"))
+            ),
+            use_isolating=False,
+        ),
+    )
+    user = UserDto(id=1, telegram_id=123, name="Admin", role=Role.ADMIN)
+    manager = SimpleNamespace(
+        dialog_data={
+            "buttons": [
+                {"id": 1, "text": "btn-goto.subscription", "selected": True},
+                {"id": -1, "text": "btn-common.notification-close", "selected": True},
+            ],
+        },
+        middleware_data={USER_KEY: user},
+    )
+    settings = SettingsDto()
+    settings.referral.enable = referral_enabled
+    settings_dao = SimpleNamespace(get=AsyncMock(return_value=settings))
+    bot_service = SimpleNamespace(get_support_url=lambda text: "https://t.me/support")
+    data = await buttons_getter.__dishka_orig_func__(
+        dialog_manager=manager,
+        bot_service=bot_service,
+        settings_dao=settings_dao,
+        i18n=i18n,
+    )
+    earning = next(button for button in data["buttons"] if button["text"] == "btn-goto.earning")
+    assert not earning["selected"]
+    assert i18n.get(earning["text"]) == "🎁 Заработай бесплатные дни"
+    assert next(b for b in data["buttons"] if b["text"] == "btn-goto.subscription")["selected"]
+    assert next(b for b in data["buttons"] if b["id"] == -1)["selected"]
+
+    retort = RetortProvider().get_retort()
+    manager.item_id = str(earning["id"])
+    await on_button_select.__dishka_orig_func__(
+        callback=None,
+        widget=None,
+        dialog_manager=manager,
+        bot_service=bot_service,
+        retort=retort,
+        i18n=i18n,
+        settings_dao=settings_dao,
+    )
+    payload = retort.load(manager.dialog_data["payload"], MessagePayloadDto)
+    rows = payload.reply_markup.inline_keyboard
+    assert [row[0].text for row in rows] == ["btn-goto.subscription", "btn-goto.earning"]
+    assert not payload.disable_default_markup
+
+    background = SimpleNamespace(start=AsyncMock())
+    manager.bg = lambda **kwargs: background
+    callback = SimpleNamespace(data=rows[1][0].callback_data, answer=AsyncMock())
+    await on_goto(callback, manager, user)
+    assert background.start.await_args.kwargs["state"] == Earning.MAIN
+    callback.answer.assert_awaited_once()
