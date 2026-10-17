@@ -21,6 +21,7 @@ from src.core.enums import (
 from src.core.types import NotificationType
 
 from .base import BaseDto, TimestampMixin, TrackableMixin
+from .earning import EarningSettingsDto
 
 
 def get_default_notifications() -> dict[str, bool]:
@@ -231,6 +232,7 @@ class ExtraSettingsDto(TrackableMixin):
 
 @dataclass(kw_only=True)
 class SettingsDto(BaseDto, TrackableMixin, TimestampMixin):
+    earning: EarningSettingsDto = field(default_factory=EarningSettingsDto)
     default_currency: Currency = Currency.XTR
     access: AccessSettingsDto = field(default_factory=AccessSettingsDto)
     requirements: RequirementSettingsDto = field(default_factory=RequirementSettingsDto)

@@ -31,6 +31,7 @@ class Permission(UpperStrEnum):
     VIEW_BROADCAST = auto()
     VIEW_PROMOCODE = auto()
     MANAGE_PROMOCODE = auto()
+    MANAGE_EARNING = auto()
     VIEW_ACCESS = auto()
     VIEW_REMNAWAVE = auto()
     VIEW_REMNASHOP = auto()
@@ -82,6 +83,7 @@ ROLE_PERMISSIONS: Final[dict[Role, set[Permission]]] = {
         Permission.VIEW_USERS,
         Permission.VIEW_PROMOCODE,
         Permission.MANAGE_PROMOCODE,
+        Permission.MANAGE_EARNING,
         Permission.VIEW_ACCESS,
         # Actions
         Permission.SETTINGS_ACCESS,

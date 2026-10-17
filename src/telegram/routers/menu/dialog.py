@@ -10,7 +10,7 @@ from src.core.constants import INLINE_QUERY_INVITE, PAYMENT_PREFIX
 from src.core.enums import BannerName
 from src.telegram.keyboards import build_buttons_row, connect_buttons
 from src.telegram.routers.dashboard.handlers import on_smart_search
-from src.telegram.states import Dashboard, MainMenu, Subscription
+from src.telegram.states import Dashboard, Earning, MainMenu, Subscription
 from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import (
@@ -124,6 +124,18 @@ menu = Window(
         when=F["web_enabled"],
     ),
     *custom_buttons,
+    Row(
+        *[
+            Start(
+                text=Format("{earning_text}"),
+                id=f"earning_{color.value if color else 'default'}",
+                state=Earning.MAIN,
+                when=F["earning_available"] & (F["earning_color"] == color),
+                style=Style(color),
+            )
+            for color in (None, *ButtonStyle)
+        ],
+    ),
     Row(
         Start(
             text=I18nFormat("btn-menu.dashboard"),

@@ -17,6 +17,24 @@ class Notification(StatesGroup):
     CLOSE = State()
 
 
+class Earning(StatesGroup):
+    MAIN = State()
+    TASK = State()
+    ADVERTISE = State()
+
+
+class DashboardEarning(StatesGroup):
+    MAIN = State()
+    TASK = State()
+    INPUT = State()
+    AUDIENCE = State()
+    COLOR = State()
+    PLAN = State()
+    DELETE = State()
+    CLAIMS = State()
+    CLAIM = State()
+
+
 class Subscription(StatesGroup):
     MAIN = State()
     PROMOCODE = State()

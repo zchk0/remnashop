@@ -8,6 +8,7 @@ from loguru import logger
 from src.application.common import BotService, Remnawave, TranslatorRunner
 from src.application.common.dao import ReferralDao, SettingsDao, SubscriptionDao
 from src.application.dto import TelegramUserDto
+from src.application.use_cases.earning.rewards import GetEarningTasks
 from src.application.use_cases.misc.queries.menu import GetMenuData
 from src.core.config import AppConfig
 from src.core.constants import TIMEZONE
@@ -30,11 +31,17 @@ async def menu_getter(
     i18n: FromDishka[TranslatorRunner],
     get_menu_data: FromDishka[GetMenuData],
     settings_dao: FromDishka[SettingsDao],
+    get_earning_tasks: FromDishka[GetEarningTasks],
     **kwargs: Any,
 ) -> dict[str, Any]:
     try:
         menu_data = await get_menu_data(user)
         settings = await settings_dao.get()
+        earning_available = (
+            bool((await get_earning_tasks(user)).tasks)
+            if (settings.earning.allows(user))
+            else False
+        )
         support_url = bot_service.get_support_url(
             text=i18n.get("message.help", telegram_id=user.telegram_id)
         )
@@ -57,6 +64,9 @@ async def menu_getter(
             "is_mini_app": config.bot.is_mini_app,
             "is_mini_app_reserve": config.bot.is_mini_app and settings.extra.mini_app_reserve,
             "support_url": support_url,
+            "earning_available": earning_available,
+            "earning_text": settings.earning.button_text,
+            "earning_color": settings.earning.button_color,
             "web_enabled": config.web_enabled,
             "web_cabinet_url": config.web_cabinet_url.strip(),
             # referral

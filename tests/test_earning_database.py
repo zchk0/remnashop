@@ -1,0 +1,171 @@
+"""Set EARNING_TEST_DATABASE_URL to an isolated PostgreSQL database to run these checks."""
+
+import asyncio
+import importlib
+import os
+from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import pytest
+from aiogram.enums import ChatMemberStatus
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+from src.application.dto import SettingsDto, UserDto
+from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningSettingsDto
+from src.application.use_cases.earning.rewards import ClaimChannelReward, EarningError
+from src.infrastructure.database.dao.earning import EarningDaoImpl
+from src.infrastructure.database.models.earning import ChannelClaim
+from src.infrastructure.database.uow import UnitOfWorkImpl
+from src.infrastructure.di.providers.retort import RetortProvider
+
+
+@pytest.fixture
+async def earning_database():
+    dsn = os.environ.get("EARNING_TEST_DATABASE_URL")
+    if not dsn:
+        pytest.skip("EARNING_TEST_DATABASE_URL is not configured")
+    schema = "earning_test_" + uuid4().hex
+    base_engine = create_async_engine(dsn)
+    async with base_engine.begin() as connection:
+        await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(dsn, connect_args={"server_settings": {"search_path": schema}})
+    migration = importlib.import_module(
+        "src.infrastructure.database.migrations.versions.0052_add_channel_earning"
+    )
+
+    def upgrade(connection):
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+    try:
+        async with engine.begin() as connection:
+            for table in ("users", "plans", "settings"):
+                await connection.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)"))
+            await connection.execute(text("INSERT INTO users VALUES (1), (2)"))
+            await connection.execute(text("INSERT INTO settings VALUES (1)"))
+            await connection.run_sync(upgrade)
+        yield engine
+    finally:
+        await engine.dispose()
+        async with base_engine.begin() as connection:
+            await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await base_engine.dispose()
+
+
+async def seed_task(engine, *, max_claims=None):
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        dao = EarningDaoImpl(session)
+        task = await dao.save_task(
+            ChannelTaskDto(
+                title="Test",
+                channel_id=-1001234567890,
+                channel_url="https://t.me/test",
+                days=0,
+                discount=15,
+                active=True,
+                max_claims=max_claims,
+            )
+        )
+        await session.commit()
+        return task
+
+
+async def claim(engine, task_id, user_id):
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        actor = UserDto(id=user_id, telegram_id=100 + user_id, name="Test")
+
+        async def member(*args):
+            await asyncio.sleep(0.03)
+            return SimpleNamespace(status=ChatMemberStatus.MEMBER)
+
+        service = ClaimChannelReward(
+            EarningDaoImpl(session),
+            SimpleNamespace(
+                get=AsyncMock(
+                    return_value=SettingsDto(
+                        earning=EarningSettingsDto(enabled=True, audience="all"),
+                    )
+                )
+            ),
+            SimpleNamespace(get_by_id=AsyncMock(return_value=replace(actor)), update=AsyncMock()),
+            SimpleNamespace(get_current=AsyncMock(return_value=None)),
+            SimpleNamespace(),
+            SimpleNamespace(get_chat_member=member),
+            SimpleNamespace(),
+            RetortProvider().get_retort(),
+            UnitOfWorkImpl(session),
+        )
+        try:
+            await service(actor, task_id)
+            return "completed"
+        except EarningError as error:
+            return str(error)
+
+
+async def test_postgres_last_slot_cannot_be_claimed_twice(earning_database):
+    task = await seed_task(earning_database, max_claims=1)
+    results = await asyncio.gather(
+        claim(earning_database, task.id, 1),
+        claim(earning_database, task.id, 2),
+    )
+    assert sorted(results) == ["completed", "ntf-earning.full"]
+    async with AsyncSession(earning_database) as session:
+        stored = await EarningDaoImpl(session).get_task(task.id)
+        assert stored.claims_count == 1
+
+
+async def test_postgres_double_click_has_one_ledger_entry(earning_database):
+    task = await seed_task(earning_database)
+    results = await asyncio.gather(
+        claim(earning_database, task.id, 1),
+        claim(earning_database, task.id, 1),
+    )
+    assert sorted(results) == ["completed", "ntf-earning.already-claimed"]
+    async with AsyncSession(earning_database) as session:
+        rows = (await session.scalars(select(ChannelClaim))).all()
+        assert len(rows) == 1 and rows[0].status == "completed"
+
+
+async def test_postgres_migration_defaults_and_unique_constraint(earning_database):
+    task = await seed_task(earning_database)
+    async with AsyncSession(earning_database) as session:
+        assert await session.scalar(text("SELECT earning FROM settings WHERE id=1")) == {}
+        dao = EarningDaoImpl(session)
+        await dao.save_claim(ChannelClaimDto(task_id=task.id, user_id=1, payload={"days": 3}))
+        await session.commit()
+        with pytest.raises(IntegrityError):
+            # Exercise the actual database constraint independently of DAO upserts.
+            session.add(
+                ChannelClaim(
+                    task_id=task.id,
+                    user_id=1,
+                    payload={},
+                    status="pending",
+                    subscription_applied=False,
+                    reset_started=False,
+                    reset_applied=False,
+                )
+            )
+            await session.flush()
+        await session.rollback()
+        stored = await dao.get_claim(task.id, 1)
+        assert stored.payload == {"days": 3}
+
+    migration = importlib.import_module(
+        "src.infrastructure.database.migrations.versions.0052_add_channel_earning"
+    )
+
+    def downgrade_upgrade(connection):
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+            migration.upgrade()
+
+    async with earning_database.begin() as connection:
+        await connection.run_sync(downgrade_upgrade)
+        assert await connection.scalar(text("SELECT earning FROM settings WHERE id=1")) == {}

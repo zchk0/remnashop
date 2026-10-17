@@ -21,6 +21,9 @@ tests/*
 !tests/test_panel_v3_integration.py
 !tests/test_plan_duration_discount.py
 !tests/test_tobevpn_duration_discount.py
+!tests/test_earning.py
+!tests/test_earning_database.py
+!tests/test_earning_ui.py
 .DS_Store
 traefik
 logs/*

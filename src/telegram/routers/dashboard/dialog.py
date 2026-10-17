@@ -8,6 +8,7 @@ from src.telegram.states import (
     Dashboard,
     DashboardAccess,
     DashboardBroadcast,
+    DashboardEarning,
     DashboardImporter,
     DashboardPromocodes,
     DashboardRemnashop,
@@ -95,6 +96,14 @@ dashboard = Window(
             state=DashboardImporter.MAIN,
         ),
         when=require_permission(Permission.VIEW_IMPORTER),
+    ),
+    Row(
+        Start(
+            I18nFormat("btn-earning.admin"),
+            id="earning",
+            state=DashboardEarning.MAIN,
+            when=require_permission(Permission.MANAGE_EARNING),
+        ),
     ),
     *back_main_menu_button,
     MessageInput(func=on_smart_search),

@@ -4,6 +4,7 @@ from .base import BaseSql
 from .broadcast import Broadcast, BroadcastDelivery, BroadcastMessage
 from .device import LinkedDevice
 from .device_session import DeviceSession
+from .earning import ChannelClaim, ChannelTask
 from .oauth_provider import UserOAuthProvider
 from .payment_gateway import PaymentGateway
 from .plan import Plan, PlanDuration, PlanPrice
@@ -16,6 +17,8 @@ from .tv_pairing import TvPairingCode
 from .user import User
 
 __all__ = [
+    "ChannelClaim",
+    "ChannelTask",
     "AuthToken",
     "AdLink",
     "BaseSql",

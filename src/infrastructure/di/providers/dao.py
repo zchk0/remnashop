@@ -21,6 +21,7 @@ from src.application.common.dao import (
     WaitlistDao,
     WebhookDao,
 )
+from src.application.common.dao.earning import EarningDao
 from src.infrastructure.database.dao import (
     AdLinkDaoImpl,
     AuthTokenDaoImpl,
@@ -40,12 +41,14 @@ from src.infrastructure.database.dao import (
     WaitlistDaoImpl,
     WebhookDaoImpl,
 )
+from src.infrastructure.database.dao.earning import EarningDaoImpl
 from src.infrastructure.redis.activity import RedisActivityRepository
 from src.infrastructure.redis.auth import RedisAuthRepository
 
 
 class DaoProvider(Provider):
     scope = Scope.REQUEST
+    earning = provide(source=EarningDaoImpl, provides=EarningDao)
 
     auth_token = provide(source=AuthTokenDaoImpl, provides=AuthTokenDao)
     ad_link = provide(source=AdLinkDaoImpl, provides=AdLinkDao)

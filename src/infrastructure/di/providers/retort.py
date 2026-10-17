@@ -32,6 +32,7 @@ from src.application.dto import (
     RequirementSettingsDto,
     ResetFeatureSettingsDto,
 )
+from src.application.dto.earning import EarningSettingsDto
 from src.application.dto.payment_gateway import (
     CryptomusGatewaySettingsDto,
     CryptoPayGatewaySettingsDto,
@@ -149,6 +150,7 @@ class RetortProvider(Provider):
                 coercer(dict, BlacklistSettingsDto, retort.get_loader(BlacklistSettingsDto)),
                 coercer(dict, MenuSettingsDto, retort.get_loader(MenuSettingsDto)),
                 coercer(dict, ExtraSettingsDto, retort.get_loader(ExtraSettingsDto)),
+                coercer(dict, EarningSettingsDto, retort.get_loader(EarningSettingsDto)),
                 coercer(dict, ResetFeatureSettingsDto, retort.get_loader(ResetFeatureSettingsDto)),
                 coercer(dict, MenuButtonDto, retort.get_loader(MenuButtonDto)),
                 #

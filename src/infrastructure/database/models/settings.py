@@ -15,6 +15,7 @@ class Settings(BaseSql, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     default_currency: Mapped[Currency]
+    earning: Mapped[dict[str, Any]] = mapped_column(JSONB)
 
     access: Mapped[dict[str, Any]]
     requirements: Mapped[dict[str, Any]]
