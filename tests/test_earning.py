@@ -21,6 +21,7 @@ from src.application.dto.earning import (
     EarningSettingsDto,
     EarningStatisticsDto,
 )
+from src.application.events import EarningTaskCompletedEvent
 from src.application.use_cases.earning.channels import GetEarningChannels
 from src.application.use_cases.earning.manage import ManageChannelTask, UpdateEarningSettings
 from src.application.use_cases.earning.rewards import (
@@ -30,9 +31,12 @@ from src.application.use_cases.earning.rewards import (
     ResolveEarningClaim,
     ResolveEarningClaimDto,
 )
-from src.core.enums import Role, SubscriptionStatus
+from src.core.enums import Role, SubscriptionStatus, SystemNotificationType
 from src.core.exceptions import PermissionDeniedError
 from src.infrastructure.di.providers.retort import RetortProvider
+from src.infrastructure.services.notification import NotificationService
+from src.infrastructure.services.translator import TranslatorRunnerImpl
+from src.telegram.keyboards import get_user_keyboard
 
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 
@@ -116,7 +120,10 @@ class RewardHarness:
             get_chat_member=AsyncMock(return_value=SimpleNamespace(status=ChatMemberStatus.MEMBER))
         )
         remote = SimpleNamespace(
-            uuid=uuid4(), id=42, subscription_url="https://example.org/sub/new"
+            uuid=uuid4(),
+            id=42,
+            subscription_url="https://example.org/sub/new",
+            user_traffic=SimpleNamespace(used_traffic_bytes=0),
         )
         self.remnawave = SimpleNamespace(
             update_user_expire_at=AsyncMock(),
@@ -125,7 +132,13 @@ class RewardHarness:
             create_user=AsyncMock(return_value=remote),
             get_user_by_short_uuid=AsyncMock(return_value=None),
             reset_traffic=AsyncMock(return_value=remote),
+            get_user_by_uuid=AsyncMock(
+                return_value=SimpleNamespace(
+                    user_traffic=SimpleNamespace(used_traffic_bytes=5 * 1024**3),
+                )
+            ),
         )
+        self.event_publisher = SimpleNamespace(publish=AsyncMock())
         self.service = ClaimChannelReward(
             self.earning_dao,
             self.settings_dao,
@@ -136,6 +149,7 @@ class RewardHarness:
             self.remnawave,
             RetortProvider().get_retort(),
             self.uow,
+            self.event_publisher,
         )
 
     async def get_task(self, task_id, *, lock=False):
@@ -234,6 +248,7 @@ async def test_nonmembers_never_reserve_capacity(status):
         await h.service(h.actor, 1)
     assert not h.state["claims"]
     h.remnawave.update_user_expire_at.assert_not_awaited()
+    h.event_publisher.publish.assert_not_awaited()
 
 
 @pytest.mark.parametrize("status", [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR])
@@ -324,6 +339,7 @@ async def test_remote_timeout_retries_absolute_expiration_without_rechecking_mem
     h.remnawave.update_user_expire_at.side_effect = [TimeoutError("lost reply"), None]
     with pytest.raises(TimeoutError):
         await h.service(h.actor, 1)
+    h.event_publisher.publish.assert_not_awaited()
     claim = h.state["claims"][(1, 1)]
     assert claim.status == "pending"
     assert not claim.subscription_applied
@@ -333,6 +349,10 @@ async def test_remote_timeout_retries_absolute_expiration_without_rechecking_mem
     assert calls[0] == calls[1]
     assert h.state["subscription"].expire_at == NOW + timedelta(days=11)
     h.bot_service.get_chat_member.assert_awaited_once()
+    h.event_publisher.publish.assert_awaited_once()
+    event = h.event_publisher.publish.await_args.args[0]
+    assert event.subscription_before.expire_at == NOW + timedelta(days=10)
+    assert event.subscription_after.expire_at == NOW + timedelta(days=11)
 
 
 async def test_reset_lost_reply_requires_review_instead_of_repeating_reset():
@@ -347,6 +367,7 @@ async def test_reset_lost_reply_requires_review_instead_of_repeating_reset():
         await h.service(h.actor, 1)
     h.remnawave.reset_traffic.assert_awaited_once()
     h.remnawave.update_user_expire_at.assert_awaited_once()
+    h.event_publisher.publish.assert_not_awaited()
 
 
 async def test_admin_can_confirm_reset_and_finish_discount_without_repeating_days():
@@ -371,6 +392,12 @@ async def test_admin_can_confirm_reset_and_finish_discount_without_repeating_day
     assert h.state["subscription"].expire_at == NOW + timedelta(days=11)
     h.remnawave.reset_traffic.assert_awaited_once()
     h.remnawave.update_user_expire_at.assert_awaited_once()
+    h.event_publisher.publish.assert_awaited_once()
+    event = h.event_publisher.publish.await_args.args[0]
+    assert event.subscription_before.expire_at == NOW + timedelta(days=10)
+    assert event.subscription_after.expire_at == NOW + timedelta(days=11)
+    assert event.discount_before == 0 and event.discount_after == 25
+    assert event.traffic_before == 5 * 1024**3
 
 
 async def test_traffic_only_reward_restores_limited_status():
@@ -387,13 +414,17 @@ async def test_retry_uses_reward_snapshot_even_after_task_edit_and_deletion():
     h.remnawave.update_user_expire_at.side_effect = TimeoutError()
     with pytest.raises(TimeoutError):
         await h.service(h.actor, 1)
-    h.task = replace(h.task, days=99, discount=90, active=False, deleted=True)
+    original_title = h.task.title
+    h.task = replace(h.task, title="Changed task", days=99, discount=90, active=False, deleted=True)
     pending = (await h.query()(h.actor)).tasks
     assert len(pending) == 1 and pending[0].days == 1 and pending[0].discount == 0
     h.remnawave.update_user_expire_at.side_effect = None
     await h.service(h.actor, 1)
     assert h.state["subscription"].expire_at == NOW + timedelta(days=11)
     assert h.state["user"].purchase_discount == 0
+    event = h.event_publisher.publish.await_args.args[0]
+    assert event.days == 1 and event.discount == 0
+    assert event.channel_title == original_title
 
 
 async def test_changed_subscription_is_never_overwritten_on_retry():
@@ -510,3 +541,214 @@ async def test_channel_counters_use_successful_completions_and_exclude_paused_ta
         active_tasks=2,
         completed_tasks=2,
     )
+
+
+@pytest.fixture(scope="module")
+def earning_event_translator():
+    translator = FluentTranslator(
+        locale="ru",
+        translator=FluentBundle.from_string(
+            locale="ru",
+            text="\n".join(
+                path.read_text("utf-8")
+                for path in sorted(Path("assets/translations/ru").glob("*.ftl"))
+            ),
+            use_isolating=False,
+        ),
+    )
+    return TranslatorRunnerImpl([translator], RetortProvider().get_retort())
+
+
+def render_earning_event(translator, event):
+    payload = event.as_payload()
+    return translator.get(payload.i18n_key, **payload.i18n_kwargs)
+
+
+async def test_completion_event_is_published_after_commit_once_with_actual_changes(
+    earning_event_translator,
+):
+    h = RewardHarness(discount=30)
+    h.task = replace(h.task, days=3, reset_traffic=True, discount=20)
+
+    async def assert_committed(event):
+        assert h.uow.snapshot["claims"][(1, 1)].status == "completed"
+        assert h.uow.snapshot["subscription"].expire_at == NOW + timedelta(days=13)
+
+    h.event_publisher.publish.side_effect = assert_committed
+    await h.service(h.actor, 1)
+    event = h.event_publisher.publish.await_args.args[0]
+    assert isinstance(event, EarningTaskCompletedEvent)
+    assert event.notification_type == SystemNotificationType.EARNING_TASK_COMPLETED
+    assert event.user_id == h.actor.id and event.telegram_id == 123
+    assert event.task_id == 1 and event.channel_id == h.task.channel_id
+    assert event.subscription_before.expire_at == NOW + timedelta(days=10)
+    assert event.subscription_after.expire_at == NOW + timedelta(days=13)
+    assert event.traffic_before == 5 * 1024**3 and event.traffic_after == 0
+    assert event.discount_before == event.discount_after == 30
+    text = render_earning_event(earning_event_translator, event)
+    assert text.count("<blockquote>") == text.count("</blockquote>") == 3
+    assert "27.10.2026 12:00 UTC → 30.10.2026 12:00 UTC" in text
+    assert "5 ГБ → 0 ГБ" in text
+    assert "30% → 30%" in text
+    assert "<code>123</code>" in text and "<code>-100123</code>" in text
+    assert "!empty!" not in text
+    with pytest.raises(EarningError, match="already-claimed"):
+        await h.service(h.actor, 1)
+    h.event_publisher.publish.assert_awaited_once()
+
+
+async def test_trial_conversion_notification_shows_plan_type_and_limit_changes_and_escapes_html(
+    earning_event_translator,
+):
+    h = RewardHarness()
+    h.state["user"].name = "<Alice & Bob>"
+    h.state["subscription"].is_trial = True
+    h.state["subscription"].plan_snapshot.name = "Trial"
+    h.plan.name = "Premium <VIP>"
+    h.task = replace(h.task, title="News <&>", days=2, trial_plan_id=7, trial_days=5)
+    await h.service(h.actor, 1)
+    event = h.event_publisher.publish.await_args.args[0]
+    assert event.days == 5
+    text = render_earning_event(earning_event_translator, event)
+    assert "Дни подписки</b>: +5" in text
+    assert "Trial → Premium &lt;VIP&gt;" in text
+    assert "Пробная → Обычная" in text
+    assert "100 ГБ → 25 ГБ" in text
+    assert "2 устройства → 1 устройство" in text
+    assert "&lt;Alice &amp; Bob&gt;" in text
+    assert 'href="https://t.me/test">News &lt;&amp;&gt;</a>' in text
+    assert "Скидка" not in text and "Сброс трафика" not in text
+
+
+async def test_notification_for_new_subscription_shows_no_previous_subscription(
+    earning_event_translator,
+):
+    h = RewardHarness(sub=False)
+    h.task.plan_id = 7
+    await h.service(h.actor, 1)
+    event = h.event_publisher.publish.await_args.args[0]
+    assert event.subscription_before is None
+    assert event.subscription_before_known
+    text = render_earning_event(earning_event_translator, event)
+    assert "Нет подписки → Reward" in text
+    assert "Нет подписки → 18.10.2026 12:00 UTC" in text
+    assert "Нет подписки → 25 ГБ" in text
+
+
+async def test_discount_only_notification_uses_fresh_discount_and_has_no_subscription_rows(
+    earning_event_translator,
+):
+    h = RewardHarness(sub=False, discount=5)
+    h.task = replace(h.task, days=0, discount=25)
+    h.state["user"].purchase_discount = 10
+    await h.service(h.actor, 1)
+    text = render_earning_event(
+        earning_event_translator, h.event_publisher.publish.await_args.args[0]
+    )
+    assert "10% → 25%" in text
+    assert "Срок подписки" not in text and "Тариф" not in text
+    assert "Дни подписки" not in text and "Сброс трафика" not in text
+    h.remnawave.get_user_by_uuid.assert_not_awaited()
+
+
+async def test_unknown_traffic_does_not_block_reward_or_pretend_to_be_unlimited(
+    earning_event_translator,
+):
+    h = RewardHarness()
+    h.task = replace(h.task, days=0, reset_traffic=True)
+    h.remnawave.get_user_by_uuid.side_effect = TimeoutError()
+    await h.service(h.actor, 1)
+    event = h.event_publisher.publish.await_args.args[0]
+    assert event.traffic_before is None and event.traffic_after == 0
+    text = render_earning_event(earning_event_translator, event)
+    assert "Нет данных → 0 ГБ" in text
+    assert "Срок подписки" not in text and "Скидка" not in text
+    h.remnawave.reset_traffic.assert_awaited_once()
+
+
+async def test_old_pending_claim_without_before_snapshot_can_finish(earning_event_translator):
+    h = RewardHarness()
+    await h.service._reserve(h.actor, 1)
+    h.state["claims"][(1, 1)].payload.pop("subscription_before")
+    await h.service(h.actor, 1)
+    event = h.event_publisher.publish.await_args.args[0]
+    assert not event.subscription_before_known
+    text = render_earning_event(earning_event_translator, event)
+    assert "Нет данных → 28.10.2026 12:00 UTC" in text
+
+
+async def test_failed_notification_does_not_report_failed_reward_or_allow_another_claim():
+    h = RewardHarness()
+    h.event_publisher.publish.side_effect = RuntimeError("notification unavailable")
+    await h.service(h.actor, 1)
+    assert h.state["claims"][(1, 1)].status == "completed"
+    assert h.state["subscription"].expire_at == NOW + timedelta(days=11)
+    with pytest.raises(EarningError, match="already-claimed"):
+        await h.service(h.actor, 1)
+    h.event_publisher.publish.assert_awaited_once()
+
+
+async def test_failed_completion_commit_never_publishes_success():
+    h = RewardHarness()
+    commit = h.uow.commit
+    calls = 0
+
+    async def failing_final_commit():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("commit failed")
+        await commit()
+
+    h.uow.commit = failing_final_commit
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await h.service(h.actor, 1)
+    assert h.state["claims"][(1, 1)].status == "pending"
+    h.event_publisher.publish.assert_not_awaited()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("destination", ["admins", "default_route", "event_route"])
+async def test_completion_notification_uses_existing_settings_routes_and_user_button(
+    enabled,
+    destination,
+    earning_event_translator,
+):
+    h = RewardHarness()
+    await h.service(h.actor, 1)
+    event = h.event_publisher.publish.await_args.args[0]
+    notifications = h.settings.notifications
+    # Existing saved settings lack this new key and should still list the event.
+    notifications.settings.pop(str(event.notification_type), None)
+    assert (event.notification_type, True) in notifications.system
+    assert (
+        earning_event_translator.get("notification-type", notification_type=event.notification_type)
+        == "Выполнение задания"
+    )
+    if not enabled:
+        notifications.toggle(event.notification_type)
+    if destination == "default_route":
+        notifications.set_default_route(-100777, 15)
+    elif destination == "event_route":
+        notifications.set_default_route(-100777, 15)
+        notifications.set_route(event.notification_type, -100999, 25)
+
+    service = NotificationService.__new__(NotificationService)
+    service.settings_dao = h.settings_dao
+    service.notify_admins = AsyncMock()
+    service._send_to_route = AsyncMock()
+    await service.on_system_event(event)
+    if not enabled:
+        service.notify_admins.assert_not_awaited()
+        service._send_to_route.assert_not_awaited()
+        return
+    if destination == "admins":
+        service.notify_admins.assert_awaited_once()
+        payload = service.notify_admins.await_args.args[0]
+    else:
+        service._send_to_route.assert_awaited_once()
+        payload, route = service._send_to_route.await_args.args
+        assert route.chat_id == (-100999 if destination == "event_route" else -100777)
+        assert route.thread_id == (25 if destination == "event_route" else 15)
+    assert payload.reply_markup == get_user_keyboard(h.actor.id)
+    assert payload.delete_after is None and not payload.disable_default_markup

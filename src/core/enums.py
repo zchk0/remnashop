@@ -272,6 +272,7 @@ class SystemNotificationType(UpperStrEnum):
     SUBSCRIPTION = auto()
     PROMOCODE_ACTIVATED = auto()
     TRIAL_ACTIVATED = auto()
+    EARNING_TASK_COMPLETED = auto()
     #
     NODE_STATUS_CHANGED = auto()
     NODE_TRAFFIC_REACHED = auto()

@@ -81,7 +81,7 @@ async def seed_task(engine, *, max_claims=None):
         return task
 
 
-async def claim(engine, task_id, user_id):
+async def claim(engine, task_id, user_id, *, publish=None):
     async with AsyncSession(engine, expire_on_commit=False) as session:
         actor = UserDto(id=user_id, telegram_id=100 + user_id, name="Test")
 
@@ -105,6 +105,7 @@ async def claim(engine, task_id, user_id):
             SimpleNamespace(),
             RetortProvider().get_retort(),
             UnitOfWorkImpl(session),
+            SimpleNamespace(publish=publish or AsyncMock()),
         )
         try:
             await service(actor, task_id)
@@ -115,11 +116,14 @@ async def claim(engine, task_id, user_id):
 
 async def test_postgres_last_slot_cannot_be_claimed_twice(earning_database):
     task = await seed_task(earning_database, max_claims=1)
+    publish = AsyncMock()
     results = await asyncio.gather(
-        claim(earning_database, task.id, 1),
-        claim(earning_database, task.id, 2),
+        claim(earning_database, task.id, 1, publish=publish),
+        claim(earning_database, task.id, 2, publish=publish),
     )
     assert sorted(results) == ["completed", "ntf-earning.full"]
+    publish.assert_awaited_once()
+    assert publish.await_args.args[0].task_id == task.id
     async with AsyncSession(earning_database) as session:
         stored = await EarningDaoImpl(session).get_task(task.id)
         assert stored.claims_count == 1
@@ -127,11 +131,13 @@ async def test_postgres_last_slot_cannot_be_claimed_twice(earning_database):
 
 async def test_postgres_double_click_has_one_ledger_entry(earning_database):
     task = await seed_task(earning_database)
+    publish = AsyncMock()
     results = await asyncio.gather(
-        claim(earning_database, task.id, 1),
-        claim(earning_database, task.id, 1),
+        claim(earning_database, task.id, 1, publish=publish),
+        claim(earning_database, task.id, 1, publish=publish),
     )
     assert sorted(results) == ["completed", "ntf-earning.already-claimed"]
+    publish.assert_awaited_once()
     async with AsyncSession(earning_database) as session:
         rows = (await session.scalars(select(ChannelClaim))).all()
         assert len(rows) == 1 and rows[0].status == "completed"

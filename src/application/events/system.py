@@ -1,13 +1,14 @@
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
+from html import escape
 from typing import Any, Optional
 from uuid import UUID
 
 from aiogram.utils.formatting import Text
 
 from src.__version__ import __version__
-from src.application.dto import BuildInfoDto, MediaDescriptorDto, MessagePayloadDto
-from src.core.constants import REMNAWAVE_MAX_VERSION, REPOSITORY
+from src.application.dto import BuildInfoDto, MediaDescriptorDto, MessagePayloadDto, SubscriptionDto
+from src.core.constants import REMNAWAVE_MAX_VERSION, REPOSITORY, TIMEZONE
 from src.core.enums import (
     AccessMode,
     MediaType,
@@ -18,6 +19,12 @@ from src.core.enums import (
     SystemNotificationType,
 )
 from src.core.types import NotificationType
+from src.core.utils.i18n_helpers import (
+    i18n_format_bytes_to_unit,
+    i18n_format_device_limit,
+    i18n_format_traffic_limit,
+)
+from src.core.utils.i18n_keys import UtilKey
 from src.core.utils.panel_identity import PanelUserRef
 
 from .base import BaseEvent, SystemEvent
@@ -570,6 +577,132 @@ class PromocodeActivatedEvent(SystemEvent):
                 "promocode_type": self.reward_type,  # used by promocode-type term + reward branch
                 "reward": self.reward if self.reward is not None else 0,
                 "plan_name": self.plan_name or "—",
+            },
+            disable_default_markup=False,
+            delete_after=None,
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class EarningTaskCompletedEvent(UserEvent):
+    notification_type: NotificationType = field(
+        default=SystemNotificationType.EARNING_TASK_COMPLETED,
+        init=False,
+    )
+
+    task_id: int
+    channel_id: int
+    channel_title: str
+    channel_url: str
+    days: int
+    reset_traffic: bool
+    discount: int
+    discount_before: int
+    discount_after: int
+    subscription_before: SubscriptionDto | None
+    subscription_after: SubscriptionDto | None
+    subscription_before_known: bool = True
+    traffic_before: int | None = None
+    traffic_after: int | None = None
+
+    def as_payload(self) -> MessagePayloadDto:
+        before, after = self.subscription_before, self.subscription_after
+        unknown = ("earning-event-unknown", {})
+        no_subscription = ("earning-event-no-subscription", {})
+
+        def plan(subscription: SubscriptionDto | None) -> Any:
+            return escape(subscription.plan_snapshot.name) if subscription else no_subscription
+
+        def kind(subscription: SubscriptionDto | None) -> Any:
+            if subscription is None:
+                return no_subscription
+            return (
+                "earning-event-trial" if subscription.is_trial else "earning-event-regular",
+                {},
+            )
+
+        def expiration(subscription: SubscriptionDto | None) -> Any:
+            if subscription is None:
+                return no_subscription
+            if subscription.is_unlimited:
+                return UtilKey.UNLIMITED, {}
+            return subscription.expire_at.astimezone(TIMEZONE).strftime("%d.%m.%Y %H:%M UTC")
+
+        def traffic(value: int | None) -> Any:
+            return i18n_format_bytes_to_unit(value) if value is not None else unknown
+
+        return MessagePayloadDto(
+            i18n_key=self.event_key,
+            i18n_kwargs={
+                "telegram_id": self.telegram_id or 0,
+                "username": escape(self.username) if self.username else 0,
+                "email": escape(self.email or ""),
+                "name": escape(self.name),
+                "task_id": str(self.task_id),
+                "channel_id": str(self.channel_id),
+                "channel_title": escape(self.channel_title),
+                "channel_url": escape(self.channel_url, quote=True),
+                "days": self.days,
+                "reset_traffic": int(self.reset_traffic),
+                "discount": self.discount,
+                "discount_before": self.discount_before,
+                "discount_after": self.discount_after,
+                "plan_changed": int(
+                    bool(
+                        self.days
+                        and (
+                            not before
+                            or not after
+                            or (
+                                before.plan_snapshot.id != after.plan_snapshot.id
+                                or before.plan_snapshot.name != after.plan_snapshot.name
+                            )
+                        )
+                    )
+                ),
+                "plan_before": plan(before) if self.subscription_before_known else unknown,
+                "plan_after": plan(after),
+                "kind_changed": int(
+                    bool(
+                        self.days and (not before or not after or before.is_trial != after.is_trial)
+                    )
+                ),
+                "kind_before": kind(before) if self.subscription_before_known else unknown,
+                "kind_after": kind(after),
+                "expire_before": expiration(before) if self.subscription_before_known else unknown,
+                "expire_after": expiration(after),
+                "traffic_before": traffic(self.traffic_before),
+                "traffic_after": traffic(self.traffic_after),
+                "traffic_limit_changed": int(
+                    bool(
+                        self.days
+                        and after
+                        and (not before or before.traffic_limit != after.traffic_limit)
+                    )
+                ),
+                "traffic_limit_before": (
+                    i18n_format_traffic_limit(before.traffic_limit) if before else no_subscription
+                )
+                if self.subscription_before_known
+                else unknown,
+                "traffic_limit_after": (
+                    i18n_format_traffic_limit(after.traffic_limit) if after else unknown
+                ),
+                "device_limit_changed": int(
+                    bool(
+                        self.days
+                        and after
+                        and (not before or before.device_limit != after.device_limit)
+                    )
+                ),
+                "device_limit_before": (
+                    i18n_format_device_limit(before.device_limit) if before else no_subscription
+                )
+                if self.subscription_before_known
+                else unknown,
+                "device_limit_after": (
+                    i18n_format_device_limit(after.device_limit) if after else unknown
+                ),
             },
             disable_default_markup=False,
             delete_after=None,

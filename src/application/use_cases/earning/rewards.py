@@ -5,15 +5,18 @@ from uuid import uuid4
 
 from adaptix import Retort, dumper
 from aiogram.enums import ChatMemberStatus
+from loguru import logger
 
-from src.application.common import BotService, Interactor, Remnawave
+from src.application.common import BotService, EventPublisher, Interactor, Remnawave
 from src.application.common.dao import PlanDao, SettingsDao, SubscriptionDao, UserDao
 from src.application.common.dao.earning import EarningDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, SubscriptionDto, UserDto
 from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto
+from src.application.events import EarningTaskCompletedEvent
 from src.core.enums import SubscriptionStatus
+from src.core.types import RemnaUserDto
 from src.core.utils.panel_identity import subscription_ref
 from src.core.utils.time import datetime_now
 
@@ -93,6 +96,7 @@ class ClaimChannelReward(Interactor[int, None]):
         remnawave: Remnawave,
         retort: Retort,
         uow: UnitOfWork,
+        event_publisher: EventPublisher,
     ) -> None:
         self.earning_dao = earning_dao
         self.settings_dao = settings_dao
@@ -103,6 +107,7 @@ class ClaimChannelReward(Interactor[int, None]):
         self.remnawave = remnawave
         self.retort = retort.extend(recipe=[dumper(datetime, datetime.isoformat)])
         self.uow = uow
+        self.event_publisher = event_publisher
 
     async def _execute(self, actor: UserDto, task_id: int) -> None:
         settings = await self.settings_dao.get()
@@ -162,6 +167,9 @@ class ClaimChannelReward(Interactor[int, None]):
             "reset_traffic": task.reset_traffic,
             "old_subscription_id": subscription.id if subscription else None,
             "old_expire_at": subscription.expire_at.isoformat() if subscription else None,
+            "subscription_before": (
+                self.retort.dump(subscription, SubscriptionDto) if subscription else None
+            ),
             "replace": False,
         }
         days = task.reward_days(subscription)
@@ -225,33 +233,94 @@ class ClaimChannelReward(Interactor[int, None]):
             )
             if target and not claim.subscription_applied:
                 await self._apply_subscription(actor, claim, target)
-            if payload["reset_traffic"] and not claim.reset_applied and target:
-                claim.reset_started = True
-                await self.earning_dao.save_claim(claim)
-                await self.uow.commit()
-                await self.earning_dao.lock_user(actor.id)
-                current = await self.subscription_dao.get_current(actor.id)
-                if not current or current.id != target.id:
-                    raise EarningError("ntf-earning.review-required")
-                result = await self.remnawave.reset_traffic(subscription_ref(target))
-                if result is None:
-                    raise EarningError("ntf-earning.review-required")
-                claim.reset_applied = True
-            if payload["reset_traffic"] and claim.reset_applied and target:
-                current = await self.subscription_dao.get_current(actor.id)
-                if (
-                    current
-                    and current.id == target.id
-                    and current.status == SubscriptionStatus.LIMITED
-                ):
-                    await self.subscription_dao.update_status(current.id, SubscriptionStatus.ACTIVE)
+                payload = claim.payload
+            if payload["reset_traffic"] and target:
+                await self._apply_traffic_reset(actor, claim, target)
             fresh_user = await self.user_dao.get_by_id(actor.id)
+            discount_before = (
+                fresh_user.purchase_discount if fresh_user else actor.purchase_discount
+            )
             if fresh_user and payload["discount"] > fresh_user.purchase_discount:
                 fresh_user.purchase_discount = payload["discount"]
                 await self.user_dao.update(fresh_user)
+            task = payload["task_snapshot"]
+            user = fresh_user or actor
+            event = EarningTaskCompletedEvent(
+                user_id=user.id,
+                telegram_id=user.telegram_id,
+                username=user.username,
+                email=user.email,
+                name=user.name,
+                task_id=task_id,
+                channel_id=task["channel_id"],
+                channel_title=task["title"],
+                channel_url=task["channel_url"],
+                days=payload["days"],
+                reset_traffic=payload["reset_traffic"],
+                discount=payload["discount"],
+                discount_before=discount_before,
+                discount_after=user.purchase_discount,
+                subscription_before=(
+                    self.retort.load(payload["subscription_before"], SubscriptionDto)
+                    if payload.get("subscription_before")
+                    else None
+                ),
+                subscription_after=await self.subscription_dao.get_current(actor.id),
+                subscription_before_known="subscription_before" in payload,
+                traffic_before=payload.get("traffic_before"),
+                traffic_after=payload.get("traffic_after"),
+            )
             claim.status = "completed"
             await self.earning_dao.save_claim(claim)
             await self.uow.commit()
+
+        # A notification failure must not turn an already granted reward into an error.
+        try:
+            await self.event_publisher.publish(event)
+        except Exception:
+            logger.exception(
+                f"Failed to publish completion of earning task '{task_id}' for '{actor.id}'"
+            )
+
+    @staticmethod
+    def _traffic_used(user: RemnaUserDto | None) -> int | None:
+        return user.user_traffic.used_traffic_bytes if user else None
+
+    async def _get_traffic_used(self, subscription: SubscriptionDto) -> int | None:
+        try:
+            return self._traffic_used(
+                await self.remnawave.get_user_by_uuid(subscription_ref(subscription))
+            )
+        except Exception:
+            logger.opt(exception=True).warning(
+                f"Could not read traffic before/after earning reward for '{subscription.user_id}'"
+            )
+            return None
+
+    async def _apply_traffic_reset(
+        self, actor: UserDto, claim: ChannelClaimDto, target: SubscriptionDto
+    ) -> None:
+        payload = claim.payload
+        if not claim.reset_applied:
+            payload["traffic_before"] = await self._get_traffic_used(target)
+            claim.reset_started = True
+            await self.earning_dao.save_claim(claim)
+            await self.uow.commit()
+            await self.earning_dao.lock_user(actor.id)
+            current = await self.subscription_dao.get_current(actor.id)
+            if not current or current.id != target.id:
+                raise EarningError("ntf-earning.review-required")
+            result = await self.remnawave.reset_traffic(subscription_ref(target))
+            if result is None:
+                raise EarningError("ntf-earning.review-required")
+            claim.reset_applied = True
+            payload["traffic_after"] = self._traffic_used(result)
+        if "traffic_after" not in payload:
+            # An administrator can confirm a reset whose response was lost.
+            payload["traffic_after"] = await self._get_traffic_used(target)
+        current = await self.subscription_dao.get_current(actor.id)
+        if current and current.id == target.id and current.status == SubscriptionStatus.LIMITED:
+            await self.subscription_dao.update_status(current.id, SubscriptionStatus.ACTIVE)
 
     async def _apply_subscription(
         self,

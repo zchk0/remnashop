@@ -488,6 +488,56 @@ event-payment =
 
     Платеж получен, но не удалось выдать подписку. Транзакция помечена как FAILED. Требуется ручная проверка.
 
+event-earning-task-completed =
+    <b>✅ Событие: Выполнение задания!</b>
+
+    { hdr-user }
+    { frg-user-info }
+
+    <b>📣 Выполненное задание</b>:
+    <blockquote>
+    • <b>Канал</b>: <a href="{ $channel_url }">{ $channel_title }</a>
+    • <b>ID канала</b>: <code>{ $channel_id }</code>
+    </blockquote>
+
+    <b>🎁 Награда</b>:
+    <blockquote>
+    { $days ->
+        [0] { empty }
+        *[HAS] • <b>Дни подписки</b>: +{ NUMBER($days, useGrouping: 0) }
+        • <b>Срок подписки</b>: { $expire_before } → { $expire_after }
+    }
+    { $plan_changed ->
+        [1] • <b>Тариф</b>: { $plan_before } → { $plan_after }
+        *[0] { empty }
+    }
+    { $kind_changed ->
+        [1] • <b>Тип подписки</b>: { $kind_before } → { $kind_after }
+        *[0] { empty }
+    }
+    { $traffic_limit_changed ->
+        [1] • <b>Лимит трафика</b>: { $traffic_limit_before } → { $traffic_limit_after }
+        *[0] { empty }
+    }
+    { $device_limit_changed ->
+        [1] • <b>Лимит устройств</b>: { $device_limit_before } → { $device_limit_after }
+        *[0] { empty }
+    }
+    { $reset_traffic ->
+        [1] • <b>Сброс трафика</b>: { $traffic_before } → { $traffic_after }
+        *[0] { empty }
+    }
+    { $discount ->
+        [0] { empty }
+        *[HAS] • <b>Скидка на следующую покупку</b>: { NUMBER($discount_before, useGrouping: 0) }% → { NUMBER($discount_after, useGrouping: 0) }%
+    }
+    </blockquote>
+
+earning-event-unknown = Нет данных
+earning-event-no-subscription = Нет подписки
+earning-event-trial = Пробная
+earning-event-regular = Обычная
+
 event-remnashop-welcome =
     <b>💎 Meow VPN (ToBeVPN) v{ $version }</b>
 

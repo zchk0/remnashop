@@ -41,6 +41,7 @@ from src.application.events.base import BaseEvent, UserEvent
 from src.application.events.system import (
     BlacklistRegistrationAttemptEvent,
     BotUpdateEvent,
+    EarningTaskCompletedEvent,
     PromocodeActivatedEvent,
     RemnashopWelcomeEvent,
     SubscriptionRevokedEvent,
@@ -153,6 +154,7 @@ class NotificationService(Notifier):
                 TrialActivatedEvent,
                 SubscriptionRevokedEvent,
                 PromocodeActivatedEvent,
+                EarningTaskCompletedEvent,
             ),
         ):
             return get_user_keyboard(event.user_id)

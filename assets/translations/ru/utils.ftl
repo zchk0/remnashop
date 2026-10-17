@@ -497,6 +497,7 @@ notification-type = { $notification_type ->
     [SUBSCRIPTION] Оформление подписки
     [PROMOCODE_ACTIVATED] Активация промокода
     [TRIAL_ACTIVATED] Активация пробника
+    [EARNING_TASK_COMPLETED] Выполнение задания
     [NODE_STATUS_CHANGED] Статус узла
     [NODE_TRAFFIC_REACHED] Трафик узла
     [TORRENT_BLOCKER] Обнаружение Torrent
