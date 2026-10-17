@@ -12,12 +12,14 @@ import pytest
 from adaptix import Retort
 from aiogram_dialog import BgManagerFactory
 from dishka import make_async_container
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from pydantic import SecretStr
 from remnapy import RemnawaveSDK
 from remnapy.enums import TrafficLimitStrategy
 from starlette.requests import Request
 
+from src.application.common import Remnawave
+from src.application.common.dao import LinkedDeviceDao
 from src.application.dto import PlanSnapshotDto, RemnaSubscriptionDto, SubscriptionDto, UserDto
 from src.application.dto.promocode import PromocodeActivationDto
 from src.application.services.remnawave import RemnaWebhookService
@@ -58,6 +60,8 @@ from src.web.endpoints.devices import (
     _build_panel_user_data,
     _create_auth_token,
     _get_panel_device_ids,
+    get_device_auth_context,
+    save_email,
 )
 from src.web.endpoints.remnawave import _process_remnawave_webhook
 
@@ -546,3 +550,86 @@ async def test_both_application_containers_validate_versioned_dependencies():
             *providers(), context={AppConfig: AppConfig.get(), BgManagerFactory: object()}
         )
         await container.close()
+
+
+@pytest.mark.parametrize("linked", [True, False])
+async def test_client_can_save_email_using_only_its_device_session(panel, linked):
+    device_id = "device-a"
+    username = (
+        "test-user" if linked else "app_" + hashlib.sha256(device_id.encode()).hexdigest()[:32]
+    )
+    user = _user(username=username, telegramId=123 if linked else None)
+    _reply(panel, user)
+    _reply(panel, user | {"email": "test@example.org"})
+    response = await _email_request(
+        body={"email": "test@example.org"},
+        auth=DeviceAuthContext(
+            device_id=device_id,
+            telegram_id=123 if linked else None,
+            panel_user_id=42 if linked else None,
+        ),
+        remnawave=panel.service,
+        remnawave_sdk=panel.client,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "data": None}
+    assert len(panel.requests) == 2
+    lookup = "/api/users/42" if linked else f"/api/users/by-username/{username}"
+    assert panel.requests[0].url.path == lookup
+    assert panel.requests[1].method == "PATCH"
+    assert json.loads(panel.requests[1].content) == {"id": 42, "email": "test@example.org"}
+
+
+@pytest.mark.parametrize(
+    "claimed_identity", [{"panel_user_id": 99}, {"panel_user_uuid": str(uuid4())}]
+)
+async def test_email_identity_cannot_override_current_device_user(panel, claimed_identity):
+    _reply(panel, _user())
+    response = await _email_request(
+        body={"email": "test@example.org", **claimed_identity},
+        auth=DeviceAuthContext(device_id="device-a", telegram_id=123, panel_user_id=42),
+        remnawave=panel.service,
+        remnawave_sdk=panel.client,
+    )
+    assert response.status_code == 403
+    assert len(panel.requests) == 1
+
+
+async def test_email_only_request_also_works_with_v2_user():
+    legacy_uuid = uuid4()
+    user = SimpleNamespace(uuid=legacy_uuid, id=42)
+    remnawave = SimpleNamespace(get_user_by_uuid=AsyncMock(return_value=user))
+    update = AsyncMock()
+    response = await _email_request(
+        body={"email": "test@example.org"},
+        auth=DeviceAuthContext(device_id="device-a", telegram_id=123, panel_user_id=42),
+        remnawave=remnawave,
+        remnawave_sdk=SimpleNamespace(users=SimpleNamespace(update_user_fields=update)),
+    )
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "data": None}
+    remnawave.get_user_by_uuid.assert_awaited_once_with(42)
+    update.assert_awaited_once_with(legacy_uuid, email="test@example.org")
+
+
+async def _email_request(*, body, auth, remnawave, remnawave_sdk):
+    deps = {
+        LinkedDeviceDao: SimpleNamespace(),
+        Remnawave: remnawave,
+        PanelClient: remnawave_sdk,
+    }
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def inject_container(request, call_next):
+        request.state.dishka_container = SimpleNamespace(
+            get=AsyncMock(side_effect=lambda dependency, component="": deps[dependency])
+        )
+        return await call_next(request)
+
+    app.dependency_overrides[get_device_auth_context] = lambda: auth
+    app.post("/api/device/save-email")(save_email)
+    async with httpx.AsyncClient(
+        base_url="https://bot.example.org", transport=httpx.ASGITransport(app)
+    ) as client:
+        return await client.post("/api/device/save-email", json=body)

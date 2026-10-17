@@ -20,6 +20,13 @@ class RemnawaveConfig(BaseConfig, env_prefix="REMNAWAVE_"):
     webhook_secret: SecretStr
     cookie: SecretStr = SecretStr("")
 
+    @field_validator("api_version", mode="before")
+    @classmethod
+    def parse_api_version(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip() in {"2", "3"}:
+            return int(value.strip())
+        return value
+
     @property
     def is_external(self) -> bool:
         return self.url.get_secret_value().startswith("https://")
