@@ -236,7 +236,7 @@ async def on_save(
         return
     dialog_manager.dialog_data["task"] = asdict(task)
     await callback.answer(i18n.get("ntf-earning.saved"))
-    await dialog_manager.switch_to(DashboardEarning.MAIN)
+    await dialog_manager.switch_to(DashboardEarning.CHANNELS)
 
 
 async def on_claim_select(

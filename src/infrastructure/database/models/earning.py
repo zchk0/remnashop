@@ -1,6 +1,15 @@
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,7 +42,14 @@ class ChannelTask(BaseSql, TimestampMixin):
 
 class ChannelClaim(BaseSql, TimestampMixin):
     __tablename__ = "channel_claims"
-    __table_args__ = (UniqueConstraint("task_id", "user_id", name="uq_channel_claim_user"),)
+    __table_args__ = (
+        UniqueConstraint("task_id", "user_id", name="uq_channel_claim_user"),
+        Index(
+            "ix_channel_claims_completed_at",
+            "completed_at",
+            postgresql_where=text("status = 'completed'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("channel_tasks.id", ondelete="RESTRICT"))
@@ -43,3 +59,4 @@ class ChannelClaim(BaseSql, TimestampMixin):
     subscription_applied: Mapped[bool]
     reset_started: Mapped[bool]
     reset_applied: Mapped[bool]
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

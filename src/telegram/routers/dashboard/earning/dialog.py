@@ -1,6 +1,7 @@
 from aiogram.enums import ButtonStyle
 from aiogram_dialog import Dialog, StartMode
 from aiogram_dialog.widgets.input import MessageInput
+from aiogram_dialog.widgets.link_preview import LinkPreview
 from aiogram_dialog.widgets.style import Style
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
@@ -10,7 +11,7 @@ from src.telegram.widgets import I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import Button, Row, ScrollingGroup, Select, Start, SwitchTo
 from src.telegram.window import Window
 
-from .getters import admin_getter
+from .getters import admin_getter, channels_getter
 from .handlers import (
     on_claim_resolve,
     on_claim_select,
@@ -37,6 +38,7 @@ def edit_button(field: str, *, setting: bool = False) -> Button:
 router = Dialog(
     Window(
         I18nFormat("msg-earning-admin"),
+        LinkPreview(is_disabled=True),
         Row(Button(I18nFormat("btn-earning.enabled"), id="enabled", on_click=on_settings_action)),
         Row(
             SwitchTo(
@@ -52,6 +54,26 @@ router = Dialog(
         Row(
             SwitchTo(I18nFormat("btn-earning.pending"), id="claims", state=DashboardEarning.CLAIMS)
         ),
+        Row(
+            SwitchTo(
+                I18nFormat("btn-earning.channels"), id="channels", state=DashboardEarning.CHANNELS
+            )
+        ),
+        Row(
+            Start(
+                I18nFormat("btn-back.general"),
+                id="back",
+                state=Dashboard.MAIN,
+                mode=StartMode.RESET_STACK,
+            )
+        ),
+        IgnoreUpdate(),
+        state=DashboardEarning.MAIN,
+        getter=admin_getter,
+    ),
+    Window(
+        I18nFormat("msg-earning-channels"),
+        LinkPreview(is_disabled=True),
         Row(Button(I18nFormat("btn-earning.create"), id="create", on_click=on_create)),
         ScrollingGroup(
             Select(
@@ -66,17 +88,10 @@ router = Dialog(
             height=6,
             hide_on_single_page=True,
         ),
-        Row(
-            Start(
-                I18nFormat("btn-back.general"),
-                id="back",
-                state=Dashboard.MAIN,
-                mode=StartMode.RESET_STACK,
-            )
-        ),
+        Row(SwitchTo(I18nFormat("btn-back.general"), id="back", state=DashboardEarning.MAIN)),
         IgnoreUpdate(),
-        state=DashboardEarning.MAIN,
-        getter=admin_getter,
+        state=DashboardEarning.CHANNELS,
+        getter=channels_getter,
     ),
     Window(
         I18nFormat("msg-earning-admin-task"),
@@ -108,7 +123,7 @@ router = Dialog(
                 style=Style(ButtonStyle.DANGER),
             )
         ),
-        Row(SwitchTo(I18nFormat("btn-common.cancel"), id="back", state=DashboardEarning.MAIN)),
+        Row(SwitchTo(I18nFormat("btn-common.cancel"), id="back", state=DashboardEarning.CHANNELS)),
         IgnoreUpdate(),
         state=DashboardEarning.TASK,
         getter=admin_getter,
@@ -143,8 +158,8 @@ router = Dialog(
         *[
             Row(
                 Button(
-                I18nFormat(f"btn-menu-editor.color-{color.value if color else 'default'}"),
-                id=f"color_{color.value if color else 'default'}",
+                    I18nFormat(f"btn-menu-editor.color-{color.value if color else 'default'}"),
+                    id=f"color_{color.value if color else 'default'}",
                     on_click=on_settings_action,
                     style=Style(color),
                 )

@@ -9,11 +9,12 @@ from fluent_compiler.bundle import FluentBundle
 from fluentogram.translator import FluentTranslator
 
 from src.application.dto import PlanDto, SettingsDto, UserDto
-from src.application.dto.earning import ChannelTaskDto
+from src.application.dto.earning import ChannelTaskDto, EarningStatisticsDto
+from src.application.use_cases.earning.channels import EarningChannelsDto
 from src.core.constants import CONTAINER_KEY, USER_KEY
 from src.core.enums import Role
 from src.telegram.routers.dashboard.earning.dialog import router as admin_dialog
-from src.telegram.routers.dashboard.earning.getters import admin_getter
+from src.telegram.routers.dashboard.earning.getters import admin_getter, channels_getter
 from src.telegram.routers.dashboard.earning.handlers import on_plan_select
 from src.telegram.routers.earning.dialog import router as user_dialog
 from src.telegram.routers.earning.handlers import on_task_select
@@ -93,15 +94,31 @@ async def test_all_user_and_admin_windows_render_with_real_translations():
         tasks=[{"id": 1, "label": "Channel"}],
         has_tasks=True,
         task_available=True,
-        remaining="∞",
         allowed=True,
         support_url="https://t.me/support",
     )
     for dialog in (admin_dialog, user_dialog):
         for window in dialog.windows.values():
-            text = await window.render_text(data, manager)
+            window_data = data
+            if window.state == DashboardEarning.CHANNELS:
+                window_data = await channels_getter.__dishka_orig_func__(
+                    dialog_manager=manager,
+                    get_channels=AsyncMock(
+                        return_value=EarningChannelsDto(
+                            tasks=[task],
+                            statistics=EarningStatisticsDto(
+                                daily=2,
+                                weekly=4,
+                                monthly=8,
+                                total=16,
+                                active_tasks=1,
+                            ),
+                        )
+                    ),
+                )
+            text = await window.render_text(window_data, manager)
             assert text and len(text) <= 4096
-            keyboard = await window.keyboard.render_keyboard(data, manager)
+            keyboard = await window.keyboard.render_keyboard(window_data, manager)
             assert keyboard
             for row in keyboard:
                 for button in row:
@@ -119,3 +136,17 @@ async def test_all_user_and_admin_windows_render_with_real_translations():
     ):
         data["input_key"] = "msg-earning-input-" + field
         assert await admin_dialog.windows[DashboardEarning.INPUT].render_text(data, manager)
+
+
+def test_channels_are_on_a_separate_admin_tab():
+    main = admin_dialog.windows[DashboardEarning.MAIN]
+    channels = admin_dialog.windows[DashboardEarning.CHANNELS]
+    assert main.keyboard.find("channels").state == DashboardEarning.CHANNELS
+    assert main.keyboard.find("create") is None
+    assert main.keyboard.find("task_scroll") is None
+    assert channels.keyboard.find("create") is not None
+    assert channels.keyboard.find("task_scroll") is not None
+    assert channels.keyboard.find("back").state == DashboardEarning.MAIN
+    assert admin_dialog.windows[DashboardEarning.TASK].keyboard.find("back").state == (
+        DashboardEarning.CHANNELS
+    )

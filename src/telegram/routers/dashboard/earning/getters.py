@@ -9,6 +9,7 @@ from src.application.common import TranslatorRunner
 from src.application.common.dao import PlanDao, SettingsDao
 from src.application.common.dao.earning import EarningDao
 from src.application.dto.earning import ChannelTaskDto
+from src.application.use_cases.earning.channels import GetEarningChannels
 from src.telegram.routers.earning.getters import reward_text
 
 from .handlers import admin_actor
@@ -25,7 +26,6 @@ async def admin_getter(
 ) -> dict[str, Any]:
     admin_actor(dialog_manager)
     settings = (await settings_dao.get()).earning
-    tasks = await earning_dao.list_tasks()
     plans = [plan for plan in await plan_dao.get_all() if not plan.is_trial]
     names = {plan.id: plan.name for plan in plans}
     task = ChannelTaskDto(**dialog_manager.dialog_data.get("task", {}))
@@ -73,14 +73,6 @@ async def admin_getter(
         "selected_ids": escape(", ".join(map(str, settings.allowed_telegram_ids)) or "—"),
         "button_text": escape(settings.button_text),
         "price": escape(settings.subscriber_price),
-        "tasks": [
-            {
-                "id": item.id,
-                "label": f"{'🟢' if item.active else '⚪'} {item.title}"
-                f" · {item.claims_count}/{item.max_claims or '∞'}",
-            }
-            for item in tasks
-        ],
         "title": escape(task.title),
         "channel_id": task.channel_id or unset,
         "channel_url": escape(task.channel_url or unset),
@@ -99,4 +91,30 @@ async def admin_getter(
             {"id": 0, "name": unset},
             *[{"id": plan.id, "name": plan.name} for plan in plans],
         ],
+    }
+
+
+@inject
+async def channels_getter(
+    dialog_manager: DialogManager,
+    get_channels: FromDishka[GetEarningChannels],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    result = await get_channels(admin_actor(dialog_manager))
+    stats = result.statistics
+    return {
+        "tasks": [
+            {
+                "id": task.id,
+                "label": f"{'✅' if task.is_completed else '🟢' if task.active else '⚪'} "
+                f"{task.title} · {task.completed_claims_count}/{task.max_claims or '∞'}",
+            }
+            for task in result.tasks
+        ],
+        "completed_daily": stats.daily,
+        "completed_weekly": stats.weekly,
+        "completed_monthly": stats.monthly,
+        "completed_total": stats.total,
+        "active_tasks": stats.active_tasks,
+        "completed_tasks": stats.completed_tasks,
     }

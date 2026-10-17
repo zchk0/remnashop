@@ -1,10 +1,13 @@
+from datetime import datetime
 from typing import Protocol
 
-from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto
+from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningStatisticsDto
 
 
 class EarningDao(Protocol):
     async def list_tasks(self) -> list[ChannelTaskDto]: ...
+
+    async def get_statistics(self, now: datetime) -> EarningStatisticsDto: ...
 
     async def get_task(self, task_id: int, *, lock: bool = False) -> ChannelTaskDto | None: ...
 

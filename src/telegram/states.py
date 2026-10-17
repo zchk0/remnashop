@@ -25,6 +25,7 @@ class Earning(StatesGroup):
 
 class DashboardEarning(StatesGroup):
     MAIN = State()
+    CHANNELS = State()
     TASK = State()
     INPUT = State()
     AUDIENCE = State()

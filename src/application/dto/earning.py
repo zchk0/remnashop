@@ -44,6 +44,11 @@ class ChannelTaskDto:
     trial_plan_id: int | None = None
     trial_days: int | None = None
     claims_count: int = 0
+    completed_claims_count: int = 0
+
+    @property
+    def is_completed(self) -> bool:
+        return self.max_claims is not None and self.completed_claims_count >= self.max_claims
 
     def reward_days(self, subscription: SubscriptionDto | None) -> int:
         if subscription and subscription.is_trial and self.trial_plan_id:
@@ -67,3 +72,13 @@ class ChannelClaimDto:
     subscription_applied: bool = False
     reset_started: bool = False
     reset_applied: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class EarningStatisticsDto:
+    daily: int = 0
+    weekly: int = 0
+    monthly: int = 0
+    total: int = 0
+    active_tasks: int = 0
+    completed_tasks: int = 0

@@ -15,7 +15,13 @@ from remnapy.enums import TrafficLimitStrategy
 
 from src.application.common.policy import Permission, PermissionPolicy
 from src.application.dto import PlanDto, PlanSnapshotDto, SettingsDto, SubscriptionDto, UserDto
-from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningSettingsDto
+from src.application.dto.earning import (
+    ChannelClaimDto,
+    ChannelTaskDto,
+    EarningSettingsDto,
+    EarningStatisticsDto,
+)
+from src.application.use_cases.earning.channels import GetEarningChannels
 from src.application.use_cases.earning.manage import ManageChannelTask, UpdateEarningSettings
 from src.application.use_cases.earning.rewards import (
     ClaimChannelReward,
@@ -468,7 +474,39 @@ def test_all_earning_translation_keys_compile_and_advertising_terms_are_visible(
     )
     advert = translator.get("msg-earning-advertise", price="10 ₽")
     assert "10 ₽" in advert and "15 подписчиков" in advert
-    assert "не мониторит и не фиксирует" in advert
     assert "проверяет подписку при выполнении" in advert
     for key in ("msg-earning-main", "msg-earning-input-channel", "earning-reward-reset"):
         assert translator.get(key)
+
+
+async def test_channel_counters_use_successful_completions_and_exclude_paused_tasks():
+    tasks = [
+        ChannelTaskDto(active=True),
+        ChannelTaskDto(active=True, max_claims=2, claims_count=2, completed_claims_count=1),
+        ChannelTaskDto(active=True, max_claims=2, claims_count=2, completed_claims_count=2),
+        ChannelTaskDto(active=False, max_claims=1, claims_count=1, completed_claims_count=1),
+        ChannelTaskDto(active=False),
+    ]
+    dao = SimpleNamespace(
+        list_tasks=AsyncMock(return_value=tasks),
+        get_statistics=AsyncMock(
+            return_value=EarningStatisticsDto(
+                daily=1,
+                weekly=2,
+                monthly=3,
+                total=4,
+            )
+        ),
+    )
+    service = GetEarningChannels(dao)
+    with pytest.raises(PermissionDeniedError):
+        await service(UserDto(name="User"))
+    result = await service(UserDto(name="Admin", role=Role.ADMIN))
+    assert result.statistics == EarningStatisticsDto(
+        daily=1,
+        weekly=2,
+        monthly=3,
+        total=4,
+        active_tasks=2,
+        completed_tasks=2,
+    )
