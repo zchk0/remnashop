@@ -32,6 +32,7 @@ class DashboardEarning(StatesGroup):
     COLOR = State()
     PLAN = State()
     DELETE = State()
+    RESET_CLAIMS = State()
     CLAIMS = State()
     CLAIM = State()
 

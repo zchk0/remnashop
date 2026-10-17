@@ -10,6 +10,27 @@ from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
 from src.application.dto.earning import ChannelTaskDto
 
+from .rewards import EarningError
+
+
+class ResetChannelTaskCompletions(Interactor[int, ChannelTaskDto]):
+    required_permission = Permission.MANAGE_EARNING
+
+    def __init__(self, earning_dao: EarningDao, uow: UnitOfWork) -> None:
+        self.earning_dao = earning_dao
+        self.uow = uow
+
+    async def _execute(self, actor: UserDto, task_id: int) -> ChannelTaskDto:
+        async with self.uow:
+            task = await self.earning_dao.get_task(task_id, lock=True)
+            if not task or task.deleted:
+                raise EarningError("ntf-earning.unavailable")
+            await self.earning_dao.reset_completed_claims(task_id)
+            updated = await self.earning_dao.get_task(task_id)
+            assert updated is not None
+            await self.uow.commit()
+            return updated
+
 
 class UpdateEarningSettings(Interactor[dict[str, Any], None]):
     required_permission = Permission.MANAGE_EARNING

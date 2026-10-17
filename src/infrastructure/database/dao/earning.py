@@ -1,7 +1,7 @@
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao.earning import EarningDao
@@ -145,3 +145,12 @@ class EarningDaoImpl(EarningDao):
         if claim.status == "completed" and row.completed_at is None:
             row.completed_at = datetime_now()
         await self.session.flush()
+
+    async def reset_completed_claims(self, task_id: int) -> None:
+        # Pending claims may already contain partially granted rewards.
+        await self.session.execute(
+            delete(ChannelClaim).where(
+                ChannelClaim.task_id == task_id,
+                ChannelClaim.status == "completed",
+            )
+        )

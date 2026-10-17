@@ -18,7 +18,11 @@ from src.application.common.dao.earning import EarningDao
 from src.application.common.policy import Permission, PermissionPolicy
 from src.application.dto import TelegramUserDto
 from src.application.dto.earning import ChannelTaskDto
-from src.application.use_cases.earning.manage import ManageChannelTask, UpdateEarningSettings
+from src.application.use_cases.earning.manage import (
+    ManageChannelTask,
+    ResetChannelTaskCompletions,
+    UpdateEarningSettings,
+)
 from src.application.use_cases.earning.rewards import (
     EarningError,
     ResolveEarningClaim,
@@ -249,6 +253,27 @@ async def on_claim_select(
     task_id, user_id = item_id.split(".")
     dialog_manager.dialog_data.update(claim_task_id=int(task_id), claim_user_id=int(user_id))
     await dialog_manager.switch_to(DashboardEarning.CLAIM)
+
+
+@inject
+async def on_reset_completions(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    reset_completions: FromDishka[ResetChannelTaskCompletions],
+    i18n: FromDishka[TranslatorRunner],
+) -> None:
+    actor = admin_actor(dialog_manager)
+    raw = dialog_manager.dialog_data["task"]
+    try:
+        task = await reset_completions(actor, raw["id"])
+    except EarningError as error:
+        await callback.answer(i18n.get(str(error)), show_alert=True)
+        return
+    raw["claims_count"] = task.claims_count
+    raw["completed_claims_count"] = task.completed_claims_count
+    await callback.answer(i18n.get("ntf-earning.completions-reset"), show_alert=True)
+    await dialog_manager.switch_to(DashboardEarning.TASK)
 
 
 @inject

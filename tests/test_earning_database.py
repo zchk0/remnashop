@@ -20,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from src.application.dto import PlanSnapshotDto, SettingsDto, SubscriptionDto, UserDto
 from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningSettingsDto
+from src.application.use_cases.earning.manage import ResetChannelTaskCompletions
 from src.application.use_cases.earning.rewards import ClaimChannelReward, EarningError
-from src.core.enums import SubscriptionStatus
+from src.core.enums import Role, SubscriptionStatus
+from src.core.utils.time import datetime_now
 from src.infrastructure.database.dao.earning import EarningDaoImpl
 from src.infrastructure.database.dao.subscription import SubscriptionDaoImpl
 from src.infrastructure.database.models import Subscription
@@ -145,6 +147,40 @@ async def test_postgres_double_click_has_one_ledger_entry(earning_database):
     async with AsyncSession(earning_database) as session:
         rows = (await session.scalars(select(ChannelClaim))).all()
         assert len(rows) == 1 and rows[0].status == "completed"
+
+
+async def test_postgres_reset_clears_statistics_and_allows_repeat_preserving_pending(
+    earning_database,
+):
+    task = await seed_task(earning_database, max_claims=2)
+    other_task = await seed_task(earning_database)
+    assert await claim(earning_database, task.id, 1) == "completed"
+    assert await claim(earning_database, other_task.id, 1) == "completed"
+    pending = ChannelClaimDto(
+        task_id=task.id,
+        user_id=2,
+        payload={"days": 7},
+        subscription_applied=True,
+        reset_started=True,
+    )
+    async with AsyncSession(earning_database, expire_on_commit=False) as session:
+        dao = EarningDaoImpl(session)
+        await dao.save_claim(pending)
+        await session.commit()
+        assert (await dao.get_statistics(datetime_now())).total == 2
+        reset = ResetChannelTaskCompletions(dao, UnitOfWorkImpl(session))
+        updated = await reset(UserDto(name="Admin", role=Role.ADMIN), task.id)
+        assert updated.claims_count == 1 and updated.completed_claims_count == 0
+        assert await dao.get_claim(task.id, 1) is None
+        assert await dao.get_claim(task.id, 2) == pending
+        assert (await dao.get_claim(other_task.id, 1)).status == "completed"
+        assert (await dao.get_statistics(datetime_now())).total == 1
+    assert await claim(earning_database, task.id, 1) == "completed"
+    async with AsyncSession(earning_database) as session:
+        dao = EarningDaoImpl(session)
+        updated = await dao.get_task(task.id)
+        assert updated.claims_count == 2 and updated.completed_claims_count == 1
+        assert (await dao.get_statistics(datetime_now())).total == 2
 
 
 @pytest.mark.parametrize("is_trial", [False, True])

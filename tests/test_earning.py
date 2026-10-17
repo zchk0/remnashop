@@ -23,7 +23,11 @@ from src.application.dto.earning import (
 )
 from src.application.events import EarningTaskCompletedEvent
 from src.application.use_cases.earning.channels import GetEarningChannels
-from src.application.use_cases.earning.manage import ManageChannelTask, UpdateEarningSettings
+from src.application.use_cases.earning.manage import (
+    ManageChannelTask,
+    ResetChannelTaskCompletions,
+    UpdateEarningSettings,
+)
 from src.application.use_cases.earning.rewards import (
     ClaimChannelReward,
     EarningError,
@@ -100,6 +104,7 @@ class RewardHarness:
             get_claims=AsyncMock(side_effect=self.get_claims),
             save_claim=AsyncMock(side_effect=self.save_claim),
             save_task=AsyncMock(),
+            reset_completed_claims=AsyncMock(side_effect=self.reset_completed_claims),
         )
         self.settings_dao = SimpleNamespace(
             get=AsyncMock(return_value=self.settings), update=AsyncMock()
@@ -154,8 +159,13 @@ class RewardHarness:
         )
 
     async def get_task(self, task_id, *, lock=False):
+        claims = [claim for claim in self.state["claims"].values() if claim.task_id == task_id]
         return (
-            replace(self.task, claims_count=len(self.state["claims"]))
+            replace(
+                self.task,
+                claims_count=len(claims),
+                completed_claims_count=sum(claim.status == "completed" for claim in claims),
+            )
             if task_id == self.task.id
             else None
         )
@@ -175,6 +185,13 @@ class RewardHarness:
         # Exercise the same JSON restriction as the PostgreSQL ledger.
         json.dumps(claim.payload)
         self.state["claims"][(claim.task_id, claim.user_id)] = deepcopy(claim)
+
+    async def reset_completed_claims(self, task_id):
+        self.state["claims"] = {
+            key: claim
+            for key, claim in self.state["claims"].items()
+            if claim.task_id != task_id or claim.status != "completed"
+        }
 
     async def update_subscription(self, sub):
         self.state["subscription"] = deepcopy(sub)
@@ -544,6 +561,59 @@ async def test_task_and_settings_management_requires_admin_and_tracks_full_setti
     assert h.settings.earning.button_text == "Награды"
     assert "earning" in h.settings.changed_data
     assert PermissionPolicy.has_permission(admin, Permission.MANAGE_EARNING)
+
+
+async def test_admin_can_reset_completed_task_and_user_can_earn_reward_again():
+    h = RewardHarness()
+    h.task = replace(h.task, max_claims=1, days=3)
+    await h.service(h.actor, 1)
+    assert not (await h.query()(h.actor)).tasks
+    granted_subscription = deepcopy(h.state["subscription"])
+    reset = ResetChannelTaskCompletions(h.earning_dao, h.uow)
+    with pytest.raises(PermissionDeniedError):
+        await reset(h.actor, 1)
+    updated = await reset(replace(h.actor, role=Role.ADMIN), 1)
+    assert updated.claims_count == updated.completed_claims_count == 0
+    assert updated.active and updated.max_claims == 1
+    assert h.state["subscription"] == granted_subscription
+    assert [task.id for task in (await h.query()(h.actor)).tasks] == [1]
+    await h.service(h.actor, 1)
+    assert h.state["subscription"].expire_at == NOW + timedelta(days=16)
+    assert h.state["claims"][(1, 1)].status == "completed"
+    assert h.bot_service.get_chat_member.await_count == 2
+    assert h.event_publisher.publish.await_count == 2
+
+
+async def test_reset_keeps_partial_rewards_and_completions_of_other_tasks():
+    h = RewardHarness()
+    h.state["claims"] = {
+        (1, 1): ChannelClaimDto(task_id=1, user_id=1, status="completed"),
+        (1, 2): ChannelClaimDto(
+            task_id=1,
+            user_id=2,
+            payload={"days": 7},
+            subscription_applied=True,
+            reset_started=True,
+        ),
+        (2, 1): ChannelClaimDto(task_id=2, user_id=1, status="completed"),
+    }
+    pending = deepcopy(h.state["claims"][(1, 2)])
+    reset = ResetChannelTaskCompletions(h.earning_dao, h.uow)
+    updated = await reset(replace(h.actor, role=Role.ADMIN), 1)
+    assert updated.claims_count == 1 and updated.completed_claims_count == 0
+    assert h.state["claims"][(1, 2)] == pending
+    assert h.state["claims"][(2, 1)].status == "completed"
+    assert (1, 1) not in h.state["claims"]
+
+
+@pytest.mark.parametrize("deleted", [False, True])
+async def test_reset_rejects_missing_or_deleted_task(deleted):
+    h = RewardHarness()
+    h.task.deleted = deleted
+    reset = ResetChannelTaskCompletions(h.earning_dao, h.uow)
+    with pytest.raises(EarningError, match="unavailable"):
+        await reset(replace(h.actor, role=Role.ADMIN), 1 if deleted else 999)
+    h.earning_dao.reset_completed_claims.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

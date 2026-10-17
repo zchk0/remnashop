@@ -20,6 +20,7 @@ from .handlers import (
     on_input,
     on_input_back,
     on_plan_select,
+    on_reset_completions,
     on_save,
     on_select,
     on_settings_action,
@@ -116,6 +117,14 @@ router = Dialog(
         ),
         Row(
             SwitchTo(
+                I18nFormat("btn-earning.reset-completions"),
+                id="reset_completions",
+                state=DashboardEarning.RESET_CLAIMS,
+                when=F["saved_task"],
+            )
+        ),
+        Row(
+            SwitchTo(
                 I18nFormat("btn-earning.delete"),
                 id="delete",
                 state=DashboardEarning.DELETE,
@@ -204,6 +213,21 @@ router = Dialog(
         Row(SwitchTo(I18nFormat("btn-common.cancel"), id="cancel", state=DashboardEarning.TASK)),
         IgnoreUpdate(),
         state=DashboardEarning.DELETE,
+        getter=admin_getter,
+    ),
+    Window(
+        I18nFormat("msg-earning-reset-completions"),
+        Row(
+            Button(
+                I18nFormat("btn-earning.reset-completions"),
+                id="confirm_reset_completions",
+                on_click=on_reset_completions,
+                style=Style(ButtonStyle.DANGER),
+            )
+        ),
+        Row(SwitchTo(I18nFormat("btn-common.cancel"), id="back", state=DashboardEarning.TASK)),
+        IgnoreUpdate(),
+        state=DashboardEarning.RESET_CLAIMS,
         getter=admin_getter,
     ),
     Window(

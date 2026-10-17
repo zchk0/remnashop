@@ -18,7 +18,7 @@ from src.telegram.routers.dashboard.broadcast.getters import buttons_getter
 from src.telegram.routers.dashboard.broadcast.handlers import on_button_select
 from src.telegram.routers.dashboard.earning.dialog import router as admin_dialog
 from src.telegram.routers.dashboard.earning.getters import admin_getter, channels_getter
-from src.telegram.routers.dashboard.earning.handlers import on_plan_select
+from src.telegram.routers.dashboard.earning.handlers import on_plan_select, on_reset_completions
 from src.telegram.routers.earning.dialog import router as user_dialog
 from src.telegram.routers.earning.handlers import on_task_select
 from src.telegram.routers.extra.goto import on_goto
@@ -155,6 +155,34 @@ def test_channels_are_on_a_separate_admin_tab():
     assert admin_dialog.windows[DashboardEarning.TASK].keyboard.find("back").state == (
         DashboardEarning.CHANNELS
     )
+
+
+async def test_reset_completions_has_confirmation_and_refreshes_counters_without_saving_edits():
+    task_window = admin_dialog.windows[DashboardEarning.TASK]
+    assert task_window.keyboard.find("reset_completions").state == DashboardEarning.RESET_CLAIMS
+    confirmation = admin_dialog.windows[DashboardEarning.RESET_CLAIMS]
+    assert confirmation.keyboard.find("back").state == DashboardEarning.TASK
+    actor = UserDto(name="Admin", role=Role.ADMIN)
+    manager = SimpleNamespace(
+        dialog_data={"task": asdict(ChannelTaskDto(id=1, days=99, claims_count=10))},
+        middleware_data={USER_KEY: actor},
+        switch_to=AsyncMock(),
+    )
+    reset = AsyncMock(return_value=ChannelTaskDto(id=1, days=7, claims_count=1))
+    callback = SimpleNamespace(answer=AsyncMock())
+    await on_reset_completions.__dishka_orig_func__(
+        callback=callback,
+        widget=None,
+        dialog_manager=manager,
+        reset_completions=reset,
+        i18n=SimpleNamespace(get=lambda key: key),
+    )
+    reset.assert_awaited_once_with(actor, 1)
+    assert manager.dialog_data["task"]["claims_count"] == 1
+    assert manager.dialog_data["task"]["completed_claims_count"] == 0
+    assert manager.dialog_data["task"]["days"] == 99
+    manager.switch_to.assert_awaited_once_with(DashboardEarning.TASK)
+    callback.answer.assert_awaited_once_with("ntf-earning.completions-reset", show_alert=True)
 
 
 def test_earning_banner_reuses_menu_until_replaced_and_keeps_other_sections_unchanged(tmp_path):
