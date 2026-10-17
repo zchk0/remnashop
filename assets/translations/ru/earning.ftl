@@ -33,9 +33,13 @@ earning-unset = Не выбран
 earning-audience-all = Все пользователи
 earning-audience-admins = Только администраторы
 earning-audience-selected = Выбранные пользователи
-earning-reward-days = +{ $days } дн.
-earning-reward-reset = сброс лимита трафика
-earning-reward-discount = скидка { $discount }% на следующую покупку
+earning-reward-days = +{ NUMBER($days, useGrouping: 0) } { $days ->
+    [one] день
+    [few] дня
+    *[OTHER] дней
+    }
+earning-reward-reset = Сброс лимита трафика
+earning-reward-discount = Скидка { $discount }% на следующую покупку
 earning-advertise-request = Здравствуйте! Хочу разместить свой канал в разделе «Заработай бесплатные дни».
 
 msg-earning-main =

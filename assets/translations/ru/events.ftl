@@ -489,6 +489,8 @@ event-payment =
     Платеж получен, но не удалось выдать подписку. Транзакция помечена как FAILED. Требуется ручная проверка.
 
 event-earning-task-completed =
+    #TaskCompletedEvent
+
     <b>✅ Событие: Выполнение задания!</b>
 
     { hdr-user }
