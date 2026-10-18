@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiogram.enums import ButtonStyle, ContentType
+from aiogram_dialog import ShowMode, StartMode
 from fluent_compiler.bundle import FluentBundle
 from fluentogram.translator import FluentTranslator
 
@@ -14,6 +15,7 @@ from src.application.use_cases.earning.channels import EarningChannelsDto
 from src.core.constants import CONFIG_KEY, CONTAINER_KEY, USER_KEY
 from src.core.enums import BannerName, Locale, Role
 from src.infrastructure.di.providers.retort import RetortProvider
+from src.infrastructure.services.command import CommandService
 from src.telegram.routers.dashboard.broadcast.getters import buttons_getter
 from src.telegram.routers.dashboard.broadcast.handlers import on_button_select
 from src.telegram.routers.dashboard.earning.dialog import router as admin_dialog
@@ -21,10 +23,44 @@ from src.telegram.routers.dashboard.earning.getters import admin_getter, channel
 from src.telegram.routers.dashboard.earning.handlers import on_plan_select, on_reset_completions
 from src.telegram.routers.earning.dialog import router as user_dialog
 from src.telegram.routers.earning.handlers import on_task_select
+from src.telegram.routers.extra.commands import on_tasks_command
 from src.telegram.routers.extra.goto import on_goto
 from src.telegram.routers.menu.dialog import custom_buttons, menu
 from src.telegram.states import DashboardEarning, Earning
 from src.telegram.widgets.banner import get_banner
+
+
+async def test_tasks_command_is_registered_in_bot_menu_and_opens_earning():
+    translator = FluentTranslator(
+        locale="ru",
+        translator=FluentBundle.from_string(
+            locale="ru",
+            text=Path("assets/translations/ru/utils.ftl").read_text("utf-8"),
+            use_isolating=False,
+        ),
+    )
+    bot = SimpleNamespace(set_my_commands=AsyncMock(return_value=True))
+    service = CommandService(
+        bot,
+        SimpleNamespace(
+            bot=SimpleNamespace(setup_commands=True), locales=[Locale.RU], default_locale=Locale.RU
+        ),
+        SimpleNamespace(get_translator_by_locale=lambda **kwargs: translator),
+    )
+    await service.setup_commands()
+    assert bot.set_my_commands.await_count == 2
+    for call in bot.set_my_commands.await_args_list:
+        tasks = next(command for command in call.kwargs["commands"] if command.command == "tasks")
+        assert tasks.description == "Открыть задачник"
+        assert call.kwargs["scope"].type == "all_private_chats"
+
+    manager = SimpleNamespace(start=AsyncMock())
+    await on_tasks_command(None, UserDto(id=1, telegram_id=123, name="User"), manager)
+    manager.start.assert_awaited_once_with(
+        state=Earning.MAIN,
+        mode=StartMode.RESET_STACK,
+        show_mode=ShowMode.DELETE_AND_SEND,
+    )
 
 
 @pytest.mark.parametrize("color", [None, *ButtonStyle])

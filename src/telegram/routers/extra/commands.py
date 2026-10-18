@@ -1,6 +1,7 @@
 from aiogram import Router
 from aiogram.filters import Command as FilterCommand
 from aiogram.types import Message
+from aiogram_dialog import DialogManager, ShowMode, StartMode
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
@@ -10,8 +11,23 @@ from src.application.common.dao import SettingsDao
 from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.core.enums import Command
 from src.telegram.keyboards import get_contact_support_keyboard
+from src.telegram.states import Earning
 
 router = Router(name=__name__)
+
+
+@router.message(FilterCommand(Command.TASKS.value.command))
+async def on_tasks_command(
+    message: Message,
+    user: TelegramUserDto,
+    dialog_manager: DialogManager,
+) -> None:
+    logger.info(f"{user.log} Called '/tasks' command")
+    await dialog_manager.start(
+        state=Earning.MAIN,
+        mode=StartMode.RESET_STACK,
+        show_mode=ShowMode.DELETE_AND_SEND,
+    )
 
 
 @inject

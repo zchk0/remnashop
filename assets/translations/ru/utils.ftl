@@ -61,6 +61,7 @@ message =
 
 command =
     .start = Перезапустить бота
+    .tasks = Открыть задачник
     .paysupport = Возврат средств
     .rules = Условия использования
     .help = Помощь
