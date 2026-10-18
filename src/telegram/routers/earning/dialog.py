@@ -17,7 +17,7 @@ router = Dialog(
         Banner(BannerName.EARNING),
         I18nFormat("msg-earning-main"),
         I18nFormat("msg-earning-empty", ~F["has_tasks"]),
-        I18nFormat("msg-earning-available-tasks"),
+        I18nFormat("msg-earning-available-tasks", F["has_tasks"]),
         ScrollingGroup(
             Select(
                 Format("{item[label]}"),

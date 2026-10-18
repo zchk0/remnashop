@@ -2,7 +2,7 @@ from typing import Any, Awaitable, Callable, Final, Optional, cast
 from urllib.parse import urlsplit
 
 import httpx
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import ErrorEvent as AiogramErrorEvent
 from aiogram.types import TelegramObject
 from aiogram.types import User as AiogramUser
@@ -95,6 +95,11 @@ class ErrorMiddleware(EventTypedMiddleware):
                 UnknownState,
             ),
         )
+        if is_context_loss and event.update.callback_query:
+            try:
+                await event.update.callback_query.answer()
+            except TelegramAPIError as error:
+                logger.debug(f"Could not answer stale dialog callback: {error}")
 
         if isinstance(event.exception, TelegramBadRequest):
             error_text = str(event.exception)
@@ -161,7 +166,12 @@ class ErrorMiddleware(EventTypedMiddleware):
                     )
 
         if is_context_loss:
-            return await handler(event, data)
+            logger.info(
+                f"Handled stale dialog context '{type(event.exception).__name__}' "
+                f"for Telegram user '{aiogram_user.id if aiogram_user else None}'"
+            )
+            # aiogram-dialog's default error handler would reraise the recovered error.
+            return
 
         error_event = ErrorEvent(
             **config.build.data,
