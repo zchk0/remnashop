@@ -38,7 +38,7 @@ earning-reward-days = +{ NUMBER($days, useGrouping: 0) } { $days ->
     [few] дня
     *[OTHER] дней
     }
-earning-reward-reset = Сброс лимита трафика
+earning-reward-reset = Сброс потраченного трафика
 earning-reward-discount = Скидка { $discount }% на следующую покупку
 earning-advertise-request = Здравствуйте! Хочу разместить свой канал в разделе «Заработай бесплатные дни».
 
