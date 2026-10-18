@@ -134,6 +134,7 @@ async def test_all_user_and_admin_windows_render_with_real_translations():
     data.update(
         tasks=[{"id": 1, "label": "Channel"}],
         has_tasks=True,
+        available_tasks_count=1,
         task_available=True,
         allowed=True,
         support_url="https://t.me/support",

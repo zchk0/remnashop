@@ -10,7 +10,7 @@ btn-earning =
     .active = Задание активно: { $active_label }
     .reset = Сброс трафика: { $reset_label }
     .save = 💾 Сохранить
-    .delete = 🗑 Удалить задание
+    .delete = 🗑 Удалить
     .reset-completions = 🔄 Сбросить выполнения
     .pending = ⏳ Незавершённые награды
     .retry = 🔄 Повторить начисление
@@ -49,7 +49,9 @@ msg-earning-main =
 
     Каждое задание можно выполнить один раз.
 msg-earning-empty =
-    Сейчас доступных заданий нет. Возвращайтесь позже!
+    <blockquote>Сейчас доступных заданий нет. Возвращайтесь позже!</blockquote>
+msg-earning-available-tasks =
+    <blockquote>Доступных заданий: <b>{ NUMBER($available_tasks_count, useGrouping: 0) }</b></blockquote>
 msg-earning-task =
     <b>📢 { $title }</b>
 

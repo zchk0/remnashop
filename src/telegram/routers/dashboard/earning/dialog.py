@@ -108,14 +108,6 @@ router = Dialog(
         Row(edit_button("plan_id")),
         Row(edit_button("trial_plan_id"), edit_button("trial_days")),
         Row(
-            Button(
-                I18nFormat("btn-earning.save"),
-                id="save",
-                on_click=on_save,
-                style=Style(ButtonStyle.SUCCESS),
-            )
-        ),
-        Row(
             SwitchTo(
                 I18nFormat("btn-earning.reset-completions"),
                 id="reset_completions",
@@ -130,7 +122,13 @@ router = Dialog(
                 state=DashboardEarning.DELETE,
                 when=F["saved_task"],
                 style=Style(ButtonStyle.DANGER),
-            )
+            ),
+            Button(
+                I18nFormat("btn-earning.save"),
+                id="save",
+                on_click=on_save,
+                style=Style(ButtonStyle.SUCCESS),
+            ),
         ),
         Row(SwitchTo(I18nFormat("btn-common.cancel"), id="back", state=DashboardEarning.CHANNELS)),
         IgnoreUpdate(),

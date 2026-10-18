@@ -56,6 +56,7 @@ async def earning_getter(
             for task in result.tasks
         ],
         "has_tasks": bool(result.tasks),
+        "available_tasks_count": len(result.tasks),
         "task_available": selected is not None,
         "title": escape(selected.title) if selected else "",
         "reward": reward_text(selected, result.subscription, i18n, multiline=True)
