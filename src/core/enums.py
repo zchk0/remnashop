@@ -169,6 +169,25 @@ class ReferralLevel(IntEnum):
 class ReferralAccrualStrategy(UpperStrEnum):
     ON_FIRST_PAYMENT = auto()
     ON_EACH_PAYMENT = auto()
+    ON_INVITATION = auto()
+    ON_FIRST_PAYMENT_AND_INVITATION = auto()
+    ON_EACH_PAYMENT_AND_INVITATION = auto()
+
+    @property
+    def rewards_invitation(self) -> bool:
+        return self in (
+            self.ON_INVITATION,
+            self.ON_FIRST_PAYMENT_AND_INVITATION,
+            self.ON_EACH_PAYMENT_AND_INVITATION,
+        )
+
+    @property
+    def rewards_payments(self) -> bool:
+        return self != self.ON_INVITATION
+
+    @property
+    def first_payment_only(self) -> bool:
+        return self in (self.ON_FIRST_PAYMENT, self.ON_FIRST_PAYMENT_AND_INVITATION)
 
 
 class ReferralRewardStrategy(UpperStrEnum):

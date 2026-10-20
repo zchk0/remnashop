@@ -15,11 +15,7 @@ from src.application.use_cases.subscription.commands.management import (
     AddSubscriptionDuration,
     AddSubscriptionDurationDto,
 )
-from src.application.use_cases.user.commands.profile_edit import (
-    ChangeUserPoints,
-    ChangeUserPointsDto,
-)
-from src.core.enums import PurchaseType, ReferralAccrualStrategy, ReferralLevel, ReferralRewardType
+from src.core.enums import PurchaseType, ReferralLevel, ReferralRewardType
 
 
 @dataclass(frozen=True)
@@ -27,6 +23,7 @@ class GiveReferrerRewardDto:
     user_id: int
     reward: ReferralRewardDto
     referred_name: str
+    is_invitation: bool = False
 
 
 class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
@@ -39,7 +36,6 @@ class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
         subscription_dao: SubscriptionDao,
         referral_dao: ReferralDao,
         event_publisher: EventPublisher,
-        change_user_points: ChangeUserPoints,
         add_subscription_duration: AddSubscriptionDuration,
     ) -> None:
         self.uow = uow
@@ -47,11 +43,12 @@ class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
         self.subscription_dao = subscription_dao
         self.referral_dao = referral_dao
         self.event_publisher = event_publisher
-        self.change_user_points = change_user_points
         self.add_subscription_duration = add_subscription_duration
 
     async def _execute(self, actor: UserDto, data: GiveReferrerRewardDto) -> None:
         reward = data.reward
+        if reward.is_issued:
+            return
 
         user = await self.user_dao.get_by_id(data.user_id)
         if not user:
@@ -62,18 +59,10 @@ class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
             f"{actor.log} Start applying reward of '{reward.amount}' "
             f"'{reward.type}' to user '{user.remna_name}'"
         )
-        if reward.type == ReferralRewardType.POINTS:
-            await self.change_user_points.system(
-                ChangeUserPointsDto(
-                    user_id=user.id,
-                    amount=reward.amount,
-                )
-            )
+        if reward.type == ReferralRewardType.EXTRA_DAYS:
+            subscription = await self.subscription_dao.get_current(user.id)
 
-        elif reward.type == ReferralRewardType.EXTRA_DAYS:
-            subscription = await self.subscription_dao.get_current(user.id)  # only active
-
-            if not subscription or subscription.is_trial:
+            if not subscription or (subscription.is_trial and not data.is_invitation):
                 logger.warning(
                     f"{actor.log} Current subscription not found "
                     f"for user '{user.remna_name}', unable to add days"
@@ -84,6 +73,7 @@ class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
                     name=data.referred_name,
                     value=reward.amount,
                     reward_type=reward.type,
+                    is_invitation=data.is_invitation,
                 )
 
                 await self.event_publisher.publish(event_failed)
@@ -101,26 +91,30 @@ class GiveReferrerReward(Interactor[GiveReferrerRewardDto, None]):
                 ),
             )
 
-        else:
+        elif reward.type != ReferralRewardType.POINTS:
             raise ValueError(
                 f"Failed to apply reward: unknown type '{reward.type}' for user '{user.remna_name}'"
             )
 
         # Mark issued immediately after a successful grant, before any notification.
-        # Full atomicity is impossible: the grant (points/days, incl. a Remnawave call
-        # for EXTRA_DAYS) commits in its own transaction, so a crash between that commit
-        # and this one can still leave is_issued=False. Tightening the order — grant →
+        # Days are granted through Remnawave in a separate transaction, so a crash between that
+        # commit and this one can still leave is_issued=False. Tightening the order — grant →
         # mark issued → notify — minimizes that window and avoids a failed notification
         # leaving the reward looking pending.
         async with self.uow:
+            if reward.type == ReferralRewardType.POINTS:
+                user.points += reward.amount
+                await self.user_dao.update(user)
             await self.referral_dao.mark_reward_as_issued(reward.id)
             await self.uow.commit()
+        reward.is_issued = True
 
         event_reward = ReferralRewardReceivedEvent(
             user=user,
             name=data.referred_name,
             value=reward.amount,
             reward_type=reward.type,
+            is_invitation=data.is_invitation,
         )
         await self.event_publisher.publish(event_reward)
         logger.info(f"{actor.log} Finished applying reward to user '{user.id}'")
@@ -158,6 +152,10 @@ class AssignReferralRewards(Interactor[AssignReferralRewardsDto, None]):
             logger.info("Referral system is disabled; reward assignment skipped")
             return
 
+        if not settings.referral.accrual_strategy.rewards_payments:
+            logger.info("Referral payment rewards are disabled; reward assignment skipped")
+            return
+
         if data.transaction.plan_snapshot and data.transaction.plan_snapshot.is_trial:
             logger.info(
                 f"Skip rewards: transaction '{data.transaction.id}' is a trial plan purchase"
@@ -165,7 +163,7 @@ class AssignReferralRewards(Interactor[AssignReferralRewardsDto, None]):
             return
 
         if (
-            settings.referral.accrual_strategy == ReferralAccrualStrategy.ON_FIRST_PAYMENT
+            settings.referral.accrual_strategy.first_payment_only
             and data.transaction.purchase_type != PurchaseType.NEW
         ):
             logger.info(

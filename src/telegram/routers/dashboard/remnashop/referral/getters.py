@@ -18,6 +18,7 @@ from src.core.enums import (
 async def referral_getter(
     dialog_manager: DialogManager,
     settings_dao: FromDishka[SettingsDao],
+    i18n: FromDishka[TranslatorRunner],
     **kwargs: Any,
 ) -> dict[str, Any]:
     settings = await settings_dao.get()
@@ -28,6 +29,14 @@ async def referral_getter(
         "reward_type": settings.referral.reward.type,
         "accrual_strategy_type": settings.referral.accrual_strategy,
         "reward_strategy_type": settings.referral.reward.strategy,
+        "invitation_enabled": settings.referral.accrual_strategy.rewards_invitation,
+        "payment_rewards_enabled": settings.referral.accrual_strategy.rewards_payments,
+        "invitation_reward": i18n.get(
+            "msg-invite-reward",
+            value=settings.referral.invitation_reward,
+            reward_type=settings.referral.reward.type,
+            reward_strategy_type=ReferralRewardStrategy.AMOUNT,
+        ),
     }
 
 

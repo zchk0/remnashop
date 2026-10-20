@@ -464,6 +464,9 @@ reward-type = { $reward_type ->
 accrual-strategy = { $accrual_strategy_type ->
     [ON_FIRST_PAYMENT] Первый платеж
     [ON_EACH_PAYMENT] Каждый платеж
+    [ON_INVITATION] Приглашение
+    [ON_FIRST_PAYMENT_AND_INVITATION] Первый платеж + приглашение
+    [ON_EACH_PAYMENT_AND_INVITATION] Каждый платеж + приглашение
     *[OTHER] { $accrual_strategy_type }
     }
 

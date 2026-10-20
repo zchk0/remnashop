@@ -19,6 +19,7 @@ class ReferralProgramResponse(BaseModel):
     accrual_strategy: str
     max_level: int
     reward_levels: list[ReferralRewardLevelResponse]
+    invitation_reward: Optional[int] = None
 
 
 class ToBeVpnReferralUserResponse(BaseModel):

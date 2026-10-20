@@ -49,7 +49,8 @@ async def get_referral_program(
             settings.referral.reward.config.items(),
             key=lambda item: item[0].value,
         )
-        if level.value <= settings.referral.level.value
+        if settings.referral.accrual_strategy.rewards_payments
+        and level.value <= settings.referral.level.value
     ]
 
     return ReferralProgramResponse(
@@ -62,4 +63,9 @@ async def get_referral_program(
         accrual_strategy=settings.referral.accrual_strategy.value,
         max_level=settings.referral.level.value,
         reward_levels=reward_levels,
+        invitation_reward=(
+            settings.referral.invitation_reward
+            if settings.referral.accrual_strategy.rewards_invitation
+            else None
+        ),
     )

@@ -6,9 +6,11 @@ from loguru import logger
 from src.application.common import EventPublisher, Interactor
 from src.application.common.dao import ReferralDao, SettingsDao, UserDao
 from src.application.common.uow import UnitOfWork
-from src.application.dto import ReferralDto, UserDto
+from src.application.dto import ReferralDto, ReferralRewardDto, UserDto
 from src.application.events import ReferralAttachedEvent
 from src.core.enums import ReferralLevel
+
+from .rewards import GiveReferrerReward, GiveReferrerRewardDto
 
 
 @dataclass(frozen=True)
@@ -27,12 +29,14 @@ class AttachReferral(Interactor[AttachReferralDto, Optional[UserDto]]):
         user_dao: UserDao,
         referral_dao: ReferralDao,
         event_publisher: EventPublisher,
+        give_referrer_reward: GiveReferrerReward,
     ) -> None:
         self.uow = uow
         self.settings_dao = settings_dao
         self.user_dao = user_dao
         self.referral_dao = referral_dao
         self.event_publisher = event_publisher
+        self.give_referrer_reward = give_referrer_reward
 
     async def _execute(self, actor: UserDto, data: AttachReferralDto) -> Optional[UserDto]:
         settings = await self.settings_dao.get()
@@ -65,22 +69,53 @@ class AttachReferral(Interactor[AttachReferralDto, Optional[UserDto]]):
             f"'{data.user_id}' with level '{level.name}'"
         )
 
+        invitation_reward = None
         async with self.uow:
             referred = await self.user_dao.get_by_id(data.user_id)
             if not referred:
                 logger.warning(f"Referral skipped: referred user not found '{data.user_id}'")
                 return None
 
-            await self.referral_dao.create_referral(
+            referral = await self.referral_dao.create_referral(
                 ReferralDto(
                     level=level,
                     referrer=referrer,
                     referred=referred,
                 )
             )
+            if settings.referral.accrual_strategy.rewards_invitation:
+                invitation_reward = await self.referral_dao.create_reward(
+                    reward=ReferralRewardDto(
+                        user_id=referrer.id,
+                        type=settings.referral.reward.type,
+                        amount=settings.referral.invitation_reward,
+                    ),
+                    referral_id=referral.id,
+                )
             await self.uow.commit()
 
-        await self.event_publisher.publish(ReferralAttachedEvent(user=referrer, name=referred.name))
+        if invitation_reward:
+            try:
+                await self.give_referrer_reward.system(
+                    GiveReferrerRewardDto(
+                        user_id=referrer.id,
+                        reward=invitation_reward,
+                        referred_name=referred.name,
+                        is_invitation=True,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    f"Could not issue invitation reward '{invitation_reward.id}' "
+                    f"to user '{referrer.id}' — referral is saved"
+                )
+
+        try:
+            await self.event_publisher.publish(
+                ReferralAttachedEvent(user=referrer, name=referred.name)
+            )
+        except Exception:
+            logger.exception(f"Could not notify referrer '{referrer.id}' — referral is saved")
 
         return referrer
 

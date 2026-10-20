@@ -169,6 +169,7 @@ class RemnashopReferral(StatesGroup):
     REWARD_TYPE = State()
     ACCRUAL_STRATEGY = State()
     REWARD_STRATEGY = State()
+    INVITATION_REWARD = State()
 
 
 class RemnashopAdvertising(StatesGroup):

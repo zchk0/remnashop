@@ -432,8 +432,9 @@ btn-referral =
     .level = 🔢 Уровень
     .reward-type = 🎀 Тип награды
     .accrual-strategy = 📍 Условие начисления
-    .reward-strategy = ⚖️ Форма начисления
-    .reward = 🎁 Награда
+    .reward-strategy = ⚖️ Расчёт награды за платежи
+    .reward = 🎁 Награда за платежи
+    .invitation-reward = 👥 Награда за приглашение
 
     .active-toggle = { $is_enable ->
     [1] 🟢 Включена
@@ -456,6 +457,9 @@ btn-referral =
     .accrual-strategy-choice = { $type ->
     [ON_FIRST_PAYMENT] 💳 Первый платеж
     [ON_EACH_PAYMENT] 💸 Каждый платеж
+    [ON_INVITATION] 👥 Приглашение
+    [ON_FIRST_PAYMENT_AND_INVITATION] 💳 Первый платеж + приглашение
+    [ON_EACH_PAYMENT_AND_INVITATION] 💸 Каждый платеж + приглашение
     *[OTHER] { $type }
     }
 

@@ -10,6 +10,7 @@ from src.application.dto import TelegramUserDto
 from src.application.use_cases.settings.commands.referral import (
     ToggleReferralSystem,
     UpdateReferralAccrualStrategy,
+    UpdateReferralInvitationReward,
     UpdateReferralLevel,
     UpdateReferralRewardConfig,
     UpdateReferralRewardStrategy,
@@ -105,4 +106,20 @@ async def on_reward_input(
     try:
         await update_reward_config(user, message.text)
     except (ValueError, KeyError, IndexError):
+        await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")
+
+
+@inject
+async def on_invitation_reward_input(
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
+    notifier: FromDishka[Notifier],
+    update_invitation_reward: FromDishka[UpdateReferralInvitationReward],
+) -> None:
+    dialog_manager.show_mode = ShowMode.EDIT
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    try:
+        await update_invitation_reward(user, message.text or "")
+    except ValueError:
         await notifier.notify_user(user, i18n_key="ntf-common.invalid-value")

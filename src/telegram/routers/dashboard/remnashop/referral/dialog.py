@@ -24,6 +24,7 @@ from .getters import (
 from .handlers import (
     on_accrual_strategy_select,
     on_enable_toggle,
+    on_invitation_reward_input,
     on_level_select,
     on_reward_input,
     on_reward_select,
@@ -65,6 +66,7 @@ referral = Window(
             id="reward_strategy",
             state=RemnashopReferral.REWARD_STRATEGY,
         ),
+        when=F["payment_rewards_enabled"],
     ),
     Row(
         SwitchTo(
@@ -72,6 +74,15 @@ referral = Window(
             id="reward",
             state=RemnashopReferral.REWARD,
         ),
+        when=F["payment_rewards_enabled"],
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-referral.invitation-reward"),
+            id="invitation_reward",
+            state=RemnashopReferral.INVITATION_REWARD,
+        ),
+        when=F["invitation_enabled"],
     ),
     Row(
         Start(
@@ -202,6 +213,22 @@ reward_strategy = Window(
     getter=reward_strategy_getter,
 )
 
+invitation_reward = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-referral-invitation-reward"),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-back.general"),
+            id="back",
+            state=RemnashopReferral.MAIN,
+        ),
+    ),
+    MessageInput(func=on_invitation_reward_input),
+    IgnoreUpdate(),
+    state=RemnashopReferral.INVITATION_REWARD,
+    getter=referral_getter,
+)
+
 router = Dialog(
     referral,
     level,
@@ -209,4 +236,5 @@ router = Dialog(
     accrual_strategy,
     reward_strategy,
     reward,
+    invitation_reward,
 )

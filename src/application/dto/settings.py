@@ -170,6 +170,7 @@ class ReferralSettingsDto(TrackableMixin):
     level: ReferralLevel = ReferralLevel.FIRST
     accrual_strategy: ReferralAccrualStrategy = ReferralAccrualStrategy.ON_FIRST_PAYMENT
     reward: ReferralRewardSettingsDto = field(default_factory=ReferralRewardSettingsDto)
+    invitation_reward: int = 3
 
 
 @dataclass(kw_only=True)

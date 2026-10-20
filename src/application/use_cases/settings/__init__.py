@@ -25,6 +25,7 @@ from .commands.notifications import (
 from .commands.referral import (
     ToggleReferralSystem,
     UpdateReferralAccrualStrategy,
+    UpdateReferralInvitationReward,
     UpdateReferralLevel,
     UpdateReferralRewardConfig,
     UpdateReferralRewardStrategy,
@@ -46,6 +47,7 @@ SETTINGS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     ToggleRegistration,
     UpdateChannelRequirement,
     UpdateReferralAccrualStrategy,
+    UpdateReferralInvitationReward,
     UpdateReferralLevel,
     UpdateReferralRewardConfig,
     UpdateReferralRewardStrategy,

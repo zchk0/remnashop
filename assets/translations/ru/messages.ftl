@@ -118,12 +118,21 @@ msg-menu-invite-about =
     { $accrual_strategy ->
     [ON_FIRST_PAYMENT] Награда начисляется за первую покупку подписки приглашенным пользователем.
     [ON_EACH_PAYMENT] Награда начисляется за каждую покупку или продление подписки приглашенным пользователем.
+    [ON_INVITATION] Награда начисляется один раз, когда новый друг регистрируется по вашей пригласительной ссылке.
+    [ON_FIRST_PAYMENT_AND_INVITATION] Вы получаете отдельную награду за регистрацию нового друга по вашей ссылке и награду за его первую покупку подписки.
+    [ON_EACH_PAYMENT_AND_INVITATION] Вы получаете отдельную награду за регистрацию нового друга по вашей ссылке и награды за каждую покупку или продление его подписки.
     *[OTHER] { $accrual_strategy }
     }
     </blockquote>
 
     <b>💎 Что вы получаете</b>:
     <blockquote>
+    { $invitation_enabled ->
+    [1] 👥 За приглашение: { $invitation_reward }
+    *[0] { empty }
+    }
+    { $payment_rewards_enabled ->
+    [1]
     { $max_level ->
     [1] За приглашенных друзей: { $reward_level_1 }
     *[MORE]
@@ -148,6 +157,8 @@ msg-menu-invite-about =
         *[OTHER] { $reward_type }
     }
     *[OTHER] { $reward_strategy_type }
+    }
+    *[0] { empty }
     }
     </blockquote>
 
@@ -1177,7 +1188,14 @@ msg-referral-main =
     • <b>Тип награды</b>: { reward-type }
     • <b>Количество уровней</b>: { $referral_level }
     • <b>Условие начисления</b>: { accrual-strategy }
-    • <b>Форма начисления</b>: { reward-strategy }
+    { $payment_rewards_enabled ->
+    [1] • <b>Расчёт награды за платежи</b>: { reward-strategy }
+    *[0] { empty }
+    }
+    { $invitation_enabled ->
+    [1] • <b>За приглашение</b>: { $invitation_reward }
+    *[0] { empty }
+    }
     </blockquote>
 
     Выберите пункт для изменения.
@@ -1226,8 +1244,21 @@ msg-referral-reward-level = { $level } уровень: { $value }{ $reward_strat
     *[OTHER] { $reward_strategy_type }
     }
 
+msg-referral-invitation-reward =
+    <b>👥 Награда за приглашение</b>
+
+    <blockquote>За приглашение: { $invitation_reward }</blockquote>
+
+    Введите количество { $reward_type ->
+        [POINTS] баллов
+        [EXTRA_DAYS] дней
+        *[OTHER] { $reward_type }
+    } от 1 до 100000.
+
+    Награда выдаётся один раз за регистрацию нового друга по ссылке, только тому, кто его пригласил. Её размер фиксированный и настраивается отдельно от наград за платежи.
+
 msg-referral-reward =
-    <b>🎁 Изменить награду</b>
+    <b>🎁 Награда за платежи</b>
 
     <blockquote>
     { $reward }

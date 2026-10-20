@@ -24,6 +24,8 @@ tests/*
 !tests/test_earning.py
 !tests/test_earning_database.py
 !tests/test_earning_ui.py
+!tests/test_referral_invitation.py
+!tests/test_referral_invitation_ui.py
 .DS_Store
 traefik
 logs/*

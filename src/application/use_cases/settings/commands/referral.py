@@ -16,6 +16,27 @@ PERCENT_MAX_REWARD = 100
 AMOUNT_MAX_REWARD = 100_000
 
 
+class UpdateReferralInvitationReward(Interactor[str, None]):
+    required_permission = Permission.SETTINGS_REFERRAL
+
+    def __init__(self, uow: UnitOfWork, settings_dao: SettingsDao) -> None:
+        self.uow = uow
+        self.settings_dao = settings_dao
+
+    async def _execute(self, actor: UserDto, input_text: str) -> None:
+        value = int(input_text.strip())
+        if not 1 <= value <= AMOUNT_MAX_REWARD:
+            raise ValueError(f"Invitation reward must be between 1 and {AMOUNT_MAX_REWARD}")
+
+        async with self.uow:
+            settings = await self.settings_dao.get()
+            settings.referral.invitation_reward = value
+            await self.settings_dao.update(settings)
+            await self.uow.commit()
+
+        logger.info(f"{actor.log} Updated invitation reward to '{value}'")
+
+
 class ToggleReferralSystem(Interactor[None, bool]):
     required_permission = Permission.SETTINGS_REFERRAL
 

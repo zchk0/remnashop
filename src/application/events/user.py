@@ -139,6 +139,7 @@ class ReferralAttachedEvent(ReferralEvent):
 class ReferralRewardEvent(ReferralEvent):
     value: int
     reward_type: ReferralRewardType
+    is_invitation: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -150,6 +151,8 @@ class ReferralRewardReceivedEvent(ReferralRewardEvent):
 
     @property
     def event_key(self) -> str:
+        if self.is_invitation:
+            return "event-referral.invitation-reward"
         return "event-referral.reward"
 
     def as_payload(self) -> "MessagePayloadDto":
@@ -171,6 +174,8 @@ class ReferralRewardFailedEvent(ReferralRewardEvent):
 
     @property
     def event_key(self) -> str:
+        if self.is_invitation:
+            return "event-referral.invitation-reward-failed"
         return "event-referral.reward-failed"
 
 

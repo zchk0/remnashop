@@ -12,6 +12,7 @@ from src.application.use_cases.earning.rewards import GetEarningTasks
 from src.application.use_cases.misc.queries.menu import GetMenuData
 from src.core.config import AppConfig
 from src.core.constants import TIMEZONE
+from src.core.enums import ReferralRewardStrategy
 from src.core.exceptions import MenuRenderError
 from src.core.utils.i18n_helpers import (
     i18n_format_device_limit,
@@ -286,6 +287,14 @@ async def invite_about_getter(
         "reward_type": settings.referral.reward.type,
         "reward_strategy_type": settings.referral.reward.strategy,
         "accrual_strategy": settings.referral.accrual_strategy,
+        "invitation_enabled": settings.referral.accrual_strategy.rewards_invitation,
+        "payment_rewards_enabled": settings.referral.accrual_strategy.rewards_payments,
+        "invitation_reward": i18n.get(
+            "msg-invite-reward",
+            value=settings.referral.invitation_reward,
+            reward_type=settings.referral.reward.type,
+            reward_strategy_type=ReferralRewardStrategy.AMOUNT,
+        ),
         "identical_reward": identical_reward,
         "max_level": max_level,
     }
