@@ -135,6 +135,7 @@ menu = Window(
             )
             for color in (None, *ButtonStyle)
         ],
+        when=F["has_subscription"],
     ),
     Row(
         Start(

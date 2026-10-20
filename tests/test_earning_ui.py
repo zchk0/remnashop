@@ -65,7 +65,10 @@ async def test_tasks_command_is_registered_in_bot_menu_and_opens_earning():
 
 @pytest.mark.parametrize("color", [None, *ButtonStyle])
 @pytest.mark.parametrize("available", [True, False])
-async def test_earning_menu_button_is_full_width_after_custom_buttons(color, available):
+@pytest.mark.parametrize("has_subscription", [True, False])
+async def test_earning_menu_button_is_full_width_after_custom_buttons(
+    color, available, has_subscription
+):
     rows = menu.keyboard.buttons
     earning_row = next(row for row in rows if row.find("earning_success") is not None)
     dashboard_row = next(row for row in rows if row.find("dashboard") is not None)
@@ -73,12 +76,13 @@ async def test_earning_menu_button_is_full_width_after_custom_buttons(color, ava
     keyboard = await earning_row.render_keyboard(
         {
             "earning_available": available,
+            "has_subscription": has_subscription,
             "earning_color": color,
             "earning_text": "Бесплатные дни",
         },
         SimpleNamespace(is_preview=lambda: False),
     )
-    if available:
+    if available and has_subscription:
         assert len(keyboard) == 1 and len(keyboard[0]) == 1
         assert keyboard[0][0].text == "Бесплатные дни"
         assert keyboard[0][0].style == color
