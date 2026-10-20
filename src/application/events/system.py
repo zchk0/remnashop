@@ -333,7 +333,7 @@ class UserFirstConnectionEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs={**asdict(self), "subscription_id": str(self.subscription_id)},
             disable_default_markup=False,
             delete_after=None,
         )
@@ -536,7 +536,7 @@ class SubscriptionRevokedEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs={**asdict(self), "subscription_id": str(self.subscription_id)},
             disable_default_markup=False,
             delete_after=None,
         )
