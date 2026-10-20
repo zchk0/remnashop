@@ -110,6 +110,12 @@ msg-menu-invite =
     }
     </blockquote>
 
+frg-referral-payment-condition = { $accrual_strategy ->
+    [ON_FIRST_PAYMENT] первый платёж
+    [ON_FIRST_PAYMENT_AND_INVITATION] первый платёж
+    *[OTHER] каждый платёж
+    }
+
 msg-menu-invite-about =
     <b>🎁 Подробнее о вознаграждении</b>
 
@@ -134,14 +140,14 @@ msg-menu-invite-about =
     { $payment_rewards_enabled ->
     [1]
     { $max_level ->
-    [1] За приглашенных друзей: { $reward_level_1 }
+    [1] За { frg-referral-payment-condition } ваших друзей: { $reward_level_1 }
     *[MORE]
     { $identical_reward ->
     [0]
-    1️⃣ За ваших друзей: { $reward_level_1 }
-    2️⃣ За приглашенных вашими друзьями: { $reward_level_2 }
+    1️⃣ За { frg-referral-payment-condition } ваших друзей: { $reward_level_1 }
+    2️⃣ За { frg-referral-payment-condition } их друзей: { $reward_level_2 }
     *[1]
-    За ваших друзей и приглашенных вашими друзьями: { $reward_level_1 }
+    За { frg-referral-payment-condition } ваших друзей и их друзей: { $reward_level_1 }
     }
     }
 
@@ -162,26 +168,26 @@ msg-menu-invite-about =
     }
     </blockquote>
 
-msg-invite-reward = { $value }{ $reward_strategy_type ->
+msg-invite-reward = { $reward_strategy_type ->
     [AMOUNT] { $reward_type ->
-        [POINTS] { space }{ $value ->
+        [POINTS] { $value }{ space }{ $value ->
             [one] балл
             [few] балла
             *[more] баллов
             }
-        [EXTRA_DAYS] { space }доп. { $value ->
+        [EXTRA_DAYS] +{ $value }{ space }{ $value ->
             [one] день
             [few] дня
             *[more] дней
             }
-        *[OTHER] { $reward_type }
+        *[OTHER] { $value }{ space }{ $reward_type }
     }
-    [PERCENT] % { $reward_type ->
+    [PERCENT] { $value }% { $reward_type ->
         [POINTS] баллов
-        [EXTRA_DAYS] доп. дней
+        [EXTRA_DAYS] дней
         *[OTHER] { $reward_type }
     }
-    *[OTHER] { $reward_strategy_type }
+    *[OTHER] { $value }{ $reward_strategy_type }
     }
 
 
@@ -1222,27 +1228,7 @@ msg-referral-reward-strategy =
     Выберите способ расчета награды.
 
 
-msg-referral-reward-level = { $level } уровень: { $value }{ $reward_strategy_type ->
-    [AMOUNT] { $reward_type ->
-        [POINTS] { space }{ $value ->
-            [one] балл
-            [few] балла
-            *[more] баллов
-            }
-        [EXTRA_DAYS] { space }доп. { $value ->
-            [one] день
-            [few] дня
-            *[more] дней
-            }
-        *[OTHER] { $reward_type }
-    }
-    [PERCENT] % { $reward_type ->
-        [POINTS] баллов
-        [EXTRA_DAYS] доп. дней
-        *[OTHER] { $reward_type }
-    }
-    *[OTHER] { $reward_strategy_type }
-    }
+msg-referral-reward-level = { $level } уровень: { msg-invite-reward }
 
 msg-referral-invitation-reward =
     <b>👥 Награда за приглашение</b>

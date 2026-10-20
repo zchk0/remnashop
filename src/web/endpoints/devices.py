@@ -12,7 +12,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from typing import Annotated, Optional, cast
+from typing import Annotated, NoReturn, Optional, cast
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
@@ -73,7 +73,7 @@ from src.application.use_cases.referral.commands.attachment import (
 )
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
-from src.core.constants import TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
+from src.core.constants import TIME_1D, TIME_1M, TTL_5M, TV_PAIRING_TTL_SECONDS
 from src.core.enums import Deeplink, PlanAvailability, PurchaseType
 from src.core.exceptions import PromocodeError, PromocodeIdempotencyConflictError
 from src.core.types import RemnaDeviceDto, RemnaUserDto
@@ -1089,6 +1089,52 @@ async def _would_create_referral_cycle(
     return True
 
 
+_REFERRER_ERROR_LIMIT = 20
+_REFERRER_ERROR_LIMIT_SCRIPT = """
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+if count >= tonumber(ARGV[1]) then
+    return {1, redis.call('TTL', KEYS[1])}
+end
+if ARGV[3] == '1' then
+    count = redis.call('INCR', KEYS[1])
+    if count == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[2])
+    end
+end
+return {0, redis.call('TTL', KEYS[1])}
+"""
+
+
+async def _enforce_referrer_error_limit(
+    redis: Redis, telegram_id: int, *, record_error: bool = False
+) -> None:
+    result = cast(
+        Awaitable[list[int]],
+        redis.eval(
+            _REFERRER_ERROR_LIMIT_SCRIPT,
+            1,
+            f"rate_limit:tobevpn:referrer:errors:{telegram_id}",
+            _REFERRER_ERROR_LIMIT,
+            TIME_1D,
+            int(record_error),
+        ),
+    )
+    blocked, ttl = await result
+    if blocked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Referrer assignment error limit exceeded",
+            headers={"Retry-After": str(max(1, int(ttl)))},
+        )
+
+
+async def _reject_referrer_assignment(
+    redis: Redis, telegram_id: int, *, status_code: int, detail: str
+) -> NoReturn:
+    await _enforce_referrer_error_limit(redis, telegram_id, record_error=True)
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
 async def _set_device_referrer(
     request: SetReferrerRequest,
     auth: DeviceAuthContext,
@@ -1096,49 +1142,66 @@ async def _set_device_referrer(
     referral_dao: ReferralDao,
     settings_dao: SettingsDao,
     attach_referral: AttachReferral,
+    redis: Redis,
 ) -> dict:
     referred_telegram_id = _resolve_telegram_id(auth, None)
     referred = await user_dao.get_by_telegram_id(referred_telegram_id)
+    existing_referral = (
+        await referral_dao.get_by_referred_id(referred.id) if referred is not None else None
+    )
+    if existing_referral and existing_referral.referrer.telegram_id == request.referrer_id:
+        return {
+            "success": True,
+            "data": {"referrer_id": request.referrer_id, "created": False},
+        }
+
+    await _enforce_referrer_error_limit(redis, referred_telegram_id)
     if referred is None:
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Current Remnashop user not found",
         )
 
     referrer = await user_dao.get_by_telegram_id(request.referrer_id)
     if referrer is None:
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Referrer not found",
         )
 
     if referrer.id == referred.id:
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_409_CONFLICT,
             detail="A user cannot refer themselves",
         )
 
-    existing_referral = await referral_dao.get_by_referred_id(referred.id)
     if existing_referral is not None:
-        if existing_referral.referrer.id == referrer.id:
-            return {
-                "success": True,
-                "data": {"referrer_id": request.referrer_id, "created": False},
-            }
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_409_CONFLICT,
             detail="A different referrer is already assigned",
         )
 
     settings = await settings_dao.get()
     if not settings.referral.enable:
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_409_CONFLICT,
             detail="Referral program is disabled",
         )
 
     if await _would_create_referral_cycle(referral_dao, referred.id, referrer.id):
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_409_CONFLICT,
             detail="The referrer would create a referral cycle",
         )
@@ -1150,7 +1213,9 @@ async def _set_device_referrer(
         )
     )
     if attached_referrer is None:
-        raise HTTPException(
+        await _reject_referrer_assignment(
+            redis,
+            referred_telegram_id,
             status_code=status.HTTP_409_CONFLICT,
             detail="Unable to assign referrer",
         )
@@ -1161,7 +1226,7 @@ async def _set_device_referrer(
     }
 
 
-@router.post("/device/referrer")
+@router.post("/device/referrer", responses={429: {"description": "Referrer error limit exceeded"}})
 @inject
 async def set_device_referrer(
     request: SetReferrerRequest,
@@ -1170,6 +1235,7 @@ async def set_device_referrer(
     referral_dao: FromDishka[ReferralDao],
     settings_dao: FromDishka[SettingsDao],
     attach_referral: FromDishka[AttachReferral],
+    redis: FromDishka[Redis],
 ) -> dict:
     return await _set_device_referrer(
         request=request,
@@ -1178,6 +1244,7 @@ async def set_device_referrer(
         referral_dao=referral_dao,
         settings_dao=settings_dao,
         attach_referral=attach_referral,
+        redis=redis,
     )
 
 

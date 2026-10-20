@@ -26,6 +26,7 @@ tests/*
 !tests/test_earning_ui.py
 !tests/test_referral_invitation.py
 !tests/test_referral_invitation_ui.py
+!tests/test_tobevpn_referrer_rate_limit.py
 .DS_Store
 traefik
 logs/*

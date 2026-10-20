@@ -102,9 +102,10 @@ async def test_user_sees_only_enabled_rewards_and_independent_invitation_amount(
         settings_dao=SimpleNamespace(get=AsyncMock(return_value=settings_for(strategy))),
     )
     text = translator.get("msg-menu-invite-about", **data)
-    assert ("За приглашение: 3 доп. дня" in text) == strategy.rewards_invitation
-    assert ("За ваших друзей: 5 доп. дней" in text) == strategy.rewards_payments
-    assert ("За приглашенных вашими друзьями: 1 доп. день" in text) == strategy.rewards_payments
+    assert ("За приглашение: +3 дня" in text) == strategy.rewards_invitation
+    condition = "первый платёж" if strategy.first_payment_only else "каждый платёж"
+    assert (f"За {condition} ваших друзей: +5 дней" in text) == strategy.rewards_payments
+    assert (f"За {condition} их друзей: +1 день" in text) == strategy.rewards_payments
 
 
 async def test_invitation_is_shown_as_fixed_amount_when_payment_reward_is_percentage(translator):
@@ -116,8 +117,8 @@ async def test_invitation_is_shown_as_fixed_amount_when_payment_reward_is_percen
         settings_dao=SimpleNamespace(get=AsyncMock(return_value=settings)),
     )
     text = translator.get("msg-menu-invite-about", **data)
-    assert "За приглашение: 3 доп. дня" in text
-    assert "5% доп. дней" in text
+    assert "За приглашение: +3 дня" in text
+    assert "5% дней" in text
 
 
 @pytest.mark.parametrize("is_invitation", [True, False])
