@@ -346,8 +346,10 @@ async def test_postgres_channel_statistics_use_completion_date_and_calendar_boun
         (now, "pending", False),
         (now + timedelta(days=1), "completed", False),
     ]
+    task_ids = []
     for completed_at, status, deleted in samples:
         task = await seed_task(earning_database)
+        task_ids.append(task.id)
         async with AsyncSession(earning_database) as session:
             await EarningDaoImpl(session).save_task(replace(task, deleted=deleted))
             session.add(
@@ -366,13 +368,23 @@ async def test_postgres_channel_statistics_use_completion_date_and_calendar_boun
             )
             await session.commit()
     async with AsyncSession(earning_database) as session:
-        statistics = await EarningDaoImpl(session).get_statistics(now)
+        dao = EarningDaoImpl(session)
+        statistics = await dao.get_statistics(now)
         assert (statistics.daily, statistics.weekly, statistics.monthly, statistics.total) == (
             3,
             4,
             5,
             6,
         )
+        for task_id, (completed_at, status, _) in zip(task_ids, samples):
+            statistics = await dao.get_statistics(now, task_id=task_id)
+            completed = status == "completed" and completed_at <= now
+            assert (statistics.daily, statistics.weekly, statistics.monthly, statistics.total) == (
+                int(completed and completed_at >= day_start),
+                int(completed and completed_at >= week_start),
+                int(completed and completed_at >= month_start),
+                int(completed),
+            )
 
 
 async def test_postgres_completion_timestamp_is_set_once(earning_database, monkeypatch):

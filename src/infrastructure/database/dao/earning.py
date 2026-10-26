@@ -47,25 +47,28 @@ class EarningDaoImpl(EarningDao):
         )
         return [self._task_dto(row, count, completed) for row, count, completed in rows]
 
-    async def get_statistics(self, now: datetime) -> EarningStatisticsDto:
+    async def get_statistics(
+        self, now: datetime, *, task_id: int | None = None
+    ) -> EarningStatisticsDto:
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = day_start - timedelta(days=now.weekday())
         month_start = day_start.replace(day=1)
-        row = (
-            await self.session.execute(
-                select(
-                    func.count().filter(ChannelClaim.completed_at >= day_start),
-                    func.count().filter(ChannelClaim.completed_at >= week_start),
-                    func.count().filter(ChannelClaim.completed_at >= month_start),
-                    func.count(),
-                )
-                .select_from(ChannelClaim)
-                .where(
-                    ChannelClaim.status == "completed",
-                    ChannelClaim.completed_at <= now,
-                )
+        stmt = (
+            select(
+                func.count().filter(ChannelClaim.completed_at >= day_start),
+                func.count().filter(ChannelClaim.completed_at >= week_start),
+                func.count().filter(ChannelClaim.completed_at >= month_start),
+                func.count(),
             )
-        ).one()
+            .select_from(ChannelClaim)
+            .where(
+                ChannelClaim.status == "completed",
+                ChannelClaim.completed_at <= now,
+            )
+        )
+        if task_id is not None:
+            stmt = stmt.where(ChannelClaim.task_id == task_id)
+        row = (await self.session.execute(stmt)).one()
         return EarningStatisticsDto(daily=row[0], weekly=row[1], monthly=row[2], total=row[3])
 
     async def get_task(self, task_id: int, *, lock: bool = False) -> ChannelTaskDto | None:

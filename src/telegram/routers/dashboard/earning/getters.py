@@ -8,8 +8,9 @@ from dishka.integrations.aiogram_dialog import inject
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PlanDao, SettingsDao
 from src.application.common.dao.earning import EarningDao
-from src.application.dto.earning import ChannelTaskDto
+from src.application.dto.earning import ChannelTaskDto, EarningStatisticsDto
 from src.application.use_cases.earning.channels import GetEarningChannels
+from src.core.utils.time import datetime_now
 from src.telegram.routers.earning.getters import reward_text
 
 from .handlers import admin_actor
@@ -29,6 +30,11 @@ async def admin_getter(
     plans = [plan for plan in await plan_dao.get_all() if not plan.is_trial]
     names = {plan.id: plan.name for plan in plans}
     task = ChannelTaskDto(**dialog_manager.dialog_data.get("task", {}))
+    stats = (
+        await earning_dao.get_statistics(datetime_now(), task_id=task.id)
+        if task.id
+        else EarningStatisticsDto()
+    )
     claims = await earning_dao.get_pending_claims()
     selected_claim = next(
         (
@@ -81,6 +87,10 @@ async def admin_getter(
         "reset_label": yes if task.reset_traffic else no,
         "max_claims": task.max_claims or "∞",
         "claims_count": task.claims_count,
+        "completed_daily": stats.daily,
+        "completed_weekly": stats.weekly,
+        "completed_monthly": stats.monthly,
+        "completed_total": stats.total,
         "plan_name": escape(names.get(task.plan_id or 0, unset)),
         "trial_plan_name": escape(names.get(task.trial_plan_id or 0, unset)),
         "trial_days": task.trial_days or task.days,

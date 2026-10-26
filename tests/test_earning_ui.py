@@ -102,7 +102,8 @@ async def test_user_can_select_task_and_admin_can_select_trial_plan():
     manager.switch_to.assert_awaited_with(DashboardEarning.TASK)
 
 
-async def test_all_user_and_admin_windows_render_with_real_translations():
+@pytest.mark.parametrize("task_id", [0, 1])
+async def test_all_user_and_admin_windows_render_with_real_translations(task_id):
     translator = FluentTranslator(
         locale="ru",
         translator=FluentBundle.from_string(
@@ -115,7 +116,9 @@ async def test_all_user_and_admin_windows_render_with_real_translations():
         ),
     )
     context = SimpleNamespace(widget_data={})
-    task = ChannelTaskDto(id=1, title="Test", channel_url="https://t.me/test", channel_id=-100123)
+    task = ChannelTaskDto(
+        id=task_id, title="Test", channel_url="https://t.me/test", channel_id=-100123
+    )
     manager = SimpleNamespace(
         dialog_data={"task": asdict(task)},
         is_preview=lambda: False,
@@ -125,16 +128,25 @@ async def test_all_user_and_admin_windows_render_with_real_translations():
             CONTAINER_KEY: SimpleNamespace(get=AsyncMock(return_value=translator)),
         },
     )
+    earning_dao = SimpleNamespace(
+        list_tasks=AsyncMock(return_value=[task]),
+        get_pending_claims=AsyncMock(return_value=[]),
+        get_statistics=AsyncMock(
+            return_value=EarningStatisticsDto(daily=2, weekly=4, monthly=8, total=16)
+        ),
+    )
     data = await admin_getter.__dishka_orig_func__(
         dialog_manager=manager,
-        earning_dao=SimpleNamespace(
-            list_tasks=AsyncMock(return_value=[task]),
-            get_pending_claims=AsyncMock(return_value=[]),
-        ),
+        earning_dao=earning_dao,
         settings_dao=SimpleNamespace(get=AsyncMock(return_value=SettingsDto())),
         plan_dao=SimpleNamespace(get_all=AsyncMock(return_value=[PlanDto(id=1, name="Paid")])),
         i18n=translator,
     )
+    if task_id:
+        earning_dao.get_statistics.assert_awaited_once()
+        assert earning_dao.get_statistics.await_args.kwargs == {"task_id": task_id}
+    else:
+        earning_dao.get_statistics.assert_not_awaited()
     data.update(
         tasks=[{"id": 1, "label": "Channel"}],
         has_tasks=True,
@@ -164,6 +176,17 @@ async def test_all_user_and_admin_windows_render_with_real_translations():
                 )
             text = await window.render_text(window_data, manager)
             assert text and len(text) <= 4096
+            if window.state == DashboardEarning.TASK:
+                quotes = text.split("<blockquote>")
+                assert len(quotes) == 3
+                statistics = quotes[2].split("</blockquote>")[0]
+                for label, count in (
+                    ("За день", 2),
+                    ("За неделю", 4),
+                    ("За месяц", 8),
+                    ("Всего", 16),
+                ):
+                    assert f"• <b>{label}:</b> {count if task_id else 0}" in statistics
             keyboard = await window.keyboard.render_keyboard(window_data, manager)
             assert keyboard
             for row in keyboard:

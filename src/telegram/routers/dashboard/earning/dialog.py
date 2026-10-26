@@ -130,7 +130,7 @@ router = Dialog(
                 style=Style(ButtonStyle.SUCCESS),
             ),
         ),
-        Row(SwitchTo(I18nFormat("btn-common.cancel"), id="back", state=DashboardEarning.CHANNELS)),
+        Row(SwitchTo(I18nFormat("btn-back.general"), id="back", state=DashboardEarning.CHANNELS)),
         IgnoreUpdate(),
         state=DashboardEarning.TASK,
         getter=admin_getter,
