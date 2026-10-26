@@ -8,7 +8,7 @@ from aiogram.utils.formatting import Text
 
 from src.__version__ import __version__
 from src.application.dto import BuildInfoDto, MediaDescriptorDto, MessagePayloadDto, SubscriptionDto
-from src.core.constants import REMNAWAVE_MAX_VERSION, REPOSITORY, TIMEZONE
+from src.core.constants import REPOSITORY, TIMEZONE
 from src.core.enums import (
     AccessMode,
     MediaType,
@@ -112,7 +112,7 @@ class RemnawaveVersionWarningEvent(SystemEvent, BuildInfoDto):
     )
 
     panel_version: str
-    max_version: str = str(REMNAWAVE_MAX_VERSION)
+    max_version: str
 
     @property
     def event_key(self) -> str:

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from loguru import logger
 from redis.asyncio import Redis
 
-from src.application.common import BotService, Remnawave
+from src.application.common import BotService, EventPublisher, Remnawave
 from src.application.common.dao import SettingsDao
 from src.application.events import (
     BotInlineModeDisabledEvent,
@@ -36,6 +36,35 @@ from src.infrastructure.services import (
     WebhookService,
 )
 from src.web.endpoints import TelegramWebhookEndpoint
+
+
+async def _check_remnawave_connection(
+    remnawave_service: Remnawave, config: AppConfig, event_bus: EventPublisher
+) -> None:
+    try:
+        panel_version = await remnawave_service.try_connection()
+        api_version = remnawave_service.api_version
+        max_version = REMNAWAVE_V3_MAX_VERSION if api_version == 3 else REMNAWAVE_MAX_VERSION
+        if api_version == 3:
+            # Patch releases in the supported v3 minor line retain the same API contract.
+            newer_api = (panel_version.major, panel_version.minor) > (
+                max_version.major,
+                max_version.minor,
+            )
+        else:
+            newer_api = panel_version > max_version
+        if newer_api:
+            await event_bus.publish(
+                RemnawaveVersionWarningEvent(
+                    **config.build.data,
+                    panel_version=str(panel_version),
+                    max_version=str(max_version),
+                )
+            )
+    except Exception as error:
+        await event_bus.publish(RemnawaveErrorEvent(**config.build.data, exception=error))
+        if isinstance(error, PanelApiVersionMismatchError):
+            raise
 
 
 @asynccontextmanager
@@ -134,23 +163,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     await event_bus.publish(bot_startup_event)
 
-    try:
-        panel_version = await remnawave_service.try_connection()
-        max_version = (
-            REMNAWAVE_V3_MAX_VERSION if config.remnawave.api_version == 3 else REMNAWAVE_MAX_VERSION
-        )
-        if panel_version > max_version:
-            await event_bus.publish(
-                RemnawaveVersionWarningEvent(
-                    **config.build.data,
-                    panel_version=str(panel_version),
-                )
-            )
-    except Exception as e:
-        remnawave_error_event = RemnawaveErrorEvent(**config.build.data, exception=e)
-        await event_bus.publish(remnawave_error_event)
-        if isinstance(e, PanelApiVersionMismatchError):
-            raise
+    await _check_remnawave_connection(remnawave_service, config, event_bus)
 
     yield
 

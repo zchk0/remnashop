@@ -349,10 +349,13 @@ async def test_invalid_responses_do_not_expose_vpn_credentials(panel: _Panel, pa
     assert failure.value.__cause__ is None
 
 
-async def test_connection_probe_rejects_v2_and_accepts_target_version(panel: _Panel) -> None:
+@pytest.mark.parametrize("version", ["3.4.5", "3.4.7"])
+async def test_connection_probe_rejects_v2_and_accepts_target_version(
+    panel: _Panel, version: str
+) -> None:
     panel.reply({"version": "2.8.1"})
     with pytest.raises(ValueError, match="requires panel 3.x"):
         await panel.client.try_connection()
-    panel.reply({"version": "3.4.5"})
-    assert await panel.client.try_connection() == Version("3.4.5")
+    panel.reply({"version": version})
+    assert await panel.client.try_connection() == Version(version)
     assert all(request.url.path == "/api/system/metadata" for request in panel.requests)
