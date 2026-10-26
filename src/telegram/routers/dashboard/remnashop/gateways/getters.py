@@ -6,6 +6,7 @@ from dishka.integrations.aiogram_dialog import inject
 
 from src.application.common.dao import PaymentGatewayDao, SettingsDao
 from src.application.dto import PaymentGatewayDto
+from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
 from src.core.config import AppConfig
 from src.core.enums import Currency
 
@@ -50,7 +51,7 @@ async def gateway_getter(
 
     settings = gateway.settings.as_list
     display_name_field = [s for s in settings if s["field"] == "display_name"]
-    other_settings = [s for s in settings if s["field"] != "display_name"]
+    other_settings = [s for s in settings if s["field"] not in {"display_name", "autopay_enabled"}]
 
     return {
         "id": gateway.id,
@@ -58,6 +59,8 @@ async def gateway_getter(
         "is_active": gateway.is_active,
         "display_name_field": display_name_field,
         "settings": other_settings,
+        "has_autopay": isinstance(gateway.settings, PlategaGatewaySettingsDto),
+        "autopay_enabled": getattr(gateway.settings, "autopay_enabled", False),
         "webhook": config.get_webhook(gateway.type),
         "requires_webhook": gateway.requires_webhook,
     }

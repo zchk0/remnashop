@@ -43,6 +43,7 @@ from src.infrastructure.services import (
     WebhookService,
     XuiDbReaderImpl,
 )
+from src.infrastructure.services.platega_autopay import PlategaAutopayService
 from src.infrastructure.services.remnawave_v3 import RemnawaveV3Impl
 
 
@@ -72,6 +73,7 @@ class ServicesProvider(Provider):
         return RemnawaveImpl(sdk)
 
     remna_webhook = provide(source=RemnaWebhookService, scope=Scope.REQUEST)
+    platega_autopay = provide(source=PlategaAutopayService, scope=Scope.REQUEST)
 
     notification_queue = provide(source=NotificationQueue)
     notification_worker = provide(source=NotificationWorker)

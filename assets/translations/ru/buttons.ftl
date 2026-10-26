@@ -410,7 +410,10 @@ btn-menu-editor =
 
 btn-gateway =
     .title = { gateway-type }
-    .setting = { $field }
+    .setting = { $field ->
+        [AUTOPAY_DISPLAY_NAME] 🏷️ Название автоплатежа
+        *[other] { $field }
+        }
     .display-name = 🏷️ Отображаемое название
     .webhook-copy = 📋 Скопировать вебхук
     .test = 🐞 Тест

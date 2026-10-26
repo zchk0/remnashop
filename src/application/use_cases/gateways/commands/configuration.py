@@ -114,7 +114,16 @@ class UpdatePaymentGatewaySettings(Interactor[UpdatePaymentGatewaySettingsDto, N
                         f"Field '{data.field_name}' not found in {settings_type.__name__}"
                     )
 
-                new_value = self.retort.load(data.value, field_type)
+                if data.field_name == "autopay_enabled":
+                    if data.value.lower() not in {"true", "false", "1", "0"}:
+                        raise ValueError("Expected true or false")
+                    new_value = data.value.lower() in {"true", "1"}
+                else:
+                    new_value = self.retort.load(data.value, field_type)
+                if data.field_name == "payment_method" and new_value == 6:
+                    raise ValueError("Use the autopay toggle for recurring subscriptions")
+                if data.field_name == "autopay_display_name" and not data.value.strip():
+                    raise ValueError("Autopay name must not be empty")
                 setattr(gateway.settings, data.field_name, new_value)
 
                 await self.gateway_dao.update(gateway)
@@ -153,7 +162,8 @@ class ResetPaymentGatewaySettingsField(Interactor[ResetPaymentGatewaySettingsDto
             if data.field_name not in get_type_hints(settings_type):
                 raise ValueError(f"Field '{data.field_name}' not found in {settings_type.__name__}")
 
-            setattr(gateway.settings, data.field_name, None)
+            defaults = {"autopay_enabled": False, "autopay_display_name": "🔄 СБП — автоплатёж"}
+            setattr(gateway.settings, data.field_name, defaults.get(data.field_name))
 
             deactivated = False
             if gateway.is_active and not gateway.settings.is_configured:

@@ -20,6 +20,7 @@ class User(BaseSql, TimestampMixin):
     auth_type: Mapped[AuthType] = mapped_column(String(20), default=AuthType.TELEGRAM)
 
     email: Mapped[Optional[str]] = mapped_column(String(255), index=True, unique=True)
+    billing_email: Mapped[Optional[str]] = mapped_column(String(255))
     password_hash: Mapped[Optional[str]] = mapped_column(String(512))
     is_email_verified: Mapped[bool] = mapped_column(default=False)
     pending_email: Mapped[Optional[str]] = mapped_column(String(255))

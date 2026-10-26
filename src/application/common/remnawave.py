@@ -43,6 +43,8 @@ class Remnawave(Protocol):
         self, uuid: PanelUserRef, description: str
     ) -> RemnaUserDto: ...
 
+    async def update_user_email(self, uuid: PanelUserRef, email: str) -> RemnaUserDto: ...
+
     async def update_user_traffic_limit(
         self,
         uuid: PanelUserRef,

@@ -131,6 +131,8 @@ class PlategaGatewaySettingsDto(GatewaySettingsDto):
     merchant_id: Optional[str] = None
     api_key: Optional[SecretStr] = None
     payment_method: Optional[int] = None
+    autopay_enabled: bool = False
+    autopay_display_name: str = "🔄 СБП — автоплатёж"
 
     @property
     def is_configured(self) -> bool:

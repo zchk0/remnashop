@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any, cast
 
 from adaptix import Retort
@@ -10,11 +11,12 @@ from loguru import logger
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PaymentGatewayDto, PlanDto, PriceDetailsDto, TelegramUserDto
+from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
 from src.application.services import PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.config import AppConfig
-from src.core.enums import PurchaseType
+from src.core.enums import Currency, PaymentGatewayType, PurchaseType
 from src.core.utils.i18n_helpers import (
     i18n_format_days,
     i18n_format_device_limit,
@@ -22,6 +24,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_traffic_limit,
 )
 from src.core.utils.i18n_keys import TimeUnitKey
+from src.infrastructure.payment_gateways import PlategaGateway
 from src.telegram.states import Subscription
 
 
@@ -305,6 +308,7 @@ async def payment_method_getter(
         raise ValueError(f"Duration '{selected_duration}' not found in plan '{plan.name}'")
 
     payment_methods = []
+    autopay_method = None
     for gateway in gateways:
         try:
             raw_price = duration.get_price(gateway.currency)
@@ -328,6 +332,24 @@ async def payment_method_getter(
                 "currency": gateway.currency.symbol,
             }
         )
+        if (
+            gateway.type == PaymentGatewayType.PLATEGA
+            and isinstance(gateway.settings, PlategaGatewaySettingsDto)
+            and gateway.settings.autopay_enabled
+            and not plan.is_trial
+        ):
+            try:
+                PlategaGateway.subscription_interval(duration.days)
+            except ValueError:
+                continue
+            recurring_price = pricing_service.calculate(
+                replace(user, purchase_discount=0), raw_price, Currency.RUB
+            )
+            if not recurring_price.is_free:
+                autopay_method = {
+                    "title": gateway.settings.autopay_display_name,
+                    "amount": recurring_price.final_amount,
+                }
 
     if not payment_methods:
         logger.warning(
@@ -349,6 +371,7 @@ async def payment_method_getter(
         "traffic": i18n_format_traffic_limit(plan.traffic_limit),
         "period": i18n.get(key, **kw),
         "payment_methods": payment_methods,
+        "autopay_method": autopay_method,
         "final_amount": 0,
         "currency": "",
         "only_single_duration": only_single_duration,
@@ -416,7 +439,10 @@ async def confirm_getter(
         "is_personal_discount": pricing_service.is_largest_discount_personal(user),
         "currency": payment_gateway.currency.symbol,
         "url": result_url,
-        "only_single_gateway": len(gateways) == 1,
+        "only_single_gateway": len(gateways) == 1 and not any(
+            isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled
+            for g in gateways
+        ),
         "only_single_duration": only_single_duration,
         "only_single_plan": only_single_plan,
         "is_free": is_free,

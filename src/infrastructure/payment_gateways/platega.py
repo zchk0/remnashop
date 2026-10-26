@@ -51,6 +51,50 @@ class PlategaGateway(BasePaymentGateway):
             },
         )
         self.selected_payment_method: Optional[str] = None
+        self.recurring_webhook: dict[str, Any] | None = None
+
+    @staticmethod
+    def subscription_interval(days: int) -> tuple[int, int]:
+        if days > 0 and days % 30 == 0 and days // 30 <= 12:
+            return 3, days // 30
+        if days > 0 and days % 365 == 0 and days // 365 <= 3:
+            return 4, days // 365
+        if 1 <= days <= 31:
+            return 1, days
+        if days > 0 and days % 7 == 0 and days // 7 <= 4:
+            return 2, days // 7
+        raise ValueError("This duration is not supported by Platega subscriptions")
+
+    async def create_subscription(
+        self, amount: Decimal, details: str, duration: int
+    ) -> PaymentResultDto:
+        if amount <= 0 or amount != amount.to_integral_value():
+            raise ValueError("Platega subscriptions require a positive integer RUB amount")
+        interval, count = self.subscription_interval(duration)
+        response = await self._client.post(
+            self.DEFAULT_SINGLE_METHOD_ENDPOINT,
+            json={
+                "paymentMethod": 6,
+                "paymentDetails": {
+                    "amount": int(amount),
+                    "currency": "RUB",
+                    "interval": interval,
+                    "intervalCount": count,
+                },
+                "description": details,
+            },
+        )
+        response.raise_for_status()
+        return self._get_payment_data(response.json())
+
+    async def get_subscription(self, subscription_id: UUID) -> dict[str, Any]:
+        response = await self._client.get(f"subscription/{subscription_id}")
+        response.raise_for_status()
+        return cast(dict[str, Any], response.json())
+
+    async def cancel_subscription(self, subscription_id: UUID) -> None:
+        response = await self._client.post(f"subscription/{subscription_id}/cancel")
+        response.raise_for_status()
 
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(amount, details)
@@ -84,16 +128,29 @@ class PlategaGateway(BasePaymentGateway):
         logger.debug(f"Received {self.__class__.__name__} webhook request")
 
         raw_body = await request.body()
-        webhook_data = orjson.loads(raw_body)
-
+        self.recurring_webhook = None
+        self.selected_payment_method = None
         if not self._verify_webhook(request):
             raise PermissionError("Webhook verification failed")
+
+        webhook_data = orjson.loads(raw_body)
+        if not isinstance(webhook_data, dict):
+            raise ValueError("Invalid Platega callback")
+        # Platega documents PascalCase for subscriptions and camelCase for ordinary payments.
+        webhook_data = {key[0].lower() + key[1:]: value for key, value in webhook_data.items()}
+        status = str(webhook_data.get("status", "")).upper()
+        webhook_data["status"] = status
+        if webhook_data.get("subscriptionId") or status.startswith("SUBSCRIPTION_"):
+            subscription_id = webhook_data.get("subscriptionId") or webhook_data.get("id")
+            UUID(str(subscription_id))
+            webhook_data["subscriptionId"] = str(subscription_id)
+            self.recurring_webhook = webhook_data
+            return None
 
         payment_id_str = webhook_data.get("id")
         if not payment_id_str:
             raise ValueError("Required field 'id' is missing")
 
-        status = webhook_data.get("status")
         payment_id = UUID(payment_id_str)
         self.selected_payment_method = self._normalize_payment_method(
             webhook_data.get("paymentMethod")
@@ -112,6 +169,8 @@ class PlategaGateway(BasePaymentGateway):
         return payment_id, transaction_status
 
     async def _create_payment_payload(self, amount: Decimal, details: str) -> dict[str, Any]:
+        if self.settings.payment_method == 6:
+            raise ValueError("Enable the separate autopay option instead of payment_method=6")
         payload: dict[str, Any] = {
             "paymentDetails": {
                 "amount": float(amount),

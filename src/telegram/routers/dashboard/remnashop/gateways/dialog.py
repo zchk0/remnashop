@@ -29,6 +29,7 @@ from .getters import (
 )
 from .handlers import (
     on_active_toggle,
+    on_autopay_toggle,
     on_default_currency_select,
     on_field_input,
     on_field_reset,
@@ -100,6 +101,13 @@ gateways = Window(
 gateway_settings = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-gateways-settings", gateway_type=F["gateway_type"]),
+    I18nFormat("msg-gateways-autopay-note", F["has_autopay"]),
+    Row(
+        Button(
+            text=I18nFormat("btn-gateway-autopay-toggle", enabled=F["autopay_enabled"]),
+            id="autopay_toggle", on_click=on_autopay_toggle, when=F["has_autopay"],
+        ),
+    ),
     Row(
         Select(
             text=I18nFormat("btn-gateway.display-name"),

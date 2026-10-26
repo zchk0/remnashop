@@ -148,6 +148,15 @@ class RemnawaveImpl(Remnawave):
             )
             return remna_user
         except ConflictError:
+            existing = await self.get_user_by_short_uuid(short_uuid) if short_uuid else None
+            if (
+                short_uuid is not None
+                and existing is not None
+                and existing.short_uuid == short_uuid
+                and existing.telegram_id == request_dto.telegram_id
+                and existing.username == request_dto.username
+            ):
+                return existing
             if request_dto.uuid is not None:
                 existing = await self.get_user_by_uuid(request_dto.uuid)
                 if existing is not None:
@@ -186,6 +195,10 @@ class RemnawaveImpl(Remnawave):
         )
         logger.info(f"Description for RemnaUser '{uuid}' updated successfully")
         return remna_user
+
+    async def update_user_email(self, uuid: PanelUserRef, email: str) -> RemnaUserDto:
+        uuid = await self._legacy_uuid(uuid)
+        return await self._patch_user(UpdateUserRequestDto(uuid=uuid, email=email))
 
     async def update_user_traffic_limit(
         self,

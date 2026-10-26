@@ -138,7 +138,11 @@ async def on_field_input(
         return
 
     # display_name may carry custom (premium) emoji, preserved as <tg-emoji> tags
-    value = message.html_text if selected_field == "display_name" else message.text
+    value = (
+        message.html_text
+        if selected_field in {"display_name", "autopay_display_name"}
+        else message.text
+    )
 
     try:
         await update_payment_gateway_settings(
@@ -199,3 +203,25 @@ async def on_gateway_move(
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     gateway_id = int(dialog_manager.item_id)  # type: ignore[attr-defined]
     await move_payment_gateway_up(user, gateway_id)
+
+
+@inject
+async def on_autopay_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    payment_gateway_dao: FromDishka[PaymentGatewayDao],
+    update_settings: FromDishka[UpdatePaymentGatewaySettings],
+) -> None:
+    user = dialog_manager.middleware_data[USER_KEY]
+    gateway_id = dialog_manager.dialog_data["gateway_id"]
+    gateway = await payment_gateway_dao.get_by_id(gateway_id)
+    if not gateway or not gateway.settings:
+        return
+    enabled = getattr(gateway.settings, "autopay_enabled", False)
+    await update_settings(
+        user,
+        UpdatePaymentGatewaySettingsDto(
+            gateway_id=gateway_id, field_name="autopay_enabled", value=str(not enabled).lower()
+        ),
+    )

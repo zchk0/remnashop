@@ -82,6 +82,9 @@ class RemnawaveV3Impl(RemnawaveImpl):
     async def update_user_description(self, uuid: PanelUserRef, description: str) -> User:
         return await self._update(uuid, description=description)
 
+    async def update_user_email(self, uuid: PanelUserRef, email: str) -> User:
+        return await self._update(uuid, email=email)
+
     async def update_user_traffic_limit(self, uuid: PanelUserRef, traffic_limit_bytes: int) -> User:
         return await self._update(uuid, traffic_limit_bytes=traffic_limit_bytes)
 

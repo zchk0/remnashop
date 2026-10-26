@@ -5,6 +5,7 @@ from dishka.integrations.taskiq import FromDishka, inject
 from src.application.use_cases.gateways.commands.payment import ProcessPayment, ProcessPaymentDto
 from src.application.use_cases.misc.commands.maintenance import CancelOldTransactions
 from src.core.enums import PaymentGatewayType, TransactionStatus
+from src.infrastructure.services.platega_autopay import PlategaAutopayService
 from src.infrastructure.taskiq.broker import broker
 
 
@@ -31,3 +32,21 @@ async def cancel_old_transactions_task(
     cancel_old_transactions: FromDishka[CancelOldTransactions],
 ) -> None:
     await cancel_old_transactions.system()
+
+
+@broker.task(retry_on_error=True)
+@inject(patch_module=True)
+async def handle_platega_autopay_task(
+    event_id: str,
+    autopay: FromDishka[PlategaAutopayService],
+) -> None:
+    await autopay.process(event_id)
+
+
+@broker.task(schedule=[{"cron": "* * * * *"}])
+@inject(patch_module=True)
+async def retry_platega_autopay_task(
+    autopay: FromDishka[PlategaAutopayService],
+) -> None:
+    for event_id in await autopay.pending_events():
+        await handle_platega_autopay_task.kiq(event_id)  # type: ignore[call-overload]

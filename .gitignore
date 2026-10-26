@@ -4,6 +4,7 @@
 .code-workspace
 data/*
 tests/*
+!tests/test_platega_autopay.py
 !tests/test_promocode_recovery.py
 !tests/test_broadcast_registration_exclusion.py
 !tests/test_notification_keyboard.py
@@ -34,7 +35,8 @@ logs/*
 .history
 .claude
 CLAUDE.md
-docs/
+docs/*
+!docs/platega-autopay.md
 
 # Environment
 .venv/

@@ -69,6 +69,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_device_limit,
     i18n_format_traffic_limit,
 )
+from src.infrastructure.services.platega_autopay import PlategaAutopayService
 
 
 class CreateDefaultPaymentGateway(Interactor[None, None]):
@@ -309,6 +310,7 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
         redirect: Redirect,
         assign_referral_rewards: AssignReferralRewards,
         purchase_subscription: PurchaseSubscription,
+        autopay: PlategaAutopayService,
     ) -> None:
         self.uow = uow
         self.user_dao = user_dao
@@ -320,6 +322,7 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
         self.redirect = redirect
         self.assign_referral_rewards = assign_referral_rewards
         self.purchase_subscription = purchase_subscription
+        self.autopay = autopay
 
     async def _execute(self, actor: UserDto, data: ProcessPaymentDto) -> None:  # noqa: C901
         payment_id = data.payment_id
@@ -481,6 +484,8 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
         )
 
         try:
+            if transaction.purchase_type in {PurchaseType.NEW, PurchaseType.CHANGE}:
+                await self.autopay.cancel_for_user(user.id)
             await self.purchase_subscription.system(
                 PurchaseSubscriptionDto(user, transaction, subscription)
             )

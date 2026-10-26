@@ -39,6 +39,9 @@ class DashboardEarning(StatesGroup):
 
 class Subscription(StatesGroup):
     MAIN = State()
+    AUTOPAY = State()
+    AUTOPAY_CONFIRM = State()
+    AUTOPAY_EMAIL = State()
     PROMOCODE = State()
     PLAN = State()
     PLANS = State()

@@ -17,7 +17,11 @@ from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.exceptions import GatewayNotConfiguredError
 from src.infrastructure.payment_gateways import PlategaGateway
 from src.infrastructure.payment_gateways.base import BasePaymentGateway
-from src.infrastructure.taskiq.tasks.payments import handle_payment_transaction_task
+from src.infrastructure.services.platega_autopay import PlategaAutopayService
+from src.infrastructure.taskiq.tasks.payments import (
+    handle_payment_transaction_task,
+    handle_platega_autopay_task,
+)
 
 router = APIRouter(prefix=API_V1 + PAYMENTS_WEBHOOK_PATH, include_in_schema=False)
 
@@ -79,6 +83,7 @@ async def _process_payment_webhook(
     get_payment_gateway_instance: GetPaymentGatewayInstance,
     transaction_dao: TransactionDao,
     uow: UnitOfWork,
+    autopay: PlategaAutopayService,
 ) -> Response:
     try:
         gateway_enum = PaymentGatewayType(gateway_type.upper())
@@ -88,7 +93,7 @@ async def _process_payment_webhook(
 
     gateway: Optional[BasePaymentGateway] = None
     try:
-        gateway = await get_payment_gateway_instance.system(gateway_enum)
+        gateway = await get_payment_gateway_instance.for_webhook(gateway_enum)
         result = await gateway.handle_webhook(request)
     except GatewayNotConfiguredError:
         logger.warning(f"Webhook received for inactive/unconfigured gateway '{gateway_enum}'")
@@ -101,6 +106,14 @@ async def _process_payment_webhook(
         error_event = ErrorEvent(**config.build.data, exception=e)
         await event_publisher.publish(error_event)
         return await _build_response(gateway, request, gateway_type)
+
+    if isinstance(gateway, PlategaGateway) and gateway.recurring_webhook is not None:
+        try:
+            event_id = await autopay.receive(gateway.recurring_webhook)
+            await handle_platega_autopay_task.kiq(event_id)  # type: ignore[call-overload]
+        except Exception:
+            logger.exception("Failed to persist/enqueue Platega recurring callback")
+            return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     if result is not None:
         payment_id, payment_status = result
@@ -125,6 +138,7 @@ async def payments_webhook(
     get_payment_gateway_instance: FromDishka[GetPaymentGatewayInstance],
     transaction_dao: FromDishka[TransactionDao],
     uow: FromDishka[UnitOfWork],
+    autopay: FromDishka[PlategaAutopayService],
 ) -> Response:
     return await _process_payment_webhook(
         gateway_type=gateway_type,
@@ -134,4 +148,5 @@ async def payments_webhook(
         get_payment_gateway_instance=get_payment_gateway_instance,
         transaction_dao=transaction_dao,
         uow=uow,
+        autopay=autopay,
     )

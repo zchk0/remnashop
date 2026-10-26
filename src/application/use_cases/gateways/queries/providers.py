@@ -37,3 +37,10 @@ class GetPaymentGatewayInstance(Interactor[PaymentGatewayType, BasePaymentGatewa
             raise GatewayNotConfiguredError(f"Gateway '{gateway_type}' is not configured")
 
         return self.gateway_factory(gateway)
+
+    async def for_webhook(self, gateway_type: PaymentGatewayType) -> BasePaymentGateway:
+        # Disabling new checkouts must not discard already paid transactions or cancellations.
+        gateway = await self.payment_gateway_dao.get_by_type(gateway_type)
+        if not gateway or (gateway.settings and not gateway.settings.is_configured):
+            raise GatewayNotConfiguredError(f"Gateway '{gateway_type}' is not configured")
+        return self.gateway_factory(gateway)

@@ -11,6 +11,7 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PlanDto, PlanSnapshotDto, SubscriptionDto, TelegramUserDto
+from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
 from src.application.services import PricingService
 from src.application.use_cases.gateways.commands.payment import (
     CreatePayment,
@@ -42,6 +43,13 @@ async def on_subscription_start(start_data: Any, manager: DialogManager) -> None
 PAYMENT_CACHE_KEY = "payment_cache"
 CURRENT_DURATION_KEY = "selected_duration"
 CURRENT_METHOD_KEY = "selected_payment_method"
+
+
+def _only_one_payment_method(gateways: list) -> bool:
+    return len(gateways) == 1 and not any(
+        isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled
+        for g in gateways
+    )
 
 
 class CachedPaymentData(TypedDict):
@@ -259,7 +267,7 @@ async def on_subscription_plans(  # noqa: C901
             dialog_manager.dialog_data["selected_duration"] = plans[0].durations[0].days
             dialog_manager.dialog_data["only_single_duration"] = True
 
-            if len(gateways) == 1:
+            if _only_one_payment_method(gateways):
                 logger.info(f"{user.log} Auto-selected payment method '{gateways[0].type}'")
                 dialog_manager.dialog_data["selected_payment_method"] = gateways[0].type
                 dialog_manager.dialog_data["only_single_payment_method"] = True
@@ -367,7 +375,7 @@ async def on_duration_select(
     )
     dialog_manager.dialog_data["is_free"] = price.is_free
 
-    if len(gateways) == 1 or price.is_free:
+    if _only_one_payment_method(gateways) or price.is_free:
         selected_payment_method = gateways[0].type
         dialog_manager.dialog_data[CURRENT_METHOD_KEY] = selected_payment_method
 

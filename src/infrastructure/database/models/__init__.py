@@ -9,6 +9,7 @@ from .oauth_provider import UserOAuthProvider
 from .payment_gateway import PaymentGateway
 from .plan import Plan, PlanDuration, PlanPrice
 from .promocode import Promocode, PromocodeActivation
+from .recurring_payment import RecurringPayment, RecurringPaymentEvent
 from .referral import Referral, ReferralReward
 from .settings import Settings
 from .subscription import Subscription
@@ -17,6 +18,8 @@ from .tv_pairing import TvPairingCode
 from .user import User
 
 __all__ = [
+    "RecurringPayment",
+    "RecurringPaymentEvent",
     "ChannelClaim",
     "ChannelTask",
     "AuthToken",

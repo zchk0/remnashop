@@ -12,6 +12,15 @@ from src.telegram.states import Subscription
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import Button, Column, Group, Row, Select, SwitchTo, Url
 
+from .autopay import (
+    autopay_confirm_getter,
+    autopay_getter,
+    on_autopay_cancel,
+    on_autopay_checkout,
+    on_autopay_create,
+    on_autopay_email_input,
+    on_autopay_enable,
+)
 from .getters import (
     confirm_getter,
     duration_getter,
@@ -53,6 +62,13 @@ subscription = Window(
             id=f"{PAYMENT_PREFIX}{PurchaseType.CHANGE}",
             on_click=on_subscription_plans,
             when=F["has_active_subscription"],
+        ),
+    ),
+    Row(
+        SwitchTo(
+            text=I18nFormat("btn-autopay-settings"),
+            id="autopay_settings",
+            state=Subscription.AUTOPAY,
         ),
     ),
     Row(
@@ -168,6 +184,14 @@ payment_method = Window(
             items="payment_methods",
             type_factory=PaymentGatewayType,
             on_click=on_payment_method_select,
+        ),
+    ),
+    Row(
+        Button(
+            text=Format("{autopay_method[title]} | {autopay_method[amount]}₽"),
+            id="autopay_checkout",
+            on_click=on_autopay_checkout,
+            when=F["autopay_method"],
         ),
     ),
     Row(
@@ -296,8 +320,57 @@ promocode_window = Window(
     getter=getter_promocode,
 )
 
+autopay_window = Window(
+    Banner(BannerName.SUBSCRIPTION),
+    I18nFormat("msg-autopay-settings"),
+    I18nFormat("msg-autopay-refresh-error", F["ap_error"]),
+    Url(text=I18nFormat("btn-autopay-bind"), url=Format("{ap_url}"), when=F["ap_pending"]),
+    Button(
+        text=I18nFormat("btn-autopay-enable"),
+        id="autopay_enable",
+        on_click=on_autopay_enable,
+        when=F["ap_can_enable"],
+    ),
+    Button(
+        text=I18nFormat("btn-autopay-disable"),
+        id="autopay_disable",
+        on_click=on_autopay_cancel,
+        when=F["ap_can_cancel"],
+    ),
+    Button(text=I18nFormat("btn-autopay-refresh"), id="autopay_refresh"),
+    SwitchTo(
+        text=I18nFormat("btn-autopay-email", has_email=F["ap_has_email"]),
+        id="autopay_email",
+        state=Subscription.AUTOPAY_EMAIL,
+    ),
+    SwitchTo(text=I18nFormat("btn-back.general"), id="autopay_back", state=Subscription.MAIN),
+    *back_main_menu_button,
+    state=Subscription.AUTOPAY,
+    getter=autopay_getter,
+)
+
+autopay_confirm_window = Window(
+    Banner(BannerName.SUBSCRIPTION),
+    I18nFormat("msg-autopay-confirm"),
+    Button(text=I18nFormat("btn-autopay-create"), id="autopay_create", on_click=on_autopay_create),
+    SwitchTo(text=I18nFormat("btn-back.general"), id="autopay_back", state=Subscription.AUTOPAY),
+    state=Subscription.AUTOPAY_CONFIRM,
+    getter=autopay_confirm_getter,
+)
+
+autopay_email_window = Window(
+    Banner(BannerName.SUBSCRIPTION),
+    I18nFormat("msg-autopay-email"),
+    MessageInput(on_autopay_email_input),
+    SwitchTo(text=I18nFormat("btn-back.general"), id="autopay_back", state=Subscription.AUTOPAY),
+    state=Subscription.AUTOPAY_EMAIL,
+)
+
 router = Dialog(
     subscription,
+    autopay_window,
+    autopay_confirm_window,
+    autopay_email_window,
     promocode_window,
     plan,
     plans,

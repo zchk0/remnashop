@@ -44,6 +44,7 @@ class UserDto(BaseDto, TrackableMixin, TimestampMixin):
     auth_type: AuthType = AuthType.TELEGRAM
 
     email: Optional[str] = None
+    billing_email: Optional[str] = None
     password_hash: Optional[str] = None
     is_email_verified: bool = False
     pending_email: Optional[str] = None
