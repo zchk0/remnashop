@@ -35,6 +35,7 @@ from src.core.enums import (
     SubscriptionStatus,
     TransactionStatus,
 )
+from src.core.exceptions import AutopayDisabledError
 from src.core.utils.panel_identity import subscription_ref
 from src.core.utils.time import datetime_now
 from src.core.utils.validators import is_valid_email
@@ -79,8 +80,10 @@ class PlategaAutopayService:
             raise ValueError("Platega is not configured")
         if not data.settings.is_configured:
             raise ValueError("Platega is not configured")
-        if for_creation and (not data.is_active or not data.settings.autopay_enabled):
-            raise ValueError("Autopay is disabled")
+        if for_creation and not data.is_active:
+            raise AutopayDisabledError("Platega gateway is inactive (is_active=False)")
+        if for_creation and not data.settings.autopay_enabled:
+            raise AutopayDisabledError("Platega autopay is disabled (autopay_enabled=False)")
         return cast(PlategaGateway, self.gateway_factory(data))
 
     async def current(self, user_id: int) -> RecurringPayment | None:

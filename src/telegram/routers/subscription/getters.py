@@ -25,6 +25,7 @@ from src.core.utils.i18n_helpers import (
 )
 from src.core.utils.i18n_keys import TimeUnitKey
 from src.infrastructure.payment_gateways import PlategaGateway
+from src.infrastructure.services.platega_autopay import OPEN_STATUSES, PlategaAutopayService
 from src.telegram.states import Subscription
 
 
@@ -40,14 +41,26 @@ async def subscription_getter(
     dialog_manager: DialogManager,
     user: TelegramUserDto,
     subscription_dao: FromDishka[SubscriptionDao],
+    gateway_dao: FromDishka[PaymentGatewayDao],
+    autopay: FromDishka[PlategaAutopayService],
     **kwargs: Any,
 ) -> dict[str, Any]:
     current_subscription = await subscription_dao.get_current(user.id)
     has_active = bool(current_subscription and not current_subscription.is_trial)
     is_unlimited = current_subscription.is_unlimited if current_subscription else False
+    payment = await autopay.current(user.id)
+    gateway = await gateway_dao.get_by_type(PaymentGatewayType.PLATEGA)
+    show_autopay_settings = bool(payment and payment.status in OPEN_STATUSES) or bool(
+        gateway
+        and gateway.is_active
+        and isinstance(gateway.settings, PlategaGatewaySettingsDto)
+        and gateway.settings.is_configured
+        and gateway.settings.autopay_enabled
+    )
     return {
         "has_active_subscription": has_active,
         "is_not_unlimited": not is_unlimited,
+        "show_autopay_settings": show_autopay_settings,
     }
 
 

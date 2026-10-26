@@ -69,6 +69,7 @@ subscription = Window(
             text=I18nFormat("btn-autopay-settings"),
             id="autopay_settings",
             state=Subscription.AUTOPAY,
+            when=F["show_autopay_settings"],
         ),
     ),
     Row(

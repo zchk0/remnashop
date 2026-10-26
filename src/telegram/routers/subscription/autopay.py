@@ -19,6 +19,7 @@ from src.application.services import PricingService
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
 from src.core.constants import USER_KEY
 from src.core.enums import Currency, PaymentGatewayType, PurchaseType
+from src.core.exceptions import AutopayDisabledError
 from src.core.utils.i18n_helpers import i18n_format_days
 from src.infrastructure.payment_gateways import PlategaGateway
 from src.infrastructure.services.platega_autopay import OPEN_STATUSES, PlategaAutopayService
@@ -63,6 +64,7 @@ async def on_autopay_checkout(
     retort: FromDishka[Retort],
     pricing_service: FromDishka[PricingService],
     autopay: FromDishka[PlategaAutopayService],
+    i18n: FromDishka[TranslatorRunner],
 ) -> None:
     user = dialog_manager.middleware_data[USER_KEY]
     try:
@@ -76,6 +78,10 @@ async def on_autopay_checkout(
             pricing_service,
             autopay,
         )
+    except AutopayDisabledError as error:
+        logger.warning(f"Autopay checkout unavailable: {error}")
+        await callback.answer(i18n.get("ntf-autopay-disabled"), show_alert=True)
+        await dialog_manager.switch_to(Subscription.AUTOPAY)
     except Exception:
         logger.exception("Could not prepare Platega autopay")
         await dialog_manager.switch_to(Subscription.AUTOPAY)
@@ -114,6 +120,9 @@ async def on_autopay_enable(
             pricing_service,
             autopay,
         )
+    except AutopayDisabledError as error:
+        logger.warning(f"Autopay enable unavailable: {error}")
+        await callback.answer(i18n.get("ntf-autopay-disabled"), show_alert=True)
     except Exception:
         logger.exception("Could not enable Platega autopay")
         await callback.answer(i18n.get("ntf-autopay-unavailable"), show_alert=True)
@@ -232,6 +241,10 @@ async def on_autopay_create(
             retort.load(dialog_manager.dialog_data["ap_pricing"], PriceDetailsDto),
             PurchaseType(dialog_manager.dialog_data["ap_purchase_type"]),
         )
+        await dialog_manager.switch_to(Subscription.AUTOPAY)
+    except AutopayDisabledError as error:
+        logger.warning(f"Autopay creation unavailable: {error}")
+        await callback.answer(i18n.get("ntf-autopay-disabled"), show_alert=True)
         await dialog_manager.switch_to(Subscription.AUTOPAY)
     except Exception:
         logger.exception("Could not create Platega autopay")

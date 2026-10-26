@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import orjson
 import pytest
+from adaptix import Retort
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from fluent_compiler.bundle import FluentBundle
@@ -40,8 +41,12 @@ from src.application.use_cases.gateways.commands.configuration import (
 )
 from src.core.constants import CONTAINER_KEY, USER_KEY
 from src.core.enums import Currency, PaymentGatewayType, PlanType, PurchaseType, TransactionStatus
+from src.core.exceptions import AutopayDisabledError
+from src.infrastructure.database.dao.payment_gateway import PaymentGatewayDaoImpl
+from src.infrastructure.database.models import PaymentGateway
 from src.infrastructure.di.providers.retort import RetortProvider
 from src.infrastructure.payment_gateways.platega import PlategaGateway
+from src.infrastructure.services.cryptography import CryptographerImpl
 from src.infrastructure.services.platega_autopay import PlategaAutopayService
 from src.infrastructure.services.remnawave import RemnawaveImpl
 from src.infrastructure.services.remnawave_v3 import RemnawaveV3Impl
@@ -50,7 +55,9 @@ from src.telegram.routers.subscription.dialog import (
     autopay_confirm_window,
     autopay_window,
     payment_method,
+    subscription,
 )
+from src.telegram.routers.subscription.getters import subscription_getter
 from src.telegram.states import Subscription
 from src.web.endpoints import payments
 
@@ -281,6 +288,96 @@ async def test_subscription_can_be_created_without_email(email_error):
     assert payment.email is None
     gateway.create_subscription.assert_awaited_once()
     service.session.add.assert_called_once_with(payment)
+
+
+@pytest.mark.parametrize("active,enabled", [(False, True), (True, False), (False, False)])
+async def test_disabled_autopay_blocks_new_connections_but_allows_management(active, enabled):
+    service = _service()
+    gateway = _gateway()
+    gateway.data.is_active = active
+    gateway.settings.autopay_enabled = enabled
+    service.gateway_dao = SimpleNamespace(get_by_type=AsyncMock(return_value=gateway.data))
+    service.gateway_factory = Mock(return_value=gateway)
+    with pytest.raises(AutopayDisabledError) as failure:
+        await service.gateway(for_creation=True)
+    assert (
+        "is_active=False" in str(failure.value)
+        if not active
+        else ("autopay_enabled=False" in str(failure.value))
+    )
+    service.gateway_factory.assert_not_called()
+    assert await service.gateway() is gateway
+
+
+async def test_stale_confirmation_shows_disabled_message_without_exception_trace(monkeypatch):
+    retort = RetortProvider().get_retort()
+    service = SimpleNamespace(create=AsyncMock(side_effect=AutopayDisabledError("flag disabled")))
+    translator = SimpleNamespace(get=Mock(return_value="Подключение автоплатежей отключено"))
+    container = SimpleNamespace(
+        get=AsyncMock(
+            side_effect=lambda dependency, **kwargs: (
+                service
+                if dependency is PlategaAutopayService
+                else retort
+                if dependency is Retort
+                else translator
+            )
+        )
+    )
+    manager = SimpleNamespace(
+        middleware_data={USER_KEY: UserDto(id=1, name="User"), CONTAINER_KEY: container},
+        dialog_data={
+            "ap_plan": retort.dump(replace(PlanSnapshotDto.test(), duration=30)),
+            "ap_pricing": retort.dump(PriceDetailsDto.test()),
+            "ap_purchase_type": PurchaseType.NEW.value,
+        },
+        switch_to=AsyncMock(),
+    )
+    callback = SimpleNamespace(answer=AsyncMock())
+    log = SimpleNamespace(warning=Mock(), exception=Mock())
+    monkeypatch.setattr(autopay_handlers, "logger", log)
+    await autopay_handlers.on_autopay_create(callback, None, manager)
+    translator.get.assert_called_once_with("ntf-autopay-disabled")
+    callback.answer.assert_awaited_once_with("Подключение автоплатежей отключено", show_alert=True)
+    manager.switch_to.assert_awaited_once_with(Subscription.AUTOPAY)
+    log.exception.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_autopay_toggle_persists_json_boolean_and_preserves_credentials(enabled):
+    provider = RetortProvider()
+    retort = provider.get_retort()
+    cryptographer = CryptographerImpl(
+        SimpleNamespace(crypt_key=SecretStr("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="))
+    )
+    gateway = _gateway().data
+    gateway.settings.autopay_enabled = not enabled
+    gateway.settings._changed_data.clear()
+    gateway.settings.autopay_enabled = enabled
+    dao = PaymentGatewayDaoImpl.__new__(PaymentGatewayDaoImpl)
+    dao.retort = retort
+    changes = dao._serialize_for_update(
+        gateway, PaymentGatewayDto, PaymentGateway, pre_process=cryptographer.encrypt_recursive
+    )
+    partial_settings = next(iter(changes["settings"].compile().params.values()))
+    assert partial_settings == {"autopay_enabled": enabled}
+    stored_settings = retort.dump(cryptographer.encrypt_recursive(gateway.settings))
+    stored_settings.update(partial_settings)
+    model = PaymentGateway(
+        id=1,
+        order_index=1,
+        type=PaymentGatewayType.PLATEGA,
+        currency=Currency.RUB,
+        is_active=True,
+        settings=stored_settings,
+    )
+    convert = provider.get_conversion_retort(retort, cryptographer).get_converter(
+        PaymentGateway, PaymentGatewayDto
+    )
+    loaded = convert(model)
+    assert loaded.settings.autopay_enabled is enabled
+    assert loaded.settings.api_key.get_secret_value() == "secret"
+    assert loaded.settings.merchant_id == "merchant"
 
 
 async def test_optional_email_is_saved_without_autopay_or_panel_user():
@@ -588,6 +685,53 @@ async def test_recurring_checkout_is_a_separate_full_width_row():
     )
     assert len(keyboard) == len(keyboard[0]) == 1
     assert keyboard[0][0].text == "Мой автоплатёж | 450₽"
+
+
+@pytest.mark.parametrize(
+    "active,enabled,status,visible",
+    [
+        (True, True, None, True),
+        (False, True, None, False),
+        (True, False, None, False),
+        (False, False, None, False),
+        (False, False, "Pending", True),
+        (False, True, "Active", True),
+        (True, False, "PastDue", True),
+        (False, False, "Cancelled", False),
+        (False, True, "Failed", False),
+        (True, False, "Cancelled", False),
+        (True, True, "Cancelled", True),
+        (True, True, "Failed", True),
+    ],
+)
+async def test_subscription_autopay_settings_visibility(active, enabled, status, visible):
+    gateway = _gateway().data
+    gateway.is_active = active
+    gateway.settings.autopay_enabled = enabled
+    autopay = SimpleNamespace(
+        current=AsyncMock(return_value=SimpleNamespace(status=status) if status else None)
+    )
+    translator = SimpleNamespace(get=Mock(return_value="🔄 Настройки автоплатежа"))
+    manager = SimpleNamespace(
+        is_preview=lambda: False,
+        middleware_data={
+            CONTAINER_KEY: SimpleNamespace(get=AsyncMock(return_value=translator))
+        },
+    )
+    data = await subscription_getter.__dishka_orig_func__(
+        dialog_manager=manager,
+        user=UserDto(id=1, name="User"),
+        subscription_dao=SimpleNamespace(get_current=AsyncMock(return_value=None)),
+        gateway_dao=SimpleNamespace(get_by_type=AsyncMock(return_value=gateway)),
+        autopay=autopay,
+    )
+    row = next(
+        row for row in subscription.keyboard.buttons if row.find("autopay_settings") is not None
+    )
+    keyboard = await row.render_keyboard(data, manager)
+    assert bool(keyboard) is visible
+    if visible:
+        assert keyboard[0][0].text == "🔄 Настройки автоплатежа"
 
 
 async def test_global_toggle_does_not_parse_false_as_true():
