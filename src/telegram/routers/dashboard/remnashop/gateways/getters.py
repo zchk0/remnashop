@@ -9,7 +9,7 @@ from src.application.dto import PaymentGatewayDto
 from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
 from src.core.config import AppConfig
 from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
-from src.core.enums import Currency
+from src.core.enums import Currency, PaymentGatewayType
 
 
 @inject
@@ -53,6 +53,12 @@ async def gateway_getter(
     settings = gateway.settings.as_list
     display_name_field = [s for s in settings if s["field"] == "display_name"]
     other_settings = [s for s in settings if s["field"] not in {"display_name", "autopay_enabled"}]
+    is_flippay = gateway.type == PaymentGatewayType.FLIPPAY
+    if is_flippay:
+        display_name_field = []
+        other_settings = [
+            s for s in other_settings if s["field"] not in {"methods", "payment_method"}
+        ]
 
     return {
         "id": gateway.id,
@@ -60,6 +66,7 @@ async def gateway_getter(
         "is_active": gateway.is_active,
         "display_name_field": display_name_field,
         "settings": other_settings,
+        "is_flippay": is_flippay,
         "has_autopay": isinstance(gateway.settings, PlategaGatewaySettingsDto),
         "autopay_enabled": getattr(gateway.settings, "autopay_enabled", False),
         "webhook": config.get_webhook(gateway.type),

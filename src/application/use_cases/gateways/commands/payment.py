@@ -70,6 +70,7 @@ from src.core.utils.i18n_helpers import (
     i18n_format_device_limit,
     i18n_format_traffic_limit,
 )
+from src.infrastructure.payment_gateways import FlippayGateway
 from src.infrastructure.services.platega_autopay import PlategaAutopayService
 
 
@@ -143,6 +144,7 @@ class CreatePaymentDto:
     pricing: PriceDetailsDto
     purchase_type: PurchaseType
     gateway_type: PaymentGatewayType
+    payment_method: int | None = None
 
 
 class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
@@ -207,6 +209,10 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
             )
             return PaymentResultDto(id=transaction.payment_id, url=None)
 
+        flippay_method = None
+        if isinstance(gateway_instance, FlippayGateway):
+            flippay_method = gateway_instance.settings.get_payment_method(data.payment_method)
+
         transaction = TransactionDto(
             payment_id=uuid.uuid4(),
             user_id=actor.id,
@@ -214,20 +220,32 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
             purchase_type=data.purchase_type,
             gateway_type=gateway_instance.data.type,
             gateway_display_name=(
-                gateway_instance.data.settings.display_name
-                if gateway_instance.data.settings
-                else None
+                flippay_method.title
+                if flippay_method
+                else (
+                    gateway_instance.data.settings.display_name
+                    if gateway_instance.data.settings
+                    else None
+                )
             ),
+            payment_method=str(flippay_method.id) if flippay_method else None,
             pricing=data.pricing,
             currency=gateway_instance.data.currency,
             plan_snapshot=data.plan_snapshot,
         )
 
         async with self.uow:
-            payment: PaymentResultDto = await gateway_instance.handle_create_payment(
-                amount=data.pricing.final_amount,
-                details=details,
-            )
+            if isinstance(gateway_instance, FlippayGateway) and flippay_method:
+                payment = await gateway_instance.handle_create_payment(
+                    amount=data.pricing.final_amount,
+                    details=details,
+                    payment_method=flippay_method.id,
+                )
+            else:
+                payment = await gateway_instance.handle_create_payment(
+                    amount=data.pricing.final_amount,
+                    details=details,
+                )
 
             transaction.payment_id = payment.id
             await self.transaction_dao.create(transaction)
@@ -261,10 +279,24 @@ class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
         test_pricing = PriceDetailsDto.test()
         test_plan_snapshot = PlanSnapshotDto.test()
 
-        payment: PaymentResultDto = await gateway_instance.handle_create_payment(
-            amount=test_pricing.final_amount,
-            details=i18n.get("test-payment"),
-        )
+        flippay_method = None
+        if isinstance(gateway_instance, FlippayGateway):
+            methods = gateway_instance.settings.enabled_methods
+            if not methods:
+                raise ValueError("No enabled FlipPay payment methods")
+            flippay_method = methods[0]
+            test_pricing.original_amount = max(test_pricing.final_amount, flippay_method.min_amount)
+            test_pricing.final_amount = test_pricing.original_amount
+            payment = await gateway_instance.handle_create_payment(
+                amount=test_pricing.final_amount,
+                details=i18n.get("test-payment"),
+                payment_method=flippay_method.id,
+            )
+        else:
+            payment = await gateway_instance.handle_create_payment(
+                amount=test_pricing.final_amount,
+                details=i18n.get("test-payment"),
+            )
 
         async with self.uow:
             transaction = TransactionDto(
@@ -275,10 +307,15 @@ class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
                 purchase_type=PurchaseType.NEW,
                 gateway_type=gateway_instance.data.type,
                 gateway_display_name=(
-                    gateway_instance.data.settings.display_name
-                    if gateway_instance.data.settings
-                    else None
+                    flippay_method.title
+                    if flippay_method
+                    else (
+                        gateway_instance.data.settings.display_name
+                        if gateway_instance.data.settings
+                        else None
+                    )
                 ),
+                payment_method=str(flippay_method.id) if flippay_method else None,
                 pricing=test_pricing,
                 currency=gateway_instance.data.currency,
                 plan_snapshot=test_plan_snapshot,

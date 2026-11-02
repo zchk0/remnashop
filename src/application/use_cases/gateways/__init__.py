@@ -8,6 +8,7 @@ from .commands.configuration import (
     TogglePaymentGatewayActive,
     UpdatePaymentGatewaySettings,
 )
+from .commands.flippay_methods import RefreshFlippayPaymentMethods, UpdateFlippayPaymentMethod
 from .commands.payment import (
     CreateDefaultPaymentGateway,
     CreatePayment,
@@ -28,4 +29,6 @@ GATEWAYS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     CreateTestPayment,
     ProcessPayment,
     RecheckPayment,
+    RefreshFlippayPaymentMethods,
+    UpdateFlippayPaymentMethod,
 )

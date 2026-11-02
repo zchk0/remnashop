@@ -37,6 +37,7 @@ from src.application.dto.payment_gateway import (
     CryptomusGatewaySettingsDto,
     CryptoPayGatewaySettingsDto,
     FlippayGatewaySettingsDto,
+    FlippayPaymentMethodDto,
     FreeKassaGatewaySettingsDto,
     HeleketGatewaySettingsDto,
     MulenPayGatewaySettingsDto,
@@ -127,6 +128,10 @@ class RetortProvider(Provider):
                 raise ValueError(f"Unknown gateway type: {pg_type}")
 
             settings_dict = cryptographer.decrypt_recursive(settings_dict)
+            if pg_type == PaymentGatewayType.FLIPPAY and settings_dict.get("methods") is not None:
+                settings_dict["methods"] = retort.load(
+                    settings_dict["methods"], list[FlippayPaymentMethodDto]
+                )
             return dto_class(**settings_dict)
 
         def convert_settings(payment_gateway: PaymentGateway) -> Any:

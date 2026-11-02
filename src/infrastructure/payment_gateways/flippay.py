@@ -11,7 +11,7 @@ from aiogram import Bot
 from fastapi import Request
 
 from src.application.dto import PaymentGatewayDto, PaymentResultDto, TransactionDto
-from src.application.dto.payment_gateway import FlippayGatewaySettingsDto
+from src.application.dto.payment_gateway import FlippayGatewaySettingsDto, FlippayPaymentMethodDto
 from src.core.config import AppConfig
 from src.core.enums import Currency, PaymentGatewayType, TransactionStatus
 
@@ -58,8 +58,50 @@ class FlippayGateway(BasePaymentGateway):
             raise ValueError("Invalid FlipPay amount") from error
         return amount
 
-    async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
+    async def get_payment_methods(self) -> list[FlippayPaymentMethodDto]:
+        response = await self._client.get("payment-methods")
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, list):
+            raise ValueError("Invalid FlipPay payment methods response")
+        methods = []
+        ids: set[int] = set()
+        codes: set[str] = set()
+        for item in data:
+            if (
+                not isinstance(item, dict)
+                or type(item.get("id")) is not int
+                or item["id"] <= 0
+                or not isinstance(item.get("code"), str)
+                or not item["code"].strip()
+                or not isinstance(item.get("name"), str)
+                or not item["name"].strip()
+                or item["id"] in ids
+                or item["code"] in codes
+            ):
+                raise ValueError("Invalid FlipPay payment method")
+            try:
+                minimum = Decimal(str(item["min_amount"]))
+            except (KeyError, InvalidOperation) as error:
+                raise ValueError("Invalid FlipPay minimum amount") from error
+            if not minimum.is_finite() or minimum < 0:
+                raise ValueError("Invalid FlipPay minimum amount")
+            ids.add(item["id"])
+            codes.add(item["code"])
+            methods.append(
+                FlippayPaymentMethodDto(
+                    id=item["id"], code=item["code"], name=item["name"], min_amount=minimum
+                )
+            )
+        return methods
+
+    async def handle_create_payment(
+        self, amount: Decimal, details: str, *, payment_method: int | None = None
+    ) -> PaymentResultDto:
         amount = self._amount(amount)
+        method = self.settings.get_payment_method(payment_method)
+        if amount < method.min_amount:
+            raise ValueError("FlipPay amount is below the selected method minimum")
         order_id = uuid4()
         redirect_url = await self._get_bot_redirect_url()
         response = await self._client.post(
@@ -68,7 +110,7 @@ class FlippayGateway(BasePaymentGateway):
                 "order_id": str(order_id),
                 "amount": format(amount, ".2f"),
                 "currency": Currency.RUB.value,
-                "payment_method": self.settings.payment_method,
+                "payment_method": method.id,
                 "description": details,
                 "success_url": redirect_url,
                 "fail_url": redirect_url,

@@ -409,6 +409,13 @@ btn-menu-editor =
         *[0] 👥 Всем
     }
 
+btn-flippay-methods = 💳 Методы оплаты
+btn-flippay-methods-refresh = 🔄 Обновить из FlipPay
+btn-flippay-method-toggle = { $enabled ->
+    [1] 🔴 Выключить метод
+   *[other] 🟢 Включить метод
+    }
+
 btn-gateway =
     .title = { gateway-type }
     .setting = { $field ->

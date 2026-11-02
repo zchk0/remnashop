@@ -1,4 +1,5 @@
 from dataclasses import dataclass, fields
+from decimal import Decimal
 from typing import Any, Literal, Optional, Union
 from uuid import UUID
 
@@ -169,6 +170,21 @@ class ValutixGatewaySettingsDto(GatewaySettingsDto):
     api_key: Optional[SecretStr] = None
 
 
+@dataclass(frozen=True, kw_only=True)
+class FlippayPaymentMethodDto:
+    id: int
+    code: str
+    name: str
+    min_amount: Decimal = Decimal("0.01")
+    display_name: Optional[str] = None
+    enabled: bool = False
+    available: bool = True
+
+    @property
+    def title(self) -> str:
+        return self.display_name or self.name
+
+
 @dataclass(kw_only=True)
 class FlippayGatewaySettingsDto(GatewaySettingsDto):
     type: Literal[PaymentGatewayType.FLIPPAY] = PaymentGatewayType.FLIPPAY
@@ -177,16 +193,51 @@ class FlippayGatewaySettingsDto(GatewaySettingsDto):
     webhook_secret: Optional[SecretStr] = None
     payment_method: Optional[int] = 100
     payment_timeout_minutes: int = DEFAULT_PAYMENT_TIMEOUT_MINUTES
+    methods: Optional[list[FlippayPaymentMethodDto]] = None
+
+    @property
+    def payment_methods(self) -> list[FlippayPaymentMethodDto]:
+        if self.methods is not None:
+            return self.methods
+        # Preserve the previously configured single method until the admin refreshes the list.
+        if type(self.payment_method) is not int or self.payment_method <= 0:
+            return []
+        code, name = {
+            100: ("sbp", "СБП"),
+            101: ("card", "Карты МИР"),
+            103: ("crypto", "Криптовалюта"),
+        }.get(self.payment_method, (f"method_{self.payment_method}", "FlipPay"))
+        return [
+            FlippayPaymentMethodDto(
+                id=self.payment_method,
+                code=code,
+                name=name,
+                display_name=self.display_name,
+                enabled=True,
+            )
+        ]
+
+    @property
+    def enabled_methods(self) -> list[FlippayPaymentMethodDto]:
+        return [method for method in self.payment_methods if method.enabled and method.available]
+
+    def get_payment_method(self, method_id: Optional[int] = None) -> FlippayPaymentMethodDto:
+        methods = self.enabled_methods
+        if method_id is None and len(methods) == 1:
+            return methods[0]
+        for method in methods:
+            if method.id == method_id:
+                return method
+        raise ValueError("Select an enabled FlipPay payment method")
 
     @property
     def is_configured(self) -> bool:
-        return (
-            all(
-                value is not None and bool(value.get_secret_value().strip())
-                for value in (self.api_key, self.api_secret, self.webhook_secret)
-            )
-            and type(self.payment_method) is int
-            and self.payment_method > 0
+        return all(
+            value is not None and bool(value.get_secret_value().strip())
+            for value in (self.api_key, self.api_secret, self.webhook_secret)
+        ) and (
+            self.methods is not None
+            or (type(self.payment_method) is int and self.payment_method > 0)
         )
 
 

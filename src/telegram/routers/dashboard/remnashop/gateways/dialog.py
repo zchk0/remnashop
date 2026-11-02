@@ -20,6 +20,14 @@ from src.telegram.widgets.kbd import (
     SwitchTo,
 )
 
+from .flippay_methods import (
+    flippay_methods_getter,
+    on_flippay_method_name_input,
+    on_flippay_method_name_reset,
+    on_flippay_method_select,
+    on_flippay_method_toggle,
+    on_flippay_methods_refresh,
+)
 from .getters import (
     currency_getter,
     field_getter,
@@ -102,6 +110,12 @@ gateway_settings = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-gateways-settings", gateway_type=F["gateway_type"]),
     I18nFormat("msg-gateways-autopay-note", F["has_autopay"]),
+    SwitchTo(
+        text=I18nFormat("btn-flippay-methods"),
+        id="flippay_methods",
+        state=RemnashopGateways.FLIPPAY_METHODS,
+        when=F["is_flippay"],
+    ),
     Row(
         Button(
             text=I18nFormat("btn-gateway-autopay-toggle", enabled=F["autopay_enabled"]),
@@ -239,10 +253,76 @@ placement = Window(
     getter=placement_getter,
 )
 
+flippay_methods = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-flippay-methods"),
+    Column(
+        Select(
+            text=Format("{item[status]} {item[title]}"),
+            id="flippay_method",
+            item_id_getter=lambda item: item["id"],
+            items="methods",
+            type_factory=int,
+            on_click=on_flippay_method_select,
+        ),
+    ),
+    Button(
+        text=I18nFormat("btn-flippay-methods-refresh"),
+        id="flippay_refresh",
+        on_click=on_flippay_methods_refresh,
+    ),
+    SwitchTo(text=I18nFormat("btn-back.general"), id="back", state=RemnashopGateways.SETTINGS),
+    IgnoreUpdate(),
+    state=RemnashopGateways.FLIPPAY_METHODS,
+    getter=flippay_methods_getter,
+)
+
+flippay_method = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-flippay-method"),
+    Button(
+        text=I18nFormat("btn-flippay-method-toggle"),
+        id="flippay_method_toggle",
+        on_click=on_flippay_method_toggle,
+        when=F["available"] | F["enabled"],
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-gateway.display-name"),
+        id="flippay_method_name",
+        state=RemnashopGateways.FLIPPAY_METHOD_NAME,
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-back.general"), id="back", state=RemnashopGateways.FLIPPAY_METHODS
+    ),
+    IgnoreUpdate(),
+    state=RemnashopGateways.FLIPPAY_METHOD,
+    getter=flippay_methods_getter,
+)
+
+flippay_method_name = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-flippay-method-name"),
+    MessageInput(on_flippay_method_name_input),
+    Button(
+        text=I18nFormat("btn-gateway.field-reset"),
+        id="flippay_name_reset",
+        on_click=on_flippay_method_name_reset,
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-back.general"), id="back", state=RemnashopGateways.FLIPPAY_METHOD
+    ),
+    IgnoreUpdate(),
+    state=RemnashopGateways.FLIPPAY_METHOD_NAME,
+    getter=flippay_methods_getter,
+)
+
 router = Dialog(
     gateways,
     gateway_settings,
     gateway_field,
     default_currency,
     placement,
+    flippay_methods,
+    flippay_method,
+    flippay_method_name,
 )

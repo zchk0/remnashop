@@ -11,7 +11,7 @@ from loguru import logger
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PaymentGatewayDto, PlanDto, PriceDetailsDto, TelegramUserDto
-from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
+from src.application.dto.payment_gateway import FlippayGatewaySettingsDto, PlategaGatewaySettingsDto
 from src.application.services import PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
@@ -29,11 +29,31 @@ from src.infrastructure.services.platega_autopay import OPEN_STATUSES, PlategaAu
 from src.telegram.states import Subscription
 
 
-def _get_gateway_title(i18n: TranslatorRunner, gateway: PaymentGatewayDto) -> str:
+def _get_gateway_title(
+    i18n: TranslatorRunner, gateway: PaymentGatewayDto, method_id: int | None = None
+) -> str:
+    if isinstance(gateway.settings, FlippayGatewaySettingsDto) and method_id is not None:
+        method = next(
+            (entry for entry in gateway.settings.payment_methods if entry.id == method_id), None
+        )
+        if method:
+            return method.title
     if gateway.settings and gateway.settings.display_name:
         return gateway.settings.display_name
 
     return i18n.get("gateway-type", gateway_type=gateway.type)
+
+
+def _get_payment_options(
+    i18n: TranslatorRunner, gateway: PaymentGatewayDto, price: PriceDetailsDto
+) -> list[tuple[str, str]]:
+    if isinstance(gateway.settings, FlippayGatewaySettingsDto):
+        return [
+            (f"{gateway.type.value}:{method.id}", method.title)
+            for method in gateway.settings.enabled_methods
+            if price.is_free or price.final_amount >= method.min_amount
+        ]
+    return [(gateway.type.value, _get_gateway_title(i18n, gateway))]
 
 
 @inject
@@ -320,7 +340,7 @@ async def payment_method_getter(
     if not duration:
         raise ValueError(f"Duration '{selected_duration}' not found in plan '{plan.name}'")
 
-    payment_methods = []
+    payment_methods: list[dict[str, Any]] = []
     autopay_method = None
     for gateway in gateways:
         try:
@@ -335,15 +355,17 @@ async def payment_method_getter(
         price = pricing_service.calculate(
             user, raw_price, gateway.currency, apply_discount=not plan.is_trial
         )
-        payment_methods.append(
+        payment_methods.extend(
             {
+                "option_id": option_id,
                 "gateway_type": gateway.type,
-                "gateway_title": _get_gateway_title(i18n, gateway),
+                "gateway_title": title,
                 "final_amount": price.final_amount,
                 "original_amount": price.original_amount,
                 "discount_percent": price.discount_percent,
                 "currency": gateway.currency.symbol,
             }
+            for option_id, title in _get_payment_options(i18n, gateway, price)
         )
         if (
             gateway.type == PaymentGatewayType.PLATEGA
@@ -445,15 +467,19 @@ async def confirm_getter(
         "traffic": i18n_format_traffic_limit(plan.traffic_limit),
         "period": i18n.get(key, **kw),
         "payment_method": selected_payment_method,
-        "payment_method_title": _get_gateway_title(i18n, payment_gateway),
+        "payment_method_title": _get_gateway_title(
+            i18n, payment_gateway, dialog_manager.dialog_data.get("flippay_payment_method")
+        ),
         "final_amount": pricing.final_amount,
         "discount_percent": pricing.discount_percent,
         "original_amount": pricing.original_amount,
         "is_personal_discount": pricing_service.is_largest_discount_personal(user),
         "currency": payment_gateway.currency.symbol,
         "url": result_url,
-        "only_single_gateway": len(gateways) == 1 and not any(
-            isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled
+        "only_single_gateway": len(gateways) == 1
+        and not any(
+            g.type == PaymentGatewayType.FLIPPAY
+            or (isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled)
             for g in gateways
         ),
         "only_single_duration": only_single_duration,

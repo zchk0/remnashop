@@ -187,6 +187,9 @@ class RemnashopGateways(StatesGroup):
     MAIN = State()
     SETTINGS = State()
     FIELD = State()
+    FLIPPAY_METHODS = State()
+    FLIPPAY_METHOD = State()
+    FLIPPAY_METHOD_NAME = State()
     CURRENCY = State()
     PLACEMENT = State()
 

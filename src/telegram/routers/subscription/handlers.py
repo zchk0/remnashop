@@ -11,7 +11,7 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PlanDto, PlanSnapshotDto, SubscriptionDto, TelegramUserDto
-from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
+from src.application.dto.payment_gateway import FlippayGatewaySettingsDto, PlategaGatewaySettingsDto
 from src.application.services import PricingService
 from src.application.use_cases.gateways.commands.payment import (
     CreatePayment,
@@ -47,7 +47,8 @@ CURRENT_METHOD_KEY = "selected_payment_method"
 
 def _only_one_payment_method(gateways: list) -> bool:
     return len(gateways) == 1 and not any(
-        isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled
+        g.type == PaymentGatewayType.FLIPPAY
+        or (isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled)
         for g in gateways
     )
 
@@ -59,9 +60,13 @@ class CachedPaymentData(TypedDict):
 
 
 def _get_cache_key(
-    duration: int, gateway_type: PaymentGatewayType, purchase_type: PurchaseType
+    duration: int,
+    gateway_type: PaymentGatewayType,
+    purchase_type: PurchaseType,
+    payment_method: int | None = None,
 ) -> str:
-    return f"{purchase_type}:{duration}:{gateway_type.value}"
+    key = f"{purchase_type}:{duration}:{gateway_type.value}"
+    return f"{key}:{payment_method}" if payment_method is not None else key
 
 
 def _load_payment_data(dialog_manager: DialogManager) -> dict[str, CachedPaymentData]:
@@ -109,6 +114,11 @@ async def _create_payment_and_get_data(
                 pricing=pricing,
                 purchase_type=purchase_type,
                 gateway_type=gateway_type,
+                payment_method=(
+                    dialog_manager.dialog_data.get("flippay_payment_method")
+                    if gateway_type == PaymentGatewayType.FLIPPAY
+                    else None
+                ),
             ),
         )
 
@@ -418,7 +428,7 @@ async def on_payment_method_select(
     callback: CallbackQuery,
     widget: Select,
     dialog_manager: DialogManager,
-    selected_payment_method: PaymentGatewayType,
+    selected_payment_method: str,
     retort: FromDishka[Retort],
     payment_gateway_dao: FromDishka[PaymentGatewayDao],
     notifier: FromDishka[Notifier],
@@ -428,11 +438,33 @@ async def on_payment_method_select(
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
     logger.info(f"{user.log} Selected payment method '{selected_payment_method}'")
 
+    gateway_name, _, method_id = selected_payment_method.partition(":")
+    selected_gateway = PaymentGatewayType(gateway_name)
+    flippay_method_id = None
+    if selected_gateway == PaymentGatewayType.FLIPPAY:
+        gateway = await payment_gateway_dao.get_by_type(selected_gateway)
+        try:
+            if (
+                not gateway
+                or not gateway.is_active
+                or not isinstance(gateway.settings, FlippayGatewaySettingsDto)
+            ):
+                raise ValueError("FlipPay is unavailable")
+            method = gateway.settings.get_payment_method(int(method_id) if method_id else None)
+            flippay_method_id = method.id
+        except ValueError:
+            await notifier.notify_user(user, i18n_key="ntf-flippay-method-unavailable")
+            await dialog_manager.switch_to(state=Subscription.PAYMENT_METHOD)
+            return
+
     selected_duration = dialog_manager.dialog_data[CURRENT_DURATION_KEY]
-    dialog_manager.dialog_data[CURRENT_METHOD_KEY] = selected_payment_method
+    dialog_manager.dialog_data[CURRENT_METHOD_KEY] = selected_gateway
+    dialog_manager.dialog_data["flippay_payment_method"] = flippay_method_id
     purchase_type: PurchaseType = dialog_manager.dialog_data["purchase_type"]
     cache = _load_payment_data(dialog_manager)
-    cache_key = _get_cache_key(selected_duration, selected_payment_method, purchase_type)
+    cache_key = _get_cache_key(
+        selected_duration, selected_gateway, purchase_type, flippay_method_id
+    )
 
     if cache_key in cache:
         logger.info(f"{user.log} Re-selected same method and duration")
@@ -455,7 +487,7 @@ async def on_payment_method_select(
         dialog_manager=dialog_manager,
         plan=plan,
         duration_days=selected_duration,
-        gateway_type=selected_payment_method,
+        gateway_type=selected_gateway,
         retort=retort,
         payment_gateway_dao=payment_gateway_dao,
         notifier=notifier,
