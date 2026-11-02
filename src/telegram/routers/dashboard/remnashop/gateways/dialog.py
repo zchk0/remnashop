@@ -105,7 +105,9 @@ gateway_settings = Window(
     Row(
         Button(
             text=I18nFormat("btn-gateway-autopay-toggle", enabled=F["autopay_enabled"]),
-            id="autopay_toggle", on_click=on_autopay_toggle, when=F["has_autopay"],
+            id="autopay_toggle",
+            on_click=on_autopay_toggle,
+            when=F["has_autopay"],
         ),
     ),
     Row(
@@ -120,7 +122,11 @@ gateway_settings = Window(
     ),
     Group(
         Select(
-            text=I18nFormat("btn-gateway.setting", field=F["item"]["field"].upper()),
+            text=I18nFormat(
+                "btn-gateway.setting",
+                field=F["item"]["field"].upper(),
+                timeout_minutes=F["item"]["value"],
+            ),
             id="setting",
             item_id_getter=lambda item: item["field"],
             items="settings",

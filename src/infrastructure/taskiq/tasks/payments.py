@@ -26,7 +26,7 @@ async def handle_payment_transaction_task(
     )
 
 
-@broker.task(schedule=[{"cron": "*/30 * * * *"}])
+@broker.task(schedule=[{"cron": "* * * * *"}])
 @inject(patch_module=True)
 async def cancel_old_transactions_task(
     cancel_old_transactions: FromDishka[CancelOldTransactions],

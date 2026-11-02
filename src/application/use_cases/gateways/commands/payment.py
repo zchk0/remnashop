@@ -31,6 +31,7 @@ from src.application.dto import (
 from src.application.dto.payment_gateway import (
     CryptomusGatewaySettingsDto,
     CryptoPayGatewaySettingsDto,
+    FlippayGatewaySettingsDto,
     FreeKassaGatewaySettingsDto,
     HeleketGatewaySettingsDto,
     MulenPayGatewaySettingsDto,
@@ -106,6 +107,7 @@ class CreateDefaultPaymentGateway(Interactor[None, None]):
                     PaymentGatewayType.URLPAY: UrlPayGatewaySettingsDto,
                     PaymentGatewayType.VALUTIX: ValutixGatewaySettingsDto,
                     PaymentGatewayType.WATA: WataGatewaySettingsDto,
+                    PaymentGatewayType.FLIPPAY: FlippayGatewaySettingsDto,
                 }
                 dto_class = settings_map.get(gateway_type)
                 settings = dto_class() if dto_class else None
@@ -387,8 +389,11 @@ class ProcessPayment(Interactor[ProcessPaymentDto, bool]):
                     TransactionStatus.PENDING,
                     TransactionStatus.FAILED,
                 )
-                # Recovery is requested only after checking the authoritative Platega API.
-                if data.recover_canceled and data.gateway_type == PaymentGatewayType.PLATEGA:
+                # Only an explicit admin API recheck may recover a canceled transaction.
+                if data.recover_canceled and data.gateway_type in {
+                    PaymentGatewayType.PLATEGA,
+                    PaymentGatewayType.FLIPPAY,
+                }:
                     allowed_current += (TransactionStatus.CANCELED,)
                 updated = await self.transaction_dao.transition_status(
                     payment_id,

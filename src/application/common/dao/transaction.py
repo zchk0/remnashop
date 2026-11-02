@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import Iterable, Optional, Protocol, runtime_checkable
+from typing import Iterable, Mapping, Optional, Protocol, runtime_checkable
 from uuid import UUID
 
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto, UserPaymentStatsDto
+from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
 from src.core.enums import PaymentGatewayType, TransactionStatus
 
 
@@ -35,7 +36,12 @@ class TransactionDao(Protocol):
 
     async def exists(self, payment_id: UUID) -> bool: ...
 
-    async def cancel_old(self, minutes: int = 30) -> int: ...
+    async def cancel_old(
+        self,
+        minutes: int = DEFAULT_PAYMENT_TIMEOUT_MINUTES,
+        *,
+        gateway_timeouts: Optional[Mapping[PaymentGatewayType, int]] = None,
+    ) -> int: ...
 
     async def count(self) -> int: ...
 

@@ -8,6 +8,7 @@ from src.application.common.dao import PaymentGatewayDao, SettingsDao
 from src.application.dto import PaymentGatewayDto
 from src.application.dto.payment_gateway import PlategaGatewaySettingsDto
 from src.core.config import AppConfig
+from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
 from src.core.enums import Currency
 
 
@@ -87,6 +88,9 @@ async def field_getter(
         "gateway_type": gateway.type,
         "field": selected_field,
         "is_empty": getattr(gateway.settings, selected_field, None) is None,
+        "payment_timeout_minutes": getattr(
+            gateway.settings, "payment_timeout_minutes", DEFAULT_PAYMENT_TIMEOUT_MINUTES
+        ),
     }
 
 

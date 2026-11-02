@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import get_type_hints
+from typing import Any, get_type_hints
 
 from adaptix import Retort
 from loguru import logger
@@ -9,6 +9,8 @@ from src.application.common.dao import PaymentGatewayDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
+from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
+from src.core.enums import PaymentGatewayType
 from src.core.exceptions import GatewayNotConfiguredError
 
 
@@ -114,13 +116,25 @@ class UpdatePaymentGatewaySettings(Interactor[UpdatePaymentGatewaySettingsDto, N
                         f"Field '{data.field_name}' not found in {settings_type.__name__}"
                     )
 
+                new_value: Any
                 if data.field_name == "autopay_enabled":
                     if data.value.lower() not in {"true", "false", "1", "0"}:
                         raise ValueError("Expected true or false")
                     new_value = data.value.lower() in {"true", "1"}
+                elif gateway.type == PaymentGatewayType.FLIPPAY and data.field_name in {
+                    "payment_method",
+                    "payment_timeout_minutes",
+                }:
+                    new_value = int(data.value)
+                    if new_value <= 0:
+                        raise ValueError("Expected a positive integer for the FlipPay setting")
                 else:
                     new_value = self.retort.load(data.value, field_type)
-                if data.field_name == "payment_method" and new_value == 6:
+                if (
+                    gateway.type == PaymentGatewayType.PLATEGA
+                    and data.field_name == "payment_method"
+                    and new_value == 6
+                ):
                     raise ValueError("Use the autopay toggle for recurring subscriptions")
                 if data.field_name == "autopay_display_name" and not data.value.strip():
                     raise ValueError("Autopay name must not be empty")
@@ -162,7 +176,11 @@ class ResetPaymentGatewaySettingsField(Interactor[ResetPaymentGatewaySettingsDto
             if data.field_name not in get_type_hints(settings_type):
                 raise ValueError(f"Field '{data.field_name}' not found in {settings_type.__name__}")
 
-            defaults = {"autopay_enabled": False, "autopay_display_name": "🔄 СБП — автоплатёж"}
+            defaults = {
+                "autopay_enabled": False,
+                "autopay_display_name": "🔄 СБП — автоплатёж",
+                "payment_timeout_minutes": DEFAULT_PAYMENT_TIMEOUT_MINUTES,
+            }
             setattr(gateway.settings, data.field_name, defaults.get(data.field_name))
 
             deactivated = False

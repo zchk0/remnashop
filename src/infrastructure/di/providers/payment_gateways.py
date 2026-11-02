@@ -13,6 +13,7 @@ from src.infrastructure.payment_gateways import (
     BasePaymentGateway,
     CryptomusGateway,
     CryptoPayGateway,
+    FlippayGateway,
     FreeKassaGateway,
     HeleketGateway,
     MulenPayGateway,
@@ -43,6 +44,7 @@ GATEWAY_MAP: dict[PaymentGatewayType, Type[BasePaymentGateway]] = {
     PaymentGatewayType.URLPAY: UrlPayGateway,
     PaymentGatewayType.VALUTIX: ValutixGateway,
     PaymentGatewayType.WATA: WataGateway,
+    PaymentGatewayType.FLIPPAY: FlippayGateway,
 }
 
 

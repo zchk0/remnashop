@@ -668,7 +668,7 @@ async def on_payment_recheck(
 
     if result.processed:
         key = "ntf-user.payment-recheck-success"
-    elif result.provider_status == "CONFIRMED":
+    elif result.is_paid:
         transaction = await transaction_dao.get_by_payment_id(payment_id)
         if transaction and transaction.status == TransactionStatus.COMPLETED:
             key = "ntf-user.payment-recheck-already-processed"

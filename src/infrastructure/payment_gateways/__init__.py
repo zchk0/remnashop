@@ -1,6 +1,7 @@
 from .base import BasePaymentGateway, PaymentGatewayFactory
 from .cryptomus import CryptomusGateway
 from .cryptopay import CryptoPayGateway
+from .flippay import FlippayGateway
 from .freekassa import FreeKassaGateway
 from .heleket import HeleketGateway
 from .mulen_pay import MulenPayGateway
@@ -19,6 +20,7 @@ __all__ = [
     "PaymentGatewayFactory",
     "CryptomusGateway",
     "CryptoPayGateway",
+    "FlippayGateway",
     "FreeKassaGateway",
     "HeleketGateway",
     "MulenPayGateway",

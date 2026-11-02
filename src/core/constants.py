@@ -74,6 +74,8 @@ TIME_1M: Final[int] = 60
 TIME_1H: Final[int] = TIME_1M * 60
 TIME_1D: Final[int] = TIME_1H * 24
 
+DEFAULT_PAYMENT_TIMEOUT_MINUTES: Final[int] = 30
+
 TTL_5M: Final[int] = TIME_1M * 5
 TTL_10M: Final[int] = TIME_1M * 10
 TTL_30M: Final[int] = TIME_1M * 30

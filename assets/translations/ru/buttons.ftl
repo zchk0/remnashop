@@ -413,6 +413,7 @@ btn-gateway =
     .title = { gateway-type }
     .setting = { $field ->
         [AUTOPAY_DISPLAY_NAME] 🏷️ Название автоплатежа
+        [PAYMENT_TIMEOUT_MINUTES] ⏳ Ожидание: { $timeout_minutes } мин.
         *[other] { $field }
         }
     .display-name = 🏷️ Отображаемое название

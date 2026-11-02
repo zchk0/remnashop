@@ -15,7 +15,7 @@ from src.core.config import AppConfig
 from src.core.constants import API_V1, PAYMENTS_WEBHOOK_PATH
 from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.exceptions import GatewayNotConfiguredError
-from src.infrastructure.payment_gateways import PlategaGateway
+from src.infrastructure.payment_gateways import FlippayGateway, PlategaGateway
 from src.infrastructure.payment_gateways.base import BasePaymentGateway
 from src.infrastructure.services.platega_autopay import PlategaAutopayService
 from src.infrastructure.taskiq.tasks.payments import (
@@ -35,6 +35,39 @@ async def _build_response(
         except Exception:
             logger.exception(f"Failed to build webhook response for '{gateway_type}'")
     return Response(status_code=status.HTTP_200_OK)
+
+
+async def _handle_gateway_webhook(
+    gateway: BasePaymentGateway,
+    request: Request,
+    transaction_dao: TransactionDao,
+    uow: UnitOfWork,
+) -> Optional[tuple[UUID, TransactionStatus]]:
+    result = await gateway.handle_webhook(request)
+    if isinstance(gateway, FlippayGateway) and result is not None:
+        async with uow:
+            transaction = await transaction_dao.get_by_payment_id(result[0])
+            if transaction is None:
+                # A fast callback can arrive before checkout has committed its order.
+                raise LookupError(f"FlipPay transaction '{result[0]}' is not saved yet")
+            await gateway.validate_webhook_transaction(request, transaction)
+    return result
+
+
+async def _build_error_response(
+    gateway: Optional[BasePaymentGateway],
+    request: Request,
+    gateway_type: str,
+    error: Exception,
+) -> Response:
+    if isinstance(gateway, FlippayGateway):
+        code = (
+            status.HTTP_400_BAD_REQUEST
+            if isinstance(error, ValueError)
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        return Response(status_code=code)
+    return await _build_response(gateway, request, gateway_type)
 
 
 async def _enqueue_payment_task(
@@ -94,7 +127,7 @@ async def _process_payment_webhook(
     gateway: Optional[BasePaymentGateway] = None
     try:
         gateway = await get_payment_gateway_instance.for_webhook(gateway_enum)
-        result = await gateway.handle_webhook(request)
+        result = await _handle_gateway_webhook(gateway, request, transaction_dao, uow)
     except GatewayNotConfiguredError:
         logger.warning(f"Webhook received for inactive/unconfigured gateway '{gateway_enum}'")
         return Response(status_code=status.HTTP_404_NOT_FOUND)
@@ -105,7 +138,7 @@ async def _process_payment_webhook(
         logger.exception(f"Error processing webhook for '{gateway_type}': {e}")
         error_event = ErrorEvent(**config.build.data, exception=e)
         await event_publisher.publish(error_event)
-        return await _build_response(gateway, request, gateway_type)
+        return await _build_error_response(gateway, request, gateway_type, e)
 
     if isinstance(gateway, PlategaGateway) and gateway.recurring_webhook is not None:
         try:

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import SecretStr
 
+from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
 from src.core.enums import Currency, PaymentGatewayType
 
 from .base import BaseDto, TrackableMixin
@@ -168,6 +169,27 @@ class ValutixGatewaySettingsDto(GatewaySettingsDto):
     api_key: Optional[SecretStr] = None
 
 
+@dataclass(kw_only=True)
+class FlippayGatewaySettingsDto(GatewaySettingsDto):
+    type: Literal[PaymentGatewayType.FLIPPAY] = PaymentGatewayType.FLIPPAY
+    api_key: Optional[SecretStr] = None
+    api_secret: Optional[SecretStr] = None
+    webhook_secret: Optional[SecretStr] = None
+    payment_method: Optional[int] = 100
+    payment_timeout_minutes: int = DEFAULT_PAYMENT_TIMEOUT_MINUTES
+
+    @property
+    def is_configured(self) -> bool:
+        return (
+            all(
+                value is not None and bool(value.get_secret_value().strip())
+                for value in (self.api_key, self.api_secret, self.webhook_secret)
+            )
+            and type(self.payment_method) is int
+            and self.payment_method > 0
+        )
+
+
 AnyGatewaySettingsDto = Union[
     TelegramStarsGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
@@ -183,4 +205,5 @@ AnyGatewaySettingsDto = Union[
     UrlPayGatewaySettingsDto,
     WataGatewaySettingsDto,
     ValutixGatewaySettingsDto,
+    FlippayGatewaySettingsDto,
 ]

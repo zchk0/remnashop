@@ -1,17 +1,18 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Iterable, Optional, cast
+from typing import Iterable, Mapping, Optional, cast
 from uuid import UUID
 
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import and_, case, func, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import TransactionDao
 from src.application.dto import GatewayStatsDto, PlanIncomeDto, TransactionDto, UserPaymentStatsDto
+from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
 from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models import Transaction
@@ -162,22 +163,40 @@ class TransactionDaoImpl(TransactionDao):
         logger.debug(f"Transaction '{payment_id}' existence status is '{is_exists}'")
         return is_exists
 
-    async def cancel_old(self, minutes: int = 30) -> int:
-        threshold = datetime_now() - timedelta(minutes=minutes)
+    async def cancel_old(
+        self,
+        minutes: int = DEFAULT_PAYMENT_TIMEOUT_MINUTES,
+        *,
+        gateway_timeouts: Optional[Mapping[PaymentGatewayType, int]] = None,
+    ) -> int:
+        now = datetime_now()
+        overrides = gateway_timeouts or {}
+        expired = Transaction.created_at < now - timedelta(minutes=minutes)
+        conditions = [
+            and_(
+                Transaction.gateway_type == gateway_type,
+                Transaction.created_at < now - timedelta(minutes=timeout),
+            )
+            for gateway_type, timeout in overrides.items()
+        ]
+        if overrides:
+            conditions.append(and_(Transaction.gateway_type.not_in(tuple(overrides)), expired))
+        else:
+            conditions.append(expired)
 
         stmt = (
             update(Transaction)
             .where(Transaction.status == TransactionStatus.PENDING)
-            .where(Transaction.created_at < threshold)
+            .where(or_(*conditions))
             .values(status=TransactionStatus.CANCELED)
         )
         result = await self.session.execute(stmt)
         count = result.rowcount  # type: ignore[attr-defined]
 
-        if count > 0:
-            logger.debug(f"Cancelled '{count}' pending transactions older than '{minutes}' minutes")
-        else:
-            logger.debug(f"No pending transactions older than '{minutes}' minutes found to cancel")
+        logger.debug(
+            f"Cancelled '{count}' pending transactions; "
+            f"default timeout: {minutes} minutes, gateway overrides: {dict(overrides)}"
+        )
 
         return cast(int, count)
 
