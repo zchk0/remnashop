@@ -15,12 +15,14 @@ from src.application.common.dao import (
     TransactionDao,
     UserDao,
 )
+from src.application.common.policy import Permission, PermissionPolicy
 from src.application.dto import (
     PlanDurationDto,
     RemnaSubscriptionDto,
     SubscriptionDto,
     TelegramUserDto,
 )
+from src.application.use_cases.gateways.commands.recheck import can_recheck_payment
 from src.application.use_cases.remnawave.queries.squads import (
     GetExternalSquads,
     GetInternalSquads,
@@ -513,6 +515,10 @@ async def transaction_getter(
 
     return {
         "is_from_all_transactions": origin == "all_transactions",
+        "can_recheck_payment": can_recheck_payment(transaction)
+        and PermissionPolicy.has_permission(
+            dialog_manager.middleware_data[USER_KEY], Permission.USER_SUBSCRIPTION_EDITOR
+        ),
         "user_name": initiator.name if initiator else "—",
         "user_telegram_id": (initiator.telegram_id if initiator else None) or 0,
         "user_email": (initiator.email if initiator else None) or "—",

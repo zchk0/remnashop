@@ -1,3 +1,4 @@
+from html import escape
 from typing import Optional
 from uuid import UUID
 
@@ -8,11 +9,13 @@ from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.kbd import Button, Select
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
+from httpx import HTTPError
 from loguru import logger
 
-from src.application.common import Notifier, Redirect
+from src.application.common import Notifier, Redirect, TranslatorRunner
 from src.application.common.dao import PlanDao, SubscriptionDao, TransactionDao, UserDao
 from src.application.dto import MessagePayloadDto, TelegramUserDto
+from src.application.use_cases.gateways.commands.recheck import RecheckPayment
 from src.application.use_cases.plan.commands.access import (
     ToggleUserPlanAccess,
     ToggleUserPlanAccessDto,
@@ -72,7 +75,8 @@ from src.core.constants import (
     USER_LIST_ORIGIN,
     USER_LIST_PAYLOAD,
 )
-from src.core.enums import Role
+from src.core.enums import Role, TransactionStatus
+from src.core.exceptions import GatewayNotConfiguredError, PurchaseError
 from src.core.utils.validators import is_positive_int, parse_int
 from src.telegram.states import DashboardUser, DashboardUsers
 from src.telegram.utils import is_double_click
@@ -637,6 +641,51 @@ async def on_transaction_select(
 ) -> None:
     dialog_manager.dialog_data["selected_transaction"] = selected_transaction
     await dialog_manager.switch_to(state=DashboardUser.TRANSACTION)
+
+
+@inject
+async def on_payment_recheck(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    recheck_payment: FromDishka[RecheckPayment],
+    transaction_dao: FromDishka[TransactionDao],
+    notifier: FromDishka[Notifier],
+    i18n: FromDishka[TranslatorRunner],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    payment_id = UUID(str(dialog_manager.dialog_data["selected_transaction"]))
+    await callback.answer(i18n.get("ntf-user.payment-recheck-started"))
+    try:
+        result = await recheck_payment(user, payment_id)
+    except (HTTPError, ValueError, GatewayNotConfiguredError) as error:
+        logger.warning(f"Payment recheck '{payment_id}' failed: {error}")
+        await notifier.notify_user(user, i18n_key="ntf-user.payment-recheck-error")
+        return
+    except PurchaseError:
+        await notifier.notify_user(user, i18n_key="ntf-user.payment-recheck-purchase-failed")
+        return
+
+    if result.processed:
+        key = "ntf-user.payment-recheck-success"
+    elif result.provider_status == "CONFIRMED":
+        transaction = await transaction_dao.get_by_payment_id(payment_id)
+        if transaction and transaction.status == TransactionStatus.COMPLETED:
+            key = "ntf-user.payment-recheck-already-processed"
+        elif transaction and transaction.status == TransactionStatus.REFUNDED:
+            key = "ntf-user.payment-recheck-refunded"
+        else:
+            key = "ntf-user.payment-recheck-purchase-failed"
+    else:
+        key = "ntf-user.payment-recheck-unpaid"
+
+    await notifier.notify_user(
+        user,
+        payload=MessagePayloadDto(
+            i18n_key=key,
+            i18n_kwargs={"status": escape(result.provider_status)},
+        ),
+    )
 
 
 async def on_go_to_user(

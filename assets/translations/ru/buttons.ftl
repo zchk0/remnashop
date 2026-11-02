@@ -172,6 +172,7 @@ btn-user =
     .sync-remnawave = 🌊 Использовать данные Remnawave
     .sync-remnashop = 🛍 Использовать данные Remnashop
     .give-subscription = 🎁 Выдать подписку
+    .payment-recheck = 🔄 Перепроверить оплату
     .subscription-internal-squads = ⏺️ Внутренние сквады
     .subscription-external-squads = ⏹️ Внешний сквад
 

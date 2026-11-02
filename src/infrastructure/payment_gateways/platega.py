@@ -96,6 +96,14 @@ class PlategaGateway(BasePaymentGateway):
         response = await self._client.post(f"subscription/{subscription_id}/cancel")
         response.raise_for_status()
 
+    async def get_payment(self, payment_id: UUID) -> dict[str, Any]:
+        response = await self._client.get(f"transaction/{payment_id}")
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid Platega transaction response")
+        return data
+
     async def handle_create_payment(self, amount: Decimal, details: str) -> PaymentResultDto:
         payload = await self._create_payment_payload(amount, details)
         logger.debug(f"Creating payment payload: {payload}")

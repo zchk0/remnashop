@@ -62,6 +62,7 @@ from .handlers import (
     on_give_subscription,
     on_go_to_user,
     on_internal_squad_select,
+    on_payment_recheck,
     on_personal_discount_input,
     on_personal_discount_select,
     on_plan_select,
@@ -659,6 +660,14 @@ transactions_list = Window(
 transaction = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-user-transaction-info"),
+    Row(
+        Button(
+            text=I18nFormat("btn-user.payment-recheck"),
+            id="payment_recheck",
+            on_click=on_payment_recheck,
+            when=F["can_recheck_payment"],
+        ),
+    ),
     Row(
         Button(
             text=I18nFormat("btn-goto.user-profile"),

@@ -293,9 +293,10 @@ class ProcessPaymentDto:
     payment_id: UUID
     new_transaction_status: TransactionStatus
     gateway_type: PaymentGatewayType
+    recover_canceled: bool = False
 
 
-class ProcessPayment(Interactor[ProcessPaymentDto, None]):
+class ProcessPayment(Interactor[ProcessPaymentDto, bool]):
     required_permission = None
 
     def __init__(
@@ -324,7 +325,8 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
         self.purchase_subscription = purchase_subscription
         self.autopay = autopay
 
-    async def _execute(self, actor: UserDto, data: ProcessPaymentDto) -> None:  # noqa: C901
+    async def _execute(self, actor: UserDto, data: ProcessPaymentDto) -> bool:  # noqa: C901
+        """Return whether this call handled a successful purchase."""
         payment_id = data.payment_id
         new_status = data.new_transaction_status
 
@@ -333,20 +335,20 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
 
             if not transaction:
                 logger.critical(f"Transaction not found for '{payment_id}'")
-                return
+                return False
 
             if transaction.gateway_type != data.gateway_type:
                 logger.error(
                     f"Gateway mismatch for transaction '{payment_id}': "
                     f"expected '{transaction.gateway_type}', got '{data.gateway_type}'"
                 )
-                return
+                return False
 
             user = await self.user_dao.get_by_id(transaction.user_id)
 
             if not user:
                 logger.critical(f"User not found for transaction '{payment_id}'")
-                return
+                return False
 
             if new_status == TransactionStatus.CANCELED:
                 updated = await self.transaction_dao.transition_status(
@@ -359,10 +361,10 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                         f"Cancel transition did not match for '{payment_id}', "
                         f"user '{user.remna_name}' — already transitioned"
                     )
-                    return
+                    return False
                 await self.uow.commit()
                 logger.info(f"Payment canceled '{payment_id}' for user {user.log}")
-                return
+                return False
 
             elif new_status == TransactionStatus.FAILED:
                 updated = await self.transaction_dao.transition_status(
@@ -375,23 +377,30 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                         f"Failed transition did not match for '{payment_id}', "
                         f"user '{user.remna_name}' — already transitioned"
                     )
-                    return
+                    return False
                 await self.uow.commit()
                 logger.info(f"Payment failed '{payment_id}' for user {user.log}")
-                return
+                return False
 
             elif new_status == TransactionStatus.COMPLETED:
+                allowed_current: tuple[TransactionStatus, ...] = (
+                    TransactionStatus.PENDING,
+                    TransactionStatus.FAILED,
+                )
+                # Recovery is requested only after checking the authoritative Platega API.
+                if data.recover_canceled and data.gateway_type == PaymentGatewayType.PLATEGA:
+                    allowed_current += (TransactionStatus.CANCELED,)
                 updated = await self.transaction_dao.transition_status(
                     payment_id,
                     TransactionStatus.COMPLETED,
-                    (TransactionStatus.PENDING, TransactionStatus.FAILED),
+                    allowed_current,
                 )
                 if not updated:
                     logger.warning(
                         f"Completed transition did not match for '{payment_id}', "
                         f"user '{user.remna_name}' — already transitioned"
                     )
-                    return
+                    return False
                 await self.uow.commit()
 
             elif new_status == TransactionStatus.REFUNDED:
@@ -405,7 +414,7 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                         f"Refund transition did not match for '{payment_id}', "
                         f"user '{user.remna_name}' — not in COMPLETED"
                     )
-                    return
+                    return False
                 await self.uow.commit()
                 logger.warning(f"Payment refunded '{payment_id}' for user {user.log}")
                 await self.notifier.notify_admins(
@@ -426,18 +435,19 @@ class ProcessPayment(Interactor[ProcessPaymentDto, None]):
                     )
                 )
                 # Subscription revocation is a separate task (out of scope here)
-                return
+                return False
 
             else:
                 logger.warning(
                     f"Received unhandled transaction status '{new_status}' "
                     f"for payment '{payment_id}', user '{user.remna_name}'"
                 )
-                return
+                return False
 
         # UoW closed cleanly; purchase_subscription will open its own UoW
         await self._handle_success(user, transaction)
         logger.info(f"Payment succeeded '{payment_id}' for user {user.log}")
+        return True
 
     async def _handle_success(self, user: UserDto, transaction: TransactionDto) -> None:
         if transaction.is_test:
