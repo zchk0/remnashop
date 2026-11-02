@@ -9,7 +9,7 @@ from src.application.common.dao import PaymentGatewayDao
 from src.application.common.policy import Permission
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
-from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
+from src.core.constants import DEFAULT_FLIPPAY_PAYMENT_TIMEOUT_MINUTES
 from src.core.enums import PaymentGatewayType
 from src.core.exceptions import GatewayNotConfiguredError
 
@@ -179,7 +179,7 @@ class ResetPaymentGatewaySettingsField(Interactor[ResetPaymentGatewaySettingsDto
             defaults = {
                 "autopay_enabled": False,
                 "autopay_display_name": "🔄 СБП — автоплатёж",
-                "payment_timeout_minutes": DEFAULT_PAYMENT_TIMEOUT_MINUTES,
+                "payment_timeout_minutes": DEFAULT_FLIPPAY_PAYMENT_TIMEOUT_MINUTES,
             }
             setattr(gateway.settings, data.field_name, defaults.get(data.field_name))
 

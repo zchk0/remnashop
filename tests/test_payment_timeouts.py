@@ -26,7 +26,7 @@ from src.telegram.routers.dashboard.remnashop.gateways.dialog import gateway_set
 from src.telegram.routers.dashboard.remnashop.gateways.getters import field_getter
 
 
-def gateway(*, minutes=30, active=True):
+def gateway(*, minutes=None, active=True):
     return PaymentGatewayDto(
         id=1,
         type=PaymentGatewayType.FLIPPAY,
@@ -36,14 +36,15 @@ def gateway(*, minutes=30, active=True):
             api_key=SecretStr("pk_test"),
             api_secret=SecretStr("sk_test"),
             webhook_secret=SecretStr("wh_test"),
-            payment_timeout_minutes=minutes,
+            **({"payment_timeout_minutes": minutes} if minutes is not None else {}),
         ),
     )
 
 
-@pytest.mark.parametrize("minutes", [1, 30, 90])
-async def test_admin_can_set_timeout_and_reset_to_thirty(minutes):
+@pytest.mark.parametrize("minutes", [1, 30, 60, 90])
+async def test_admin_can_set_timeout_and_reset_to_sixty(minutes):
     dto = gateway()
+    assert dto.settings.payment_timeout_minutes == 60
     dao = SimpleNamespace(get_by_id=AsyncMock(return_value=dto), update=AsyncMock())
     uow = AsyncMock()
     update = UpdatePaymentGatewaySettings(uow, dao, RetortProvider().get_retort())
@@ -52,7 +53,7 @@ async def test_admin_can_set_timeout_and_reset_to_thirty(minutes):
     assert dto.is_active and dto.settings.is_configured
     reset = ResetPaymentGatewaySettingsField(uow, dao)
     assert not await reset.system(ResetPaymentGatewaySettingsDto(1, "payment_timeout_minutes"))
-    assert dto.settings.payment_timeout_minutes == 30
+    assert dto.settings.payment_timeout_minutes == 60
     assert dto.is_active and dto.settings.is_configured
 
 
@@ -189,4 +190,5 @@ async def test_settings_show_timeout_minutes_and_input_help():
     )
     rendered = i18n.get("msg-gateways-field", **data)
     assert "Текущее значение: 90 мин." in rendered
+    assert "Значение по умолчанию: 60 мин." in rendered
     assert "целое число больше нуля" in rendered

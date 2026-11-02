@@ -413,14 +413,14 @@ async def test_settings_secrets_round_trip_through_encrypted_storage():
     assert loaded.settings.webhook_secret.get_secret_value() == "wh_test"
     assert loaded.settings.payment_timeout_minutes == 90
     assert loaded.settings.is_configured
-    # Existing gateway JSON has no timeout field and must keep the default of 30.
+    # Existing gateway JSON without a timeout field uses the new default of 60.
     stored.settings = {
         key: value for key, value in encrypted.items() if key != "payment_timeout_minutes"
     }
     loaded = provider.get_conversion_retort(retort, cryptographer).get_converter(
         PaymentGateway, PaymentGatewayDto
     )(stored)
-    assert loaded.settings.payment_timeout_minutes == 30
+    assert loaded.settings.payment_timeout_minutes == 60
 
 
 async def test_startup_adds_inactive_gateway_and_factory_constructs_it():

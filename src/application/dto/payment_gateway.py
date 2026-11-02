@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import SecretStr
 
-from src.core.constants import DEFAULT_PAYMENT_TIMEOUT_MINUTES
+from src.core.constants import DEFAULT_FLIPPAY_PAYMENT_TIMEOUT_MINUTES
 from src.core.enums import Currency, PaymentGatewayType
 
 from .base import BaseDto, TrackableMixin
@@ -192,7 +192,7 @@ class FlippayGatewaySettingsDto(GatewaySettingsDto):
     api_secret: Optional[SecretStr] = None
     webhook_secret: Optional[SecretStr] = None
     payment_method: Optional[int] = 100
-    payment_timeout_minutes: int = DEFAULT_PAYMENT_TIMEOUT_MINUTES
+    payment_timeout_minutes: int = DEFAULT_FLIPPAY_PAYMENT_TIMEOUT_MINUTES
     methods: Optional[list[FlippayPaymentMethodDto]] = None
 
     @property
