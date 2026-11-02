@@ -47,6 +47,16 @@ def test_ignores_transport_error_for_another_host() -> None:
     assert result is None
 
 
+def test_finds_transport_error_for_backup_host() -> None:
+    error = _connect_timeout("https://backup.example.com/api/users/123")
+
+    result = _find_remnawave_transport_error(
+        error, ["https://panel.example.com", "https://backup.example.com"]
+    )
+
+    assert result is error
+
+
 def test_finds_wrapped_remnawave_transport_error() -> None:
     transport_error = _connect_timeout("http://remnawave:3000/api/users/123")
     error = RuntimeError("Could not render subscription")
@@ -65,8 +75,9 @@ def test_ignores_transport_error_without_request() -> None:
     assert result is None
 
 
-async def test_middleware_handles_remnawave_timeout_without_publishing_error() -> None:
-    error = _connect_timeout("https://panel.example.com/api/users/123")
+@pytest.mark.parametrize("host", ["panel.example.com", "backup.example.com"])
+async def test_middleware_handles_remnawave_timeout_without_publishing_error(host) -> None:
+    error = _connect_timeout(f"https://{host}/api/users/123")
     event = SimpleNamespace(exception=error)
     aiogram_user = AiogramUser(id=123, is_bot=False, first_name="Test")
 
@@ -83,7 +94,10 @@ async def test_middleware_handles_remnawave_timeout_without_publishing_error() -
     container.get.side_effect = lambda dependency: dependencies[dependency]
     config = SimpleNamespace(
         remnawave=SimpleNamespace(
-            url=SimpleNamespace(get_secret_value=lambda: "https://panel.example.com")
+            urls=[
+                SimpleNamespace(get_secret_value=lambda: "https://panel.example.com"),
+                SimpleNamespace(get_secret_value=lambda: "https://backup.example.com"),
+            ]
         )
     )
     handler = AsyncMock()
@@ -124,7 +138,7 @@ def _context_error_case(exception, *, privileged=False):
     )
     config = SimpleNamespace(
         remnawave=SimpleNamespace(
-            url=SimpleNamespace(get_secret_value=lambda: "https://panel.example.com"),
+            urls=[SimpleNamespace(get_secret_value=lambda: "https://panel.example.com")],
         )
     )
     data = {"event_from_user": aiogram_user, CONFIG_KEY: config, CONTAINER_KEY: container}

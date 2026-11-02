@@ -1,11 +1,12 @@
 from collections.abc import AsyncIterator
 
 from dishka import Provider, Scope, provide
-from httpx import AsyncClient, Timeout
+from httpx import Timeout
 from loguru import logger
 from remnapy import RemnawaveSDK
 
 from src.core.config import AppConfig
+from src.infrastructure.remnawave_client import RemnawaveFailoverClient
 from src.infrastructure.remnawave_v3.client import RemnawaveV3Client
 from src.infrastructure.remnawave_v3.compat import PanelClient
 
@@ -28,12 +29,8 @@ class RemnawaveProvider(Provider):
         headers["CF-Access-Client-Id"] = config.remnawave.cf_client_id.get_secret_value()
         headers["CF-Access-Client-Secret"] = config.remnawave.cf_client_secret.get_secret_value()
 
-        if not config.remnawave.is_external:
-            headers["x-forwarded-proto"] = "https"
-            headers["x-forwarded-for"] = "127.0.0.1"
-
-        client = AsyncClient(
-            base_url=f"{config.remnawave.url.get_secret_value()}/api",
+        client = RemnawaveFailoverClient(
+            urls=[url.get_secret_value() for url in config.remnawave.urls],
             headers=headers,
             cookies=config.remnawave.cookies,
             verify=True,

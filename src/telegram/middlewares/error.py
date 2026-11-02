@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any, Awaitable, Callable, Final, Optional, cast
 from urllib.parse import urlsplit
 
@@ -40,10 +41,11 @@ _IGNORED_BAD_REQUESTS: Final[tuple[str, ...]] = (
 
 def _find_remnawave_transport_error(
     exception: BaseException,
-    panel_url: str,
+    panel_url: str | Sequence[str],
 ) -> Optional[httpx.TransportError]:
-    panel_host = urlsplit(panel_url).hostname
-    if not panel_host:
+    urls = (panel_url,) if isinstance(panel_url, str) else panel_url
+    panel_hosts = {host.lower() for url in urls if (host := urlsplit(url).hostname)}
+    if not panel_hosts:
         return None
 
     current: Optional[BaseException] = exception
@@ -58,7 +60,7 @@ def _find_remnawave_transport_error(
             except RuntimeError:
                 request_host = None
 
-            if request_host and request_host.lower() == panel_host.lower():
+            if request_host and request_host.lower() in panel_hosts:
                 return current
 
         current = current.__cause__ or current.__context__
@@ -111,7 +113,7 @@ class ErrorMiddleware(EventTypedMiddleware):
 
         remnawave_error = _find_remnawave_transport_error(
             event.exception,
-            config.remnawave.url.get_secret_value(),
+            [url.get_secret_value() for url in config.remnawave.urls],
         )
         if remnawave_error:
             logger.warning(
