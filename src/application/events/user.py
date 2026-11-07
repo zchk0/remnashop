@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 from remnapy.enums.users import TrafficLimitStrategy
@@ -28,7 +28,7 @@ class SubscriptionLimitedEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -50,7 +50,7 @@ class SubscriptionExpiredEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -73,7 +73,7 @@ class SubscriptionExpiredAgoEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self), "value": self.day},
+            i18n_kwargs={**self._get_i18n_kwargs(), "value": self.day},
             disable_default_markup=False,
             delete_after=None,
         )
@@ -96,7 +96,7 @@ class SubscriptionExpiresEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self), "value": self.day},
+            i18n_kwargs={**self._get_i18n_kwargs(), "value": self.day},
             disable_default_markup=False,
             delete_after=None,
         )
@@ -158,7 +158,7 @@ class ReferralRewardReceivedEvent(ReferralRewardEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
             message_effect=MessageEffectId.PARTY,

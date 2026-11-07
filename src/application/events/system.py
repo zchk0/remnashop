@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from decimal import Decimal
 from html import escape
 from typing import Any, Optional
@@ -47,7 +47,7 @@ class RemnashopWelcomeEvent(BaseEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -78,8 +78,8 @@ class ErrorEvent(BaseEvent, BuildInfoDto):
         return MessagePayloadDto(
             i18n_key=self.event_key,
             i18n_kwargs={
-                **data,
-                "error": f"{error_type}: {error_message.as_html()}",
+                **self._get_i18n_kwargs(data),
+                "error": f"{escape(error_type)}: {error_message.as_html()}",
             },
             media=media,
             media_type=MediaType.DOCUMENT,
@@ -121,7 +121,7 @@ class RemnawaveVersionWarningEvent(SystemEvent, BuildInfoDto):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -162,7 +162,7 @@ class WebhookErrorEvent(SystemEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={"error": self.error_message or "—"},
+            i18n_kwargs=self._get_i18n_kwargs({"error": self.error_message or "—"}),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -242,7 +242,7 @@ class BotUpdateEvent(SystemEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -281,7 +281,7 @@ class UserRegisteredEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -301,7 +301,7 @@ class BlacklistRegistrationAttemptEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -333,7 +333,7 @@ class UserFirstConnectionEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self), "subscription_id": str(self.subscription_id)},
+            i18n_kwargs={**self._get_i18n_kwargs(), "subscription_id": str(self.subscription_id)},
             disable_default_markup=False,
             delete_after=None,
         )
@@ -355,7 +355,7 @@ class UserDevicesUpdatedEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -475,7 +475,7 @@ class UserPurchaseEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -508,7 +508,7 @@ class TrialActivatedEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self)},
+            i18n_kwargs=self._get_i18n_kwargs(),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -536,7 +536,7 @@ class SubscriptionRevokedEvent(UserEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={**asdict(self), "subscription_id": str(self.subscription_id)},
+            i18n_kwargs={**self._get_i18n_kwargs(), "subscription_id": str(self.subscription_id)},
             disable_default_markup=False,
             delete_after=None,
         )
@@ -569,15 +569,18 @@ class PromocodeActivatedEvent(SystemEvent):
     def as_payload(self) -> "MessagePayloadDto":
         return MessagePayloadDto(
             i18n_key=self.event_key,
-            i18n_kwargs={
-                "telegram_id": self.telegram_id or 0,
-                "username": self.username or 0,
-                "name": self.name,
-                "promocode_code": self.promocode_code,
-                "promocode_type": self.reward_type,  # used by promocode-type term + reward branch
-                "reward": self.reward if self.reward is not None else 0,
-                "plan_name": self.plan_name or "—",
-            },
+            i18n_kwargs=self._get_i18n_kwargs(
+                {
+                    "telegram_id": self.telegram_id or 0,
+                    "username": self.username or 0,
+                    "name": self.name,
+                    "promocode_code": self.promocode_code,
+                    # Used by the promocode-type term and reward branch.
+                    "promocode_type": self.reward_type,
+                    "reward": self.reward if self.reward is not None else 0,
+                    "plan_name": self.plan_name or "—",
+                }
+            ),
             disable_default_markup=False,
             delete_after=None,
         )
@@ -607,8 +610,8 @@ class EarningTaskCompletedEvent(UserEvent):
 
     def as_payload(self) -> MessagePayloadDto:
         before, after = self.subscription_before, self.subscription_after
-        unknown = ("earning-event-unknown", {})
-        no_subscription = ("earning-event-no-subscription", {})
+        unknown: tuple[str, dict[str, Any]] = ("earning-event-unknown", {})
+        no_subscription: tuple[str, dict[str, Any]] = ("earning-event-no-subscription", {})
 
         def plan(subscription: SubscriptionDto | None) -> Any:
             return escape(subscription.plan_snapshot.name) if subscription else no_subscription
