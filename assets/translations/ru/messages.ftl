@@ -1,4 +1,9 @@
 # Menu
+msg-language-select =
+    <b>🌐 Язык бота / Bot language</b>
+
+    Выберите язык интерфейса. Ваш выбор сохранится для следующих обращений к боту.
+
 msg-main-menu =
     { hdr-user-profile }
     { frg-user }

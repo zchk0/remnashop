@@ -3,12 +3,12 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 from aiogram_dialog import DialogManager, ShowMode, StartMode
-from aiogram_dialog.widgets.kbd import Button
+from aiogram_dialog.widgets.kbd import Button, Select
 from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import BotService, Notifier, Redirect, TranslatorRunner
+from src.application.common import BotService, Notifier, Redirect, TranslatorHub, TranslatorRunner
 from src.application.common.dao import SettingsDao, SubscriptionDao
 from src.application.dto import (
     MediaDescriptorDto,
@@ -28,10 +28,12 @@ from src.application.use_cases.subscription.commands.purchase import (
     ActivateTrialSubscription,
     ActivateTrialSubscriptionDto,
 )
+from src.application.use_cases.user.commands.language import SetUserLanguage
 from src.application.use_cases.user.commands.profile_edit import ResetOwnReferralCode
 from src.application.use_cases.user.queries.plans import GetAvailableTrial
+from src.core.config import AppConfig
 from src.core.constants import USER_KEY
-from src.core.enums import MediaType
+from src.core.enums import Locale, MediaType
 from src.core.exceptions import CooldownError
 from src.core.utils.i18n_helpers import i18n_format_expire_time
 from src.core.utils.i18n_keys import UtilKey
@@ -39,6 +41,27 @@ from src.telegram.keyboards import CALLBACK_CHANNEL_CONFIRM, CALLBACK_RULES_ACCE
 from src.telegram.states import MainMenu, Subscription
 
 router = Router(name=__name__)
+
+
+@inject
+async def on_language_selected(
+    callback: CallbackQuery,
+    widget: Select[str],
+    dialog_manager: DialogManager,
+    item_id: str,
+    config: FromDishka[AppConfig],
+    set_user_language: FromDishka[SetUserLanguage],
+    translator_hub: FromDishka[TranslatorHub],
+) -> None:
+    user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
+    if item_id not in config.locales:
+        i18n = translator_hub.get_translator_by_locale(user.language)
+        await callback.answer(i18n.get("ntf-language-unavailable"), show_alert=True)
+        return
+
+    updated_user = await set_user_language(user, Locale(item_id))
+    dialog_manager.middleware_data[USER_KEY] = TelegramUserDto.from_user(updated_user)
+    await callback.answer()
 
 
 async def on_start_dialog(user: TelegramUserDto, dialog_manager: DialogManager) -> None:

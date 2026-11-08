@@ -10,6 +10,7 @@ from .commands.blocking import (
     ToggleUserBlockedStatus,
     UnblockAllUsers,
 )
+from .commands.language import SetUserLanguage
 from .commands.messaging import SendMessageToUser
 from .commands.profile_edit import (
     ChangeUserPoints,
@@ -53,6 +54,7 @@ USER_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     GetAvailableTrial,
     GetAvailablePlanByCode,
     UpdateUserProfile,
+    SetUserLanguage,
     RegisterWebUser,
     TrackUserActivity,
     GetRecentActivityUsers,

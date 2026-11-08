@@ -5,7 +5,7 @@ from dishka import FromDishka
 from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
-from src.application.common import BotService, Remnawave, TranslatorRunner
+from src.application.common import BotService, Remnawave, TranslatorHub, TranslatorRunner
 from src.application.common.dao import ReferralDao, SettingsDao, SubscriptionDao
 from src.application.dto import TelegramUserDto
 from src.application.use_cases.earning.rewards import GetEarningTasks
@@ -21,6 +21,30 @@ from src.core.utils.i18n_helpers import (
 )
 from src.core.utils.i18n_keys import UtilKey
 from src.core.utils.panel_identity import subscription_ref
+
+
+@inject
+async def language_getter(
+    user: TelegramUserDto,
+    config: FromDishka[AppConfig],
+    translator_hub: FromDishka[TranslatorHub],
+    **kwargs: Any,
+) -> dict[str, Any]:
+    # Resolve the locale here so a selection is reflected in this same callback,
+    # even if another middleware already resolved the request-scoped translator.
+    i18n = translator_hub.get_translator_by_locale(user.language)
+    languages = []
+    for locale in dict.fromkeys(config.locales):
+        native_i18n = translator_hub.get_translator_by_locale(locale)
+        name = native_i18n.get("language", language=locale)
+        languages.append(
+            {"locale": locale.value, "label": f"{'✅ ' if locale == user.language else ''}{name}"}
+        )
+    return {
+        "language_prompt": i18n.get("msg-language-select"),
+        "language_back": i18n.get("btn-back.menu"),
+        "languages": languages,
+    }
 
 
 @inject

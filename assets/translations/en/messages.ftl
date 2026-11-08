@@ -1,4 +1,9 @@
 # Menu
+msg-language-select =
+    <b>🌐 Bot language</b>
+
+    Choose your interface language. Your choice will be saved for future visits.
+
 msg-main-menu =
     { hdr-user-profile }
     { frg-user }

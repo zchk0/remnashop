@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.enums import AuthType, Locale, Role
@@ -35,6 +35,7 @@ class User(BaseSql, TimestampMixin):
     name: Mapped[str] = mapped_column(String())
     role: Mapped[Role] = mapped_column(index=True)
     language: Mapped[Locale]
+    is_language_manual: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     personal_discount: Mapped[int]
     purchase_discount: Mapped[int]

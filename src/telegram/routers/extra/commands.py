@@ -11,7 +11,7 @@ from src.application.common.dao import SettingsDao
 from src.application.dto import MessagePayloadDto, TelegramUserDto
 from src.core.enums import Command
 from src.telegram.keyboards import get_contact_support_keyboard
-from src.telegram.states import Earning
+from src.telegram.states import Earning, MainMenu
 
 router = Router(name=__name__)
 
@@ -25,6 +25,20 @@ async def on_tasks_command(
     logger.info(f"{user.log} Called '/tasks' command")
     await dialog_manager.start(
         state=Earning.MAIN,
+        mode=StartMode.RESET_STACK,
+        show_mode=ShowMode.DELETE_AND_SEND,
+    )
+
+
+@router.message(FilterCommand(Command.LANGUAGE.value.command))
+async def on_language_command(
+    message: Message,
+    user: TelegramUserDto,
+    dialog_manager: DialogManager,
+) -> None:
+    logger.info(f"{user.log} Called '/language' command")
+    await dialog_manager.start(
+        state=MainMenu.LANGUAGE,
         mode=StartMode.RESET_STACK,
         show_mode=ShowMode.DELETE_AND_SEND,
     )

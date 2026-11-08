@@ -57,6 +57,7 @@ class UserDto(BaseDto, TrackableMixin, TimestampMixin):
     name: str
     role: Role = Role.USER
     language: Locale = Locale.EN
+    is_language_manual: bool = False
 
     personal_discount: int = 0
     purchase_discount: int = 0

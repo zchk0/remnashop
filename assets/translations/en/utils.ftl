@@ -62,6 +62,7 @@ message =
 command =
     .start = Restart the bot
     .tasks = Open tasks
+    .language = Change language
     .paysupport = Request a refund
     .rules = Terms of Service
     .help = Help

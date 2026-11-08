@@ -18,6 +18,7 @@ from src.telegram.widgets.kbd import (
     CopyText,
     ListGroup,
     Row,
+    Select,
     Start,
     SwitchInlineQueryChosenChatButton,
     SwitchTo,
@@ -31,6 +32,7 @@ from .getters import (
     devices_getter,
     invite_about_getter,
     invite_getter,
+    language_getter,
     menu_getter,
 )
 from .handlers import (
@@ -39,6 +41,7 @@ from .handlers import (
     on_device_delete_request,
     on_get_trial,
     on_invite,
+    on_language_selected,
     on_reissue_subscription_confirm,
     on_reset_referral_code,
     on_show_qr,
@@ -356,8 +359,30 @@ device_confirm_reissue = Window(
     getter=device_confirm_delete_getter,
 )
 
+language = Window(
+    Format("{language_prompt}"),
+    Select(
+        Format("{item[label]}"),
+        id="language",
+        item_id_getter=lambda item: item["locale"],
+        items="languages",
+        on_click=on_language_selected,
+    ),
+    Row(
+        SwitchTo(
+            text=Format("{language_back}"),
+            id="language_back",
+            state=MainMenu.MAIN,
+        ),
+    ),
+    IgnoreUpdate(),
+    state=MainMenu.LANGUAGE,
+    getter=language_getter,
+)
+
 router = Dialog(
     menu,
+    language,
     devices,
     device_confirm_delete,
     device_confirm_delete_all,

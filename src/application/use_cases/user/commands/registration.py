@@ -230,7 +230,7 @@ class UpdateUserProfile(Interactor[UpdateUserProfileDto, UserDto]):
             changed = True
 
         new_language = data.language_code
-        if new_language and user.language != new_language:
+        if not user.is_language_manual and new_language and user.language != new_language:
             if new_language in self.config.locales:
                 logger.debug(
                     f"User '{user.remna_name}' language changed from "

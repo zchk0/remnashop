@@ -63,6 +63,8 @@ This means:
 * **`APP_LOCALES`**: Supported locales (e.g. `ru,en`).
 * **`APP_DEFAULT_LOCALE`**: Default locale.
 
+Users can select their bot language with `/language`. The available choices come from `APP_LOCALES` (`ru,en` by default). A manual choice is saved in the user's profile and takes priority over the Telegram interface language. Until a user makes a manual choice, the bot continues to follow their supported Telegram language.
+
 
 ## Key naming convention
 

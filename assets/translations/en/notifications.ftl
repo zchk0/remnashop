@@ -239,3 +239,5 @@ ntf-ad-link =
     .created = ✅ <i>Advertising link created.</i>
     .updated = ✅ <i>Advertising link updated.</i>
     .deleted = ✅ <i>Advertising link deleted.</i>
+
+ntf-language-unavailable = This language is currently unavailable. Choose a language from the list.
