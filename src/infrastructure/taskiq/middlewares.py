@@ -17,7 +17,7 @@ class ErrorMiddleware(TaskiqMiddleware):
         result: TaskiqResult[Any],
         exception: BaseException,
     ) -> None:
-        logger.error(f"Task '{message.task_name}' error: {exception}")
+        logger.error(f"Task '{message.task_name}' error: {type(exception).__name__}: {exception}")
 
         container: Optional[AsyncContainer] = self.broker.custom_dependency_context.get(
             AsyncContainer

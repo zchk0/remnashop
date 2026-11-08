@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from aiogram_dialog import ShowMode, StartMode
 
+from src.application.common import TranslatorHub
 from src.application.dto import TelegramUserDto, UserDto
 from src.application.use_cases.user.commands.language import SetUserLanguage
 from src.application.use_cases.user.commands.registration import (
@@ -70,9 +71,7 @@ async def test_language_command_follows_tasks_and_opens_selection(hub):
         assert names[names.index("tasks") + 1] == "language"
         language = commands[names.index("language")]
         assert language.description == (
-            "Change language"
-            if call.kwargs["language_code"] == Locale.EN
-            else "Выбрать язык / Change language"
+            "Change language" if call.kwargs["language_code"] == Locale.EN else "Выбрать язык"
         )
 
     manager = SimpleNamespace(start=AsyncMock())
@@ -208,6 +207,32 @@ async def test_language_options_follow_configured_locales(hub):
         user(), SimpleNamespace(locales=[Locale.RU]), hub
     )
     assert data["languages"] == [{"locale": "ru", "label": "✅ Русский"}]
+
+
+@pytest.mark.parametrize("locale", [Locale.RU, Locale.EN])
+async def test_language_window_loads_with_dispatcher_config_and_dishka(hub, locale):
+    config = SimpleNamespace(locales=[Locale.RU, Locale.EN])
+    dependencies = {AppConfig: config, TranslatorHub: hub}
+    container = SimpleNamespace(
+        get=AsyncMock(side_effect=lambda dependency, **kwargs: dependencies[dependency])
+    )
+    manager = SimpleNamespace(
+        middleware_data={"config": config, USER_KEY: user(locale), CONTAINER_KEY: container},
+        is_preview=lambda: False,
+    )
+    manager.middleware_data["dialog_manager"] = manager
+    dialog = SimpleNamespace(load_data=AsyncMock(return_value={}))
+
+    data = await language_window.load_data(dialog, manager)
+    text = await language_window.text.render_text(data, manager)
+    keyboard = await language_window.keyboard.render_keyboard(data, manager)
+
+    assert data["languages"] == [
+        {"locale": "ru", "label": f"{'✅ ' if locale == Locale.RU else ''}Русский"},
+        {"locale": "en", "label": f"{'✅ ' if locale == Locale.EN else ''}English"},
+    ]
+    assert text == hub.get_translator_by_locale(locale).get("msg-language-select")
+    assert keyboard[-1][0].text == hub.get_translator_by_locale(locale).get("btn-back.menu")
 
 
 def test_telegram_user_conversion_preserves_manual_choice():

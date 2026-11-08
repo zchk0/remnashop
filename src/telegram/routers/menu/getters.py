@@ -26,7 +26,7 @@ from src.core.utils.panel_identity import subscription_ref
 @inject
 async def language_getter(
     user: TelegramUserDto,
-    config: FromDishka[AppConfig],
+    config: AppConfig,
     translator_hub: FromDishka[TranslatorHub],
     **kwargs: Any,
 ) -> dict[str, Any]:

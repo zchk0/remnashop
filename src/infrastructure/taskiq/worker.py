@@ -4,7 +4,7 @@ from dishka.integrations.taskiq import setup_dishka as setup_taskiq_dishka
 from taskiq import TaskiqEvents, TaskiqState
 from taskiq_redis import RedisStreamBroker
 
-from src.application.common import EventSubscriber
+from src.application.common import EventSubscriber, TranslatorHub
 from src.core.config import AppConfig
 from src.core.logger import setup_logger
 from src.infrastructure.di import create_taskiq_container
@@ -31,6 +31,9 @@ def worker() -> RedisStreamBroker:
 
     @broker.on_event(TaskiqEvents.WORKER_STARTUP)
     async def startup(state: TaskiqState) -> None:
+        # Prepare translations before tasks start opening database connections.
+        await container.get(TranslatorHub)
+
         event_bus = await container.get(EventSubscriber)
         event_bus.set_container_factory(lambda: container)
         event_bus.autodiscover()

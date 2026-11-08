@@ -63,6 +63,7 @@ def setup_logger(config: AppConfig) -> None:
         level=config.log.level,
         format=LOG_FORMAT,
         colorize=True,
+        diagnose=False,
     )
 
     if config.log.to_file:
@@ -74,6 +75,7 @@ def setup_logger(config: AppConfig) -> None:
             retention=config.log.retention,
             compression=config.log.compression,
             encoding=LOG_ENCODING,
+            diagnose=False,
         )
 
     logger.add(
@@ -81,6 +83,7 @@ def setup_logger(config: AppConfig) -> None:
         level=config.log.level,
         format=LOG_FORMAT,
         colorize=False,
+        diagnose=False,
     )
 
     intercept_handler = InterceptHandler()

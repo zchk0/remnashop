@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from adaptix import Retort
@@ -18,12 +19,14 @@ class I18nProvider(Provider):
     scope = Scope.APP
 
     @provide
-    def get_translator_hub(
+    async def get_translator_hub(
         self,
         config: AppConfig,
         retort: Retort,
     ) -> AnyOf[TranslatorHubProtocol, TranslatorHubImpl]:
-        storage = LayeredFileStorage(
+        # Reading and compiling Fluent resources must not stall active DB/API connections.
+        storage = await asyncio.to_thread(
+            LayeredFileStorage,
             user_translations_dir=config.translations_dir,
             default_translations_dir=config.default_translations_dir,
         )
