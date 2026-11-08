@@ -8,6 +8,7 @@ tests/*
 !tests/test_payment_recheck.py
 !tests/test_flippay.py
 !tests/test_flippay_methods.py
+!tests/test_rivarapay.py
 !tests/test_payment_timeouts.py
 !tests/test_promocode_recovery.py
 !tests/test_broadcast_registration_exclusion.py
@@ -45,6 +46,7 @@ CLAUDE.md
 docs/*
 !docs/platega-autopay.md
 !docs/flippay.md
+!docs/rivarapay.md
 
 # Environment
 .venv/

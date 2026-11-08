@@ -410,6 +410,11 @@ btn-menu-editor =
     }
 
 btn-flippay-methods = 💳 Методы оплаты
+btn-rivara-methods = 💳 Методы оплаты
+btn-rivara-method-toggle = { $enabled ->
+    [1] 🔴 Выключить метод
+   *[other] 🟢 Включить метод
+    }
 btn-flippay-methods-refresh = 🔄 Обновить из FlipPay
 btn-flippay-method-toggle = { $enabled ->
     [1] 🔴 Выключить метод

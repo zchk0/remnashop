@@ -13,12 +13,13 @@ from src.application.use_cases.gateways.commands.payment import ProcessPayment, 
 from src.application.use_cases.gateways.queries.providers import GetPaymentGatewayInstance
 from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.exceptions import PurchaseError
-from src.infrastructure.payment_gateways import FlippayGateway, PlategaGateway
+from src.infrastructure.payment_gateways import FlippayGateway, PlategaGateway, RivaraGateway
 
 
 def can_recheck_payment(transaction: TransactionDto) -> bool:
     return (
-        transaction.gateway_type in {PaymentGatewayType.PLATEGA, PaymentGatewayType.FLIPPAY}
+        transaction.gateway_type
+        in {PaymentGatewayType.PLATEGA, PaymentGatewayType.FLIPPAY, PaymentGatewayType.RIVARAPAY}
         and not transaction.is_test
         and not transaction.pricing.is_free
         and not (
@@ -52,8 +53,17 @@ class RecheckPaymentResultDto:
 
 
 async def _get_payment_status(
-    gateway: PlategaGateway | FlippayGateway, transaction: TransactionDto
+    gateway: PlategaGateway | FlippayGateway | RivaraGateway, transaction: TransactionDto
 ) -> tuple[str, bool]:
+    if isinstance(gateway, RivaraGateway):
+        if transaction.provider_payment_id is None:
+            raise ValueError("Rivara Pay provider payment ID is missing")
+        payment = await gateway.get_payment(transaction.provider_payment_id)
+        gateway.validate_payment_data(payment, transaction)
+        status = payment.get("status")
+        if not isinstance(status, str) or not status.strip():
+            raise ValueError("Rivara Pay payment status is missing")
+        return status, status == "SUCCEEDED"
     payment = await gateway.get_payment(transaction.payment_id)
     is_flippay = isinstance(gateway, FlippayGateway)
     id_field = "order_id" if is_flippay else "id"
@@ -92,7 +102,7 @@ class RecheckPayment(Interactor[UUID, RecheckPaymentResultDto]):
 
         # Disabling new payments must not prevent recovery of an existing paid order.
         gateway = await self.get_payment_gateway_instance.for_webhook(transaction.gateway_type)
-        if not isinstance(gateway, (PlategaGateway, FlippayGateway)):
+        if not isinstance(gateway, (PlategaGateway, FlippayGateway, RivaraGateway)):
             raise ValueError("Gateway does not support payment recheck")
 
         status, is_paid = await _get_payment_status(gateway, transaction)

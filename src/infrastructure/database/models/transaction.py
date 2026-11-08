@@ -29,6 +29,7 @@ class Transaction(BaseSql, TimestampMixin):
     gateway_type: Mapped[PaymentGatewayType]
     gateway_display_name: Mapped[Optional[str]]
     payment_method: Mapped[Optional[str]]
+    provider_payment_id: Mapped[Optional[str]]
 
     pricing: Mapped[dict[str, Any]]
     currency: Mapped[Currency]

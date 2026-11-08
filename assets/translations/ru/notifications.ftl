@@ -233,6 +233,7 @@ ntf-promocode =
 ntf-flippay-methods-refreshed = ✅ <i>Список методов FlipPay обновлён.</i>
 ntf-flippay-methods-refresh-failed = ❌ <i>Не удалось получить методы FlipPay. Проверьте ключи кассы и повторите попытку.</i>
 ntf-flippay-method-unavailable = ❌ <i>Этот метод оплаты сейчас недоступен. Выберите другой.</i>
+ntf-rivara-method-unavailable = ❌ <i>Этот метод оплаты сейчас недоступен. Выберите другой.</i>
 
 ntf-ad-link =
     .created = ✅ <i>Рекламная ссылка создана.</i>

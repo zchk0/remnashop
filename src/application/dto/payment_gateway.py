@@ -15,6 +15,7 @@ from .base import BaseDto, TrackableMixin
 class PaymentResultDto:
     id: UUID
     url: Optional[str] = None
+    provider_payment_id: Optional[str] = None
 
 
 @dataclass(kw_only=True)
@@ -241,6 +242,70 @@ class FlippayGatewaySettingsDto(GatewaySettingsDto):
         )
 
 
+@dataclass(frozen=True, kw_only=True)
+class RivaraPaymentMethodDto:
+    id: str
+    name: str
+    display_name: Optional[str] = None
+    enabled: bool = False
+
+    @property
+    def title(self) -> str:
+        return self.display_name or self.name
+
+    @property
+    def callback_id(self) -> str:
+        # Leave room for aiogram-dialog's intent prefix within Telegram's 64-byte limit.
+        return {"CARD_RU": "RU", "CARD_INTERNATIONAL": "INT"}.get(self.id, self.id)
+
+
+@dataclass(kw_only=True)
+class RivaraGatewaySettingsDto(GatewaySettingsDto):
+    type: Literal[PaymentGatewayType.RIVARAPAY] = PaymentGatewayType.RIVARAPAY
+    api_key: Optional[SecretStr] = None
+    webhook_secret: Optional[SecretStr] = None
+    methods: Optional[list[RivaraPaymentMethodDto]] = None
+
+    @property
+    def payment_methods(self) -> list[RivaraPaymentMethodDto]:
+        saved = {method.id: method for method in self.methods or []}
+        return [
+            saved.get(
+                code,
+                RivaraPaymentMethodDto(
+                    id=code, name=name, enabled=code == "ALL" and self.methods is None
+                ),
+            )
+            for code, name in (
+                ("ALL", "Rivara Pay — все способы"),
+                ("SBP", "СБП"),
+                ("CARD_RU", "Карты РФ"),
+                ("CARD_INTERNATIONAL", "Международные карты"),
+                ("CRYPTO", "Криптовалюта"),
+            )
+        ]
+
+    @property
+    def enabled_methods(self) -> list[RivaraPaymentMethodDto]:
+        return [method for method in self.payment_methods if method.enabled]
+
+    def get_payment_method(self, method_id: str | None = None) -> RivaraPaymentMethodDto:
+        methods = self.enabled_methods
+        if method_id is None and len(methods) == 1:
+            return methods[0]
+        for method in methods:
+            if method_id in {method.id, method.callback_id}:
+                return method
+        raise ValueError("Select an enabled Rivara Pay payment method")
+
+    @property
+    def is_configured(self) -> bool:
+        return all(
+            value is not None and bool(value.get_secret_value().strip())
+            for value in (self.api_key, self.webhook_secret)
+        )
+
+
 AnyGatewaySettingsDto = Union[
     TelegramStarsGatewaySettingsDto,
     YooKassaGatewaySettingsDto,
@@ -257,4 +322,5 @@ AnyGatewaySettingsDto = Union[
     WataGatewaySettingsDto,
     ValutixGatewaySettingsDto,
     FlippayGatewaySettingsDto,
+    RivaraGatewaySettingsDto,
 ]

@@ -43,6 +43,8 @@ from src.application.dto.payment_gateway import (
     MulenPayGatewaySettingsDto,
     PayMasterGatewaySettingsDto,
     PlategaGatewaySettingsDto,
+    RivaraGatewaySettingsDto,
+    RivaraPaymentMethodDto,
     RoboKassaGatewaySettingsDto,
     TelegramStarsGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
@@ -121,6 +123,7 @@ class RetortProvider(Provider):
                 PaymentGatewayType.VALUTIX: ValutixGatewaySettingsDto,
                 PaymentGatewayType.WATA: WataGatewaySettingsDto,
                 PaymentGatewayType.FLIPPAY: FlippayGatewaySettingsDto,
+                PaymentGatewayType.RIVARAPAY: RivaraGatewaySettingsDto,
             }
 
             dto_class = type_mapping.get(pg_type)
@@ -131,6 +134,10 @@ class RetortProvider(Provider):
             if pg_type == PaymentGatewayType.FLIPPAY and settings_dict.get("methods") is not None:
                 settings_dict["methods"] = retort.load(
                     settings_dict["methods"], list[FlippayPaymentMethodDto]
+                )
+            if pg_type == PaymentGatewayType.RIVARAPAY and settings_dict.get("methods") is not None:
+                settings_dict["methods"] = retort.load(
+                    settings_dict["methods"], list[RivaraPaymentMethodDto]
                 )
             return dto_class(**settings_dict)
 
@@ -182,6 +189,7 @@ class RetortProvider(Provider):
                         ValutixGatewaySettingsDto,
                         WataGatewaySettingsDto,
                         FlippayGatewaySettingsDto,
+                        RivaraGatewaySettingsDto,
                     ]
                 ],
             ]

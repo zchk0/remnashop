@@ -46,6 +46,13 @@ from .handlers import (
     on_gateway_select,
     on_gateway_test,
 )
+from .rivara_methods import (
+    on_rivara_method_name_input,
+    on_rivara_method_name_reset,
+    on_rivara_method_select,
+    on_rivara_method_toggle,
+    rivara_methods_getter,
+)
 
 gateways = Window(
     Banner(BannerName.DASHBOARD),
@@ -115,6 +122,12 @@ gateway_settings = Window(
         id="flippay_methods",
         state=RemnashopGateways.FLIPPAY_METHODS,
         when=F["is_flippay"],
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-rivara-methods"),
+        id="rivara_methods",
+        state=RemnashopGateways.RIVARA_METHODS,
+        when=F["is_rivara"],
     ),
     Row(
         Button(
@@ -316,6 +329,61 @@ flippay_method_name = Window(
     getter=flippay_methods_getter,
 )
 
+rivara_methods = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-rivara-methods"),
+    Column(
+        Select(
+            text=Format("{item[status]} {item[title]}"),
+            id="rivara_method",
+            item_id_getter=lambda item: item["id"],
+            items="methods",
+            type_factory=str,
+            on_click=on_rivara_method_select,
+        ),
+    ),
+    SwitchTo(text=I18nFormat("btn-back.general"), id="back", state=RemnashopGateways.SETTINGS),
+    IgnoreUpdate(),
+    state=RemnashopGateways.RIVARA_METHODS,
+    getter=rivara_methods_getter,
+)
+
+rivara_method = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-rivara-method"),
+    Button(
+        text=I18nFormat("btn-rivara-method-toggle"),
+        id="rivara_method_toggle",
+        on_click=on_rivara_method_toggle,
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-gateway.display-name"),
+        id="rivara_method_name",
+        state=RemnashopGateways.RIVARA_METHOD_NAME,
+    ),
+    SwitchTo(
+        text=I18nFormat("btn-back.general"), id="back", state=RemnashopGateways.RIVARA_METHODS
+    ),
+    IgnoreUpdate(),
+    state=RemnashopGateways.RIVARA_METHOD,
+    getter=rivara_methods_getter,
+)
+
+rivara_method_name = Window(
+    Banner(BannerName.DASHBOARD),
+    I18nFormat("msg-rivara-method-name"),
+    MessageInput(on_rivara_method_name_input),
+    Button(
+        text=I18nFormat("btn-gateway.field-reset"),
+        id="rivara_name_reset",
+        on_click=on_rivara_method_name_reset,
+    ),
+    SwitchTo(text=I18nFormat("btn-back.general"), id="back", state=RemnashopGateways.RIVARA_METHOD),
+    IgnoreUpdate(),
+    state=RemnashopGateways.RIVARA_METHOD_NAME,
+    getter=rivara_methods_getter,
+)
+
 router = Dialog(
     gateways,
     gateway_settings,
@@ -325,4 +393,7 @@ router = Dialog(
     flippay_methods,
     flippay_method,
     flippay_method_name,
+    rivara_methods,
+    rivara_method,
+    rivara_method_name,
 )

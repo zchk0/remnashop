@@ -38,6 +38,7 @@ from src.application.dto.payment_gateway import (
     PayMasterGatewaySettingsDto,
     PaymentGatewayDto,
     PlategaGatewaySettingsDto,
+    RivaraGatewaySettingsDto,
     RoboKassaGatewaySettingsDto,
     TelegramStarsGatewaySettingsDto,
     UrlPayGatewaySettingsDto,
@@ -70,8 +71,17 @@ from src.core.utils.i18n_helpers import (
     i18n_format_device_limit,
     i18n_format_traffic_limit,
 )
-from src.infrastructure.payment_gateways import FlippayGateway
+from src.infrastructure.payment_gateways import FlippayGateway, RivaraGateway
 from src.infrastructure.services.platega_autopay import PlategaAutopayService
+
+
+def _rivara_customer_email(actor: UserDto) -> str:
+    if actor.telegram_id is not None:
+        return f"{actor.telegram_id}@telegram.org"
+    email = actor.billing_email or actor.email
+    if not email:
+        raise ValueError("Rivara Pay requires a customer email or Telegram ID")
+    return email
 
 
 class CreateDefaultPaymentGateway(Interactor[None, None]):
@@ -109,6 +119,7 @@ class CreateDefaultPaymentGateway(Interactor[None, None]):
                     PaymentGatewayType.VALUTIX: ValutixGatewaySettingsDto,
                     PaymentGatewayType.WATA: WataGatewaySettingsDto,
                     PaymentGatewayType.FLIPPAY: FlippayGatewaySettingsDto,
+                    PaymentGatewayType.RIVARAPAY: RivaraGatewaySettingsDto,
                 }
                 dto_class = settings_map.get(gateway_type)
                 settings = dto_class() if dto_class else None
@@ -144,7 +155,7 @@ class CreatePaymentDto:
     pricing: PriceDetailsDto
     purchase_type: PurchaseType
     gateway_type: PaymentGatewayType
-    payment_method: int | None = None
+    payment_method: int | str | None = None
 
 
 class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
@@ -166,6 +177,8 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
 
     async def _execute(self, actor: UserDto, data: CreatePaymentDto) -> PaymentResultDto:
         gateway_instance = await self.get_payment_gateway_instance.system(data.gateway_type)
+        if isinstance(gateway_instance, RivaraGateway) and gateway_instance.is_test_mode:
+            raise ValueError("A test Rivara Pay API key cannot be used for subscription purchases")
         i18n = self.translator_hub.get_translator_by_locale(actor.language)
 
         key, kw = i18n_format_days(data.plan_snapshot.duration)
@@ -211,7 +224,15 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
 
         flippay_method = None
         if isinstance(gateway_instance, FlippayGateway):
+            if data.payment_method is not None and type(data.payment_method) is not int:
+                raise ValueError("Invalid FlipPay payment method")
             flippay_method = gateway_instance.settings.get_payment_method(data.payment_method)
+        rivara_method = None
+        if isinstance(gateway_instance, RivaraGateway):
+            if data.payment_method is not None and not isinstance(data.payment_method, str):
+                raise ValueError("Invalid Rivara Pay payment method")
+            rivara_method = gateway_instance.settings.get_payment_method(data.payment_method)
+        selected_method = flippay_method or rivara_method
 
         transaction = TransactionDto(
             payment_id=uuid.uuid4(),
@@ -220,22 +241,29 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
             purchase_type=data.purchase_type,
             gateway_type=gateway_instance.data.type,
             gateway_display_name=(
-                flippay_method.title
-                if flippay_method
+                selected_method.title
+                if selected_method
                 else (
                     gateway_instance.data.settings.display_name
                     if gateway_instance.data.settings
                     else None
                 )
             ),
-            payment_method=str(flippay_method.id) if flippay_method else None,
+            payment_method=str(selected_method.id) if selected_method else None,
             pricing=data.pricing,
             currency=gateway_instance.data.currency,
             plan_snapshot=data.plan_snapshot,
         )
 
         async with self.uow:
-            if isinstance(gateway_instance, FlippayGateway) and flippay_method:
+            if isinstance(gateway_instance, RivaraGateway) and rivara_method:
+                payment = await gateway_instance.handle_create_payment(
+                    amount=data.pricing.final_amount,
+                    details=details,
+                    payment_method=rivara_method.id,
+                    customer_email=_rivara_customer_email(actor),
+                )
+            elif isinstance(gateway_instance, FlippayGateway) and flippay_method:
                 payment = await gateway_instance.handle_create_payment(
                     amount=data.pricing.final_amount,
                     details=details,
@@ -248,6 +276,7 @@ class CreatePayment(Interactor[CreatePaymentDto, PaymentResultDto]):
                 )
 
             transaction.payment_id = payment.id
+            transaction.provider_payment_id = payment.provider_payment_id
             await self.transaction_dao.create(transaction)
             await self.uow.commit()
 
@@ -280,7 +309,19 @@ class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
         test_plan_snapshot = PlanSnapshotDto.test()
 
         flippay_method = None
-        if isinstance(gateway_instance, FlippayGateway):
+        rivara_method = None
+        if isinstance(gateway_instance, RivaraGateway):
+            rivara_methods = gateway_instance.settings.enabled_methods
+            if not rivara_methods:
+                raise ValueError("No enabled Rivara Pay payment methods")
+            rivara_method = rivara_methods[0]
+            payment = await gateway_instance.handle_create_payment(
+                amount=test_pricing.final_amount,
+                details=i18n.get("test-payment"),
+                payment_method=rivara_method.id,
+                customer_email=_rivara_customer_email(actor),
+            )
+        elif isinstance(gateway_instance, FlippayGateway):
             methods = gateway_instance.settings.enabled_methods
             if not methods:
                 raise ValueError("No enabled FlipPay payment methods")
@@ -298,24 +339,26 @@ class CreateTestPayment(Interactor[PaymentGatewayType, PaymentResultDto]):
                 details=i18n.get("test-payment"),
             )
 
+        selected_method = flippay_method or rivara_method
         async with self.uow:
             transaction = TransactionDto(
                 payment_id=payment.id,
+                provider_payment_id=payment.provider_payment_id,
                 user_id=actor.id,
                 status=TransactionStatus.PENDING,
                 is_test=True,
                 purchase_type=PurchaseType.NEW,
                 gateway_type=gateway_instance.data.type,
                 gateway_display_name=(
-                    flippay_method.title
-                    if flippay_method
+                    selected_method.title
+                    if selected_method
                     else (
                         gateway_instance.data.settings.display_name
                         if gateway_instance.data.settings
                         else None
                     )
                 ),
-                payment_method=str(flippay_method.id) if flippay_method else None,
+                payment_method=str(selected_method.id) if selected_method else None,
                 pricing=test_pricing,
                 currency=gateway_instance.data.currency,
                 plan_snapshot=test_plan_snapshot,
@@ -426,11 +469,12 @@ class ProcessPayment(Interactor[ProcessPaymentDto, bool]):
                     TransactionStatus.PENDING,
                     TransactionStatus.FAILED,
                 )
-                # Only an explicit admin API recheck may recover a canceled transaction.
-                if data.recover_canceled and data.gateway_type in {
-                    PaymentGatewayType.PLATEGA,
-                    PaymentGatewayType.FLIPPAY,
-                }:
+                # Rivara can confirm a late payment after local timeout cancellation.
+                if data.gateway_type == PaymentGatewayType.RIVARAPAY or (
+                    data.recover_canceled
+                    and data.gateway_type
+                    in {PaymentGatewayType.PLATEGA, PaymentGatewayType.FLIPPAY}
+                ):
                     allowed_current += (TransactionStatus.CANCELED,)
                 updated = await self.transaction_dao.transition_status(
                     payment_id,

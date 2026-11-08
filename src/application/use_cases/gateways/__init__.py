@@ -16,6 +16,7 @@ from .commands.payment import (
     ProcessPayment,
 )
 from .commands.recheck import RecheckPayment
+from .commands.rivara_methods import UpdateRivaraPaymentMethod
 from .queries.providers import GetPaymentGatewayInstance
 
 GATEWAYS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
@@ -31,4 +32,5 @@ GATEWAYS_USE_CASES: Final[tuple[type[Interactor], ...]] = (
     RecheckPayment,
     RefreshFlippayPaymentMethods,
     UpdateFlippayPaymentMethod,
+    UpdateRivaraPaymentMethod,
 )

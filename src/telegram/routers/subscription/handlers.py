@@ -11,7 +11,11 @@ from loguru import logger
 from src.application.common import Notifier
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PlanDto, PlanSnapshotDto, SubscriptionDto, TelegramUserDto
-from src.application.dto.payment_gateway import FlippayGatewaySettingsDto, PlategaGatewaySettingsDto
+from src.application.dto.payment_gateway import (
+    FlippayGatewaySettingsDto,
+    PlategaGatewaySettingsDto,
+    RivaraGatewaySettingsDto,
+)
 from src.application.services import PricingService
 from src.application.use_cases.gateways.commands.payment import (
     CreatePayment,
@@ -47,7 +51,7 @@ CURRENT_METHOD_KEY = "selected_payment_method"
 
 def _only_one_payment_method(gateways: list) -> bool:
     return len(gateways) == 1 and not any(
-        g.type == PaymentGatewayType.FLIPPAY
+        g.type in {PaymentGatewayType.FLIPPAY, PaymentGatewayType.RIVARAPAY}
         or (isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled)
         for g in gateways
     )
@@ -63,7 +67,7 @@ def _get_cache_key(
     duration: int,
     gateway_type: PaymentGatewayType,
     purchase_type: PurchaseType,
-    payment_method: int | None = None,
+    payment_method: int | str | None = None,
 ) -> str:
     key = f"{purchase_type}:{duration}:{gateway_type.value}"
     return f"{key}:{payment_method}" if payment_method is not None else key
@@ -115,9 +119,13 @@ async def _create_payment_and_get_data(
                 purchase_type=purchase_type,
                 gateway_type=gateway_type,
                 payment_method=(
-                    dialog_manager.dialog_data.get("flippay_payment_method")
-                    if gateway_type == PaymentGatewayType.FLIPPAY
-                    else None
+                    dialog_manager.dialog_data.get("rivara_payment_method")
+                    if gateway_type == PaymentGatewayType.RIVARAPAY
+                    else (
+                        dialog_manager.dialog_data.get("flippay_payment_method")
+                        if gateway_type == PaymentGatewayType.FLIPPAY
+                        else None
+                    )
                 ),
             ),
         )
@@ -457,13 +465,30 @@ async def on_payment_method_select(
             await dialog_manager.switch_to(state=Subscription.PAYMENT_METHOD)
             return
 
+    rivara_method_id = None
+    if selected_gateway == PaymentGatewayType.RIVARAPAY:
+        gateway = await payment_gateway_dao.get_by_type(selected_gateway)
+        try:
+            if (
+                not gateway
+                or not gateway.is_active
+                or not isinstance(gateway.settings, RivaraGatewaySettingsDto)
+            ):
+                raise ValueError("Rivara Pay is unavailable")
+            rivara_method_id = gateway.settings.get_payment_method(method_id or None).id
+        except ValueError:
+            await notifier.notify_user(user, i18n_key="ntf-rivara-method-unavailable")
+            await dialog_manager.switch_to(state=Subscription.PAYMENT_METHOD)
+            return
+
     selected_duration = dialog_manager.dialog_data[CURRENT_DURATION_KEY]
     dialog_manager.dialog_data[CURRENT_METHOD_KEY] = selected_gateway
     dialog_manager.dialog_data["flippay_payment_method"] = flippay_method_id
+    dialog_manager.dialog_data["rivara_payment_method"] = rivara_method_id
     purchase_type: PurchaseType = dialog_manager.dialog_data["purchase_type"]
     cache = _load_payment_data(dialog_manager)
     cache_key = _get_cache_key(
-        selected_duration, selected_gateway, purchase_type, flippay_method_id
+        selected_duration, selected_gateway, purchase_type, flippay_method_id or rivara_method_id
     )
 
     if cache_key in cache:

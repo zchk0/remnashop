@@ -54,7 +54,8 @@ async def gateway_getter(
     display_name_field = [s for s in settings if s["field"] == "display_name"]
     other_settings = [s for s in settings if s["field"] not in {"display_name", "autopay_enabled"}]
     is_flippay = gateway.type == PaymentGatewayType.FLIPPAY
-    if is_flippay:
+    is_rivara = gateway.type == PaymentGatewayType.RIVARAPAY
+    if is_flippay or is_rivara:
         display_name_field = []
         other_settings = [
             s for s in other_settings if s["field"] not in {"methods", "payment_method"}
@@ -67,6 +68,7 @@ async def gateway_getter(
         "display_name_field": display_name_field,
         "settings": other_settings,
         "is_flippay": is_flippay,
+        "is_rivara": is_rivara,
         "has_autopay": isinstance(gateway.settings, PlategaGatewaySettingsDto),
         "autopay_enabled": getattr(gateway.settings, "autopay_enabled", False),
         "webhook": config.get_webhook(gateway.type),

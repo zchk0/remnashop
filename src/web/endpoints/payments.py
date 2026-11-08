@@ -1,3 +1,4 @@
+import hashlib
 from typing import Optional
 from uuid import UUID
 
@@ -5,6 +6,7 @@ from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, Request, Response, status
 from loguru import logger
+from redis.asyncio import Redis
 
 from src.application.common import EventPublisher
 from src.application.common.dao import TransactionDao
@@ -15,7 +17,7 @@ from src.core.config import AppConfig
 from src.core.constants import API_V1, PAYMENTS_WEBHOOK_PATH
 from src.core.enums import PaymentGatewayType, TransactionStatus
 from src.core.exceptions import GatewayNotConfiguredError
-from src.infrastructure.payment_gateways import FlippayGateway, PlategaGateway
+from src.infrastructure.payment_gateways import FlippayGateway, PlategaGateway, RivaraGateway
 from src.infrastructure.payment_gateways.base import BasePaymentGateway
 from src.infrastructure.services.platega_autopay import PlategaAutopayService
 from src.infrastructure.taskiq.tasks.payments import (
@@ -44,12 +46,12 @@ async def _handle_gateway_webhook(
     uow: UnitOfWork,
 ) -> Optional[tuple[UUID, TransactionStatus]]:
     result = await gateway.handle_webhook(request)
-    if isinstance(gateway, FlippayGateway) and result is not None:
+    if isinstance(gateway, (FlippayGateway, RivaraGateway)) and result is not None:
         async with uow:
             transaction = await transaction_dao.get_by_payment_id(result[0])
             if transaction is None:
                 # A fast callback can arrive before checkout has committed its order.
-                raise LookupError(f"FlipPay transaction '{result[0]}' is not saved yet")
+                raise LookupError(f"{gateway.data.type} transaction '{result[0]}' is not saved yet")
             await gateway.validate_webhook_transaction(request, transaction)
     return result
 
@@ -60,7 +62,7 @@ async def _build_error_response(
     gateway_type: str,
     error: Exception,
 ) -> Response:
-    if isinstance(gateway, FlippayGateway):
+    if isinstance(gateway, (FlippayGateway, RivaraGateway)):
         code = (
             status.HTTP_400_BAD_REQUEST
             if isinstance(error, ValueError)
@@ -108,6 +110,70 @@ async def _sync_platega_payment_method(
         await uow.commit()
 
 
+async def _enqueue_rivara_payment_task(
+    request: Request,
+    payment_id: UUID,
+    payment_status: TransactionStatus,
+    config: AppConfig,
+    event_publisher: EventPublisher,
+    redis: Redis,
+) -> Optional[Response]:
+    event_id = request.headers["X-Event-Id"]
+    key = "rivarapay:webhook:" + hashlib.sha256(event_id.encode()).hexdigest()
+    # The short lease allows retries after a crash before enqueueing. In-flight duplicates
+    # must retry too; acknowledging them before the first delivery is queued can lose an event.
+    claimed = await redis.set(key, "pending", nx=True, ex=60)
+    if not claimed:
+        previous = await redis.get(key)
+        return Response(status_code=200 if previous in {b"queued", "queued"} else 503)
+    error = await _enqueue_payment_task(
+        payment_id,
+        payment_status,
+        PaymentGatewayType.RIVARAPAY,
+        "rivarapay",
+        config,
+        event_publisher,
+    )
+    if error is not None:
+        await redis.delete(key)
+        return error
+    await redis.set(key, "queued", ex=7 * 24 * 60 * 60)
+    return None
+
+
+async def _dispatch_verified_payment(
+    gateway: BasePaymentGateway,
+    request: Request,
+    result: tuple[UUID, TransactionStatus],
+    config: AppConfig,
+    event_publisher: EventPublisher,
+    transaction_dao: TransactionDao,
+    uow: UnitOfWork,
+    redis: Optional[Redis],
+) -> Optional[Response]:
+    payment_id, payment_status = result
+    if isinstance(gateway, PlategaGateway):
+        await _sync_platega_payment_method(gateway, payment_id, transaction_dao, uow)
+    if isinstance(gateway, RivaraGateway):
+        if redis is None:
+            return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        try:
+            return await _enqueue_rivara_payment_task(
+                request, payment_id, payment_status, config, event_publisher, redis
+            )
+        except Exception:
+            logger.exception("Failed to persist/enqueue Rivara Pay callback")
+            return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return await _enqueue_payment_task(
+        payment_id,
+        payment_status,
+        gateway.data.type,
+        gateway.data.type.value.lower(),
+        config,
+        event_publisher,
+    )
+
+
 async def _process_payment_webhook(
     gateway_type: str,
     request: Request,
@@ -117,6 +183,7 @@ async def _process_payment_webhook(
     transaction_dao: TransactionDao,
     uow: UnitOfWork,
     autopay: PlategaAutopayService,
+    redis: Optional[Redis] = None,
 ) -> Response:
     try:
         gateway_enum = PaymentGatewayType(gateway_type.upper())
@@ -133,7 +200,7 @@ async def _process_payment_webhook(
         return Response(status_code=status.HTTP_404_NOT_FOUND)
     except PermissionError:
         logger.warning(f"Webhook signature verification failed for '{gateway_enum}'")
-        return Response(status_code=status.HTTP_403_FORBIDDEN)
+        return Response(status_code=400 if gateway_enum == PaymentGatewayType.RIVARAPAY else 403)
     except Exception as e:
         logger.exception(f"Error processing webhook for '{gateway_type}': {e}")
         error_event = ErrorEvent(**config.build.data, exception=e)
@@ -149,11 +216,8 @@ async def _process_payment_webhook(
             return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     if result is not None:
-        payment_id, payment_status = result
-        if gateway_enum == PaymentGatewayType.PLATEGA:
-            await _sync_platega_payment_method(gateway, payment_id, transaction_dao, uow)
-        enqueue_error = await _enqueue_payment_task(
-            payment_id, payment_status, gateway_enum, gateway_type, config, event_publisher
+        enqueue_error = await _dispatch_verified_payment(
+            gateway, request, result, config, event_publisher, transaction_dao, uow, redis
         )
         if enqueue_error is not None:
             return enqueue_error
@@ -172,6 +236,7 @@ async def payments_webhook(
     transaction_dao: FromDishka[TransactionDao],
     uow: FromDishka[UnitOfWork],
     autopay: FromDishka[PlategaAutopayService],
+    redis: FromDishka[Redis],
 ) -> Response:
     return await _process_payment_webhook(
         gateway_type=gateway_type,
@@ -182,4 +247,5 @@ async def payments_webhook(
         transaction_dao=transaction_dao,
         uow=uow,
         autopay=autopay,
+        redis=redis,
     )

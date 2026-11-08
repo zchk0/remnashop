@@ -10,7 +10,8 @@ from src.application.common.dao import (
     SettingsDao,
     SubscriptionDao,
 )
-from src.application.dto import PlanDto, PlanSnapshotDto, UserDto
+from src.application.dto import PaymentGatewayDto, PlanDto, PlanSnapshotDto, UserDto
+from src.application.dto.payment_gateway import RivaraGatewaySettingsDto
 from src.application.services import PricingService
 from src.application.use_cases.gateways.commands.payment import (
     CreatePayment,
@@ -69,6 +70,7 @@ from src.web.schemas import (
     TrialActivateResponse,
     TrialPurchaseRequest,
 )
+from src.web.schemas.subscription import GatewayPaymentMethodResponse
 
 from ._common import CurrentUser
 
@@ -115,6 +117,7 @@ async def _get_available_plan_by_code(
 async def _validate_gateway_for_web(
     gateway_type: PaymentGatewayType,
     payment_gateway_dao: PaymentGatewayDao,
+    payment_method: Optional[str] = None,
 ) -> None:
     _assert_web_gateway(gateway_type)
     gateway = await payment_gateway_dao.get_by_type(gateway_type)
@@ -129,6 +132,20 @@ async def _validate_gateway_for_web(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Gateway '{gateway_type}' is not configured",
         )
+    if isinstance(gateway.settings, RivaraGatewaySettingsDto):
+        try:
+            gateway.settings.get_payment_method(payment_method)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+def _web_payment_methods(gateway: PaymentGatewayDto) -> list[GatewayPaymentMethodResponse]:
+    if isinstance(gateway.settings, RivaraGatewaySettingsDto):
+        return [
+            GatewayPaymentMethodResponse(id=method.id, title=method.title)
+            for method in gateway.settings.enabled_methods
+        ]
+    return []
 
 
 @router.get("/current", response_model=Optional[SubscriptionInfoResponse])
@@ -304,6 +321,7 @@ async def activate_trial_web(
                 gateway_type=gateway.type,
                 currency=gateway.currency.value,
                 currency_symbol=gateway.currency.symbol,
+                payment_methods=_web_payment_methods(gateway),
                 original_amount=str(pricing.original_amount),
                 discount_percent=pricing.discount_percent,
                 final_amount=str(pricing.final_amount),
@@ -332,7 +350,7 @@ async def purchase_trial_web(
     process_payment: FromDishka[ProcessPayment],
 ) -> PaymentInitResponse:
     _assert_web_purchase_email_verified(user)
-    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao)
+    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao, body.payment_method)
 
     plan = await get_available_trial.system(user)
     if not plan or not plan.durations:
@@ -364,6 +382,7 @@ async def purchase_trial_web(
             pricing=pricing,
             purchase_type=PurchaseType.NEW,
             gateway_type=body.gateway_type,
+            payment_method=body.payment_method,
         ),
     )
 
@@ -402,7 +421,7 @@ async def purchase_subscription(
     process_payment: FromDishka[ProcessPayment],
 ) -> PaymentInitResponse:
     _assert_web_purchase_email_verified(user)
-    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao)
+    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao, body.payment_method)
 
     plan = await _get_available_plan_by_code(user, body.plan_code, get_available_plans)
     if not plan:
@@ -435,6 +454,7 @@ async def purchase_subscription(
             pricing=pricing,
             purchase_type=purchase_type,
             gateway_type=body.gateway_type,
+            payment_method=body.payment_method,
         ),
     )
 
@@ -474,7 +494,7 @@ async def extend_subscription(
     process_payment: FromDishka[ProcessPayment],
 ) -> PaymentInitResponse:
     _assert_web_purchase_email_verified(user)
-    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao)
+    await _validate_gateway_for_web(body.gateway_type, payment_gateway_dao, body.payment_method)
 
     current_subscription = await subscription_dao.get_current(user.id)
     if not current_subscription:
@@ -514,6 +534,7 @@ async def extend_subscription(
             pricing=pricing,
             purchase_type=PurchaseType.RENEW,
             gateway_type=body.gateway_type,
+            payment_method=body.payment_method,
         ),
     )
 
@@ -589,6 +610,7 @@ async def get_subscription_offers(
                         gateway_type=gateway.type,
                         currency=gateway.currency.value,
                         currency_symbol=gateway.currency.symbol,
+                        payment_methods=_web_payment_methods(gateway),
                         original_amount=str(pricing.original_amount),
                         discount_percent=pricing.discount_percent,
                         final_amount=str(pricing.final_amount),
@@ -629,6 +651,7 @@ async def get_subscription_offers(
             gateway_type=gateway.type,
             currency=gateway.currency.value,
             currency_symbol=gateway.currency.symbol,
+            payment_methods=_web_payment_methods(gateway),
         )
         for gateway in web_gateways
     ]

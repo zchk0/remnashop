@@ -56,6 +56,7 @@ class PromocodeActivateResponse(BaseModel):
 
 class TrialPurchaseRequest(BaseModel):
     gateway_type: PaymentGatewayType
+    payment_method: Optional[str] = Field(default=None, max_length=32)
 
 
 class ReissueResponse(BaseModel):
@@ -68,11 +69,13 @@ class PurchaseRequest(BaseModel):
     plan_code: str = Field(min_length=3, max_length=64)
     duration_days: int = Field(ge=0)
     gateway_type: PaymentGatewayType
+    payment_method: Optional[str] = Field(default=None, max_length=32)
 
 
 class ExtendRequest(BaseModel):
     duration_days: int = Field(ge=0)
     gateway_type: PaymentGatewayType
+    payment_method: Optional[str] = Field(default=None, max_length=32)
 
 
 class PaymentInitResponse(BaseModel):
@@ -85,16 +88,23 @@ class PaymentInitResponse(BaseModel):
     currency: str
 
 
+class GatewayPaymentMethodResponse(BaseModel):
+    id: str
+    title: str
+
+
 class GatewayOfferResponse(BaseModel):
     gateway_type: PaymentGatewayType
     currency: str
     currency_symbol: str
+    payment_methods: list[GatewayPaymentMethodResponse] = Field(default_factory=list)
 
 
 class DurationGatewayPriceResponse(BaseModel):
     gateway_type: PaymentGatewayType
     currency: str
     currency_symbol: str
+    payment_methods: list[GatewayPaymentMethodResponse] = Field(default_factory=list)
     original_amount: str
     discount_percent: int
     final_amount: str

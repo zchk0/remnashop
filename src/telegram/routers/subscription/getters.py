@@ -11,7 +11,11 @@ from loguru import logger
 from src.application.common import TranslatorRunner
 from src.application.common.dao import PaymentGatewayDao, PlanDao, SettingsDao, SubscriptionDao
 from src.application.dto import PaymentGatewayDto, PlanDto, PriceDetailsDto, TelegramUserDto
-from src.application.dto.payment_gateway import FlippayGatewaySettingsDto, PlategaGatewaySettingsDto
+from src.application.dto.payment_gateway import (
+    FlippayGatewaySettingsDto,
+    PlategaGatewaySettingsDto,
+    RivaraGatewaySettingsDto,
+)
 from src.application.services import PricingService
 from src.application.use_cases.plan.queries.match import MatchPlan, MatchPlanDto
 from src.application.use_cases.user.queries.plans import GetAvailablePlans
@@ -30,9 +34,12 @@ from src.telegram.states import Subscription
 
 
 def _get_gateway_title(
-    i18n: TranslatorRunner, gateway: PaymentGatewayDto, method_id: int | None = None
+    i18n: TranslatorRunner, gateway: PaymentGatewayDto, method_id: int | str | None = None
 ) -> str:
-    if isinstance(gateway.settings, FlippayGatewaySettingsDto) and method_id is not None:
+    if (
+        isinstance(gateway.settings, (FlippayGatewaySettingsDto, RivaraGatewaySettingsDto))
+        and method_id is not None
+    ):
         method = next(
             (entry for entry in gateway.settings.payment_methods if entry.id == method_id), None
         )
@@ -52,6 +59,11 @@ def _get_payment_options(
             (f"{gateway.type.value}:{method.id}", method.title)
             for method in gateway.settings.enabled_methods
             if price.is_free or price.final_amount >= method.min_amount
+        ]
+    if isinstance(gateway.settings, RivaraGatewaySettingsDto):
+        return [
+            (f"{gateway.type.value}:{method.callback_id}", method.title)
+            for method in gateway.settings.enabled_methods
         ]
     return [(gateway.type.value, _get_gateway_title(i18n, gateway))]
 
@@ -468,7 +480,13 @@ async def confirm_getter(
         "period": i18n.get(key, **kw),
         "payment_method": selected_payment_method,
         "payment_method_title": _get_gateway_title(
-            i18n, payment_gateway, dialog_manager.dialog_data.get("flippay_payment_method")
+            i18n,
+            payment_gateway,
+            dialog_manager.dialog_data.get(
+                "rivara_payment_method"
+                if payment_gateway.type == PaymentGatewayType.RIVARAPAY
+                else "flippay_payment_method"
+            ),
         ),
         "final_amount": pricing.final_amount,
         "discount_percent": pricing.discount_percent,
@@ -478,7 +496,7 @@ async def confirm_getter(
         "url": result_url,
         "only_single_gateway": len(gateways) == 1
         and not any(
-            g.type == PaymentGatewayType.FLIPPAY
+            g.type in {PaymentGatewayType.FLIPPAY, PaymentGatewayType.RIVARAPAY}
             or (isinstance(g.settings, PlategaGatewaySettingsDto) and g.settings.autopay_enabled)
             for g in gateways
         ),
