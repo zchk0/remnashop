@@ -892,6 +892,11 @@ class SetReferrerRequest(BaseModel):
 class DeviceUnlinkRequest(BaseModel):
     device_id: Optional[str] = None
     telegram_id: Optional[int] = None
+    reset_subscription: bool = Field(
+        default=True,
+        description="Reissue the subscription link when unlinking another device. "
+        "Set to false to keep the current link.",
+    )
 
 
 class TvPairCreateRequest(BaseModel):
@@ -1364,7 +1369,7 @@ async def unlink_device(
     await device_dao.unlink(device_id, telegram_id)
     await session_dao.revoke(device_id)
 
-    should_reset_subscription_link = device_id != auth.device_id
+    should_reset_subscription_link = request.reset_subscription and device_id != auth.device_id
     revoked_user = (
         await remnawave.revoke_subscription(remote_user_ref(panel_user))
         if should_reset_subscription_link
@@ -1385,6 +1390,14 @@ async def unlink_device(
         )
         updated_devices = await _sync_linked_devices_subscription_identity(revoked_user, device_dao)
 
+    response_subscription = updated_subscription
+    if not request.reset_subscription:
+        subscription_url = panel_user.subscription_url
+        user = await user_dao.get_by_telegram_id(telegram_id)
+        response_subscription = (
+            await subscription_dao.get_current(user.id) if user is not None else None
+        )
+
     await uow.commit()
 
     data = {
@@ -1396,8 +1409,8 @@ async def unlink_device(
         "linked_devices_updated": updated_devices,
         "notification_sent": notification_sent,
     }
-    if updated_subscription:
-        data.update(_build_current_plan_data(updated_subscription))
+    if response_subscription:
+        data.update(_build_current_plan_data(response_subscription))
 
     if revoked_user is not None:
         user = await user_dao.get_by_telegram_id(telegram_id)
