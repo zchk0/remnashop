@@ -2,7 +2,7 @@ import asyncio
 import base64
 import string
 import traceback
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Callable, Optional, Sequence, Union
 
 from aiogram import Bot
@@ -64,6 +64,7 @@ from src.core.config import AppConfig
 from src.core.constants import RAW_BUTTON_TEXT_PREFIX
 from src.core.enums import Locale, Role
 from src.core.types import AnyKeyboard, NotificationType
+from src.infrastructure.payment_gateways.diagnostics import find_payment_gateway_timeout
 from src.infrastructure.services.event_bus import on_event
 from src.infrastructure.services.notification_queue import NotificationWorker
 from src.telegram.keyboards import (
@@ -232,6 +233,7 @@ class NotificationService(Notifier):
 
         error_type = type(event.exception).__name__
         error_message = Text(str(event.exception)[:512])
+        payment_timeout = find_payment_gateway_timeout(event.exception)
 
         traceback_str = "".join(
             traceback.format_exception(
@@ -250,6 +252,10 @@ class NotificationService(Notifier):
             "=== EXCEPTION ===\n\n"
             f"{traceback_str}"
         )
+        if payment_timeout is not None:
+            file_content = (
+                f"=== PAYMENT GATEWAY TIMEOUT ===\n\n{payment_timeout.as_text()}\n{file_content}"
+            )
 
         media = MediaDescriptorDto(
             kind="bytes",
@@ -257,8 +263,16 @@ class NotificationService(Notifier):
             filename=f"error_{event.event_id}.txt",
         )
 
+        payload = event.as_payload(media, error_type, error_message)
+        if payment_timeout is not None:
+            payload = replace(
+                payload,
+                i18n_key="event-error.payment-timeout",
+                i18n_kwargs={**payload.i18n_kwargs, **payment_timeout.as_i18n_kwargs()},
+            )
+
         await self.notify_system(
-            event.as_payload(media, error_type, error_message),
+            payload,
             roles=[Role.OWNER, Role.DEV],
             notification_type=event.notification_type,
         )
@@ -525,9 +539,7 @@ class NotificationService(Notifier):
                 for row in reply_markup.inline_keyboard
             ]
             has_close_button = any(
-                button.callback_data == close_button.callback_data
-                for row in rows
-                for button in row
+                button.callback_data == close_button.callback_data for row in rows for button in row
             )
             if not has_close_button:
                 rows.append([close_button])

@@ -1,8 +1,10 @@
 import uuid
 from decimal import Decimal
 from typing import Union
+from urllib.parse import urlsplit
 from uuid import UUID
 
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.types import LabeledPrice
 from fastapi import Request
 from loguru import logger
@@ -11,6 +13,7 @@ from src.application.dto import PaymentResultDto
 from src.core.enums import TransactionStatus
 
 from .base import BasePaymentGateway
+from .diagnostics import PaymentGatewayTimeout
 
 
 # https://core.telegram.org/api/stars/
@@ -31,6 +34,15 @@ class TelegramStarsGateway(BasePaymentGateway):
             return PaymentResultDto(id=payment_id, url=payment_url)
 
         except Exception as e:
+            if isinstance(e, TelegramNetworkError) and isinstance(e.__cause__, TimeoutError):
+                PaymentGatewayTimeout(
+                    gateway_type=self.data.type,
+                    error_type=type(e.__cause__).__name__,
+                    phase="request",
+                    method="POST",
+                    host=urlsplit(self.bot.session.api.base).hostname or "—",
+                    timeout_seconds=self.bot.session.timeout,
+                ).attach_to(e)
             logger.exception(f"An unexpected error occurred while creating payment: {e}")
             raise
 

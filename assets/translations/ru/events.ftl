@@ -18,6 +18,38 @@ event-error =
     { $error }
     </blockquote>
 
+    .payment-timeout =
+    #ErrorEvent
+
+    <b>⏱ Событие: Таймаут платёжной системы!</b>
+
+    { frg-build-info }
+
+    { $telegram_id ->
+    [0] { space }
+    *[HAS]
+    { hdr-user }
+    { frg-user-info }
+    }
+
+    { hdr-error }
+    <blockquote>
+    • <b>Платёжная система</b>: { gateway-type }
+    • <b>Причина</b>: { $timeout_phase ->
+        [connect] Истекло время ожидания подключения к API.
+        [read] Истекло время ожидания ответа API.
+        [write] Истекло время передачи запроса в API.
+        [pool] Истекло время ожидания свободного соединения с API.
+        *[OTHER] Истекло время выполнения запроса к API.
+    }
+    • <b>Запрос</b>: <code>{ $request_method } { $request_host }</code>
+    { $has_timeout ->
+    [1] • <b>Лимит ожидания</b>: { NUMBER($timeout_seconds, useGrouping: 0) } с
+    *[0] { empty }
+    }
+    • <b>Тип ошибки</b>: <code>{ $timeout_type }</code>
+    </blockquote>
+
     .remnawave-version =
     #RemnawaveVersionWarningEvent
 

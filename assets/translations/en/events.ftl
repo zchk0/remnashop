@@ -18,6 +18,38 @@ event-error =
     { $error }
     </blockquote>
 
+    .payment-timeout =
+    #ErrorEvent
+
+    <b>⏱ Event: Payment gateway timeout!</b>
+
+    { frg-build-info }
+
+    { $telegram_id ->
+    [0] { space }
+    *[HAS]
+    { hdr-user }
+    { frg-user-info }
+    }
+
+    { hdr-error }
+    <blockquote>
+    • <b>Payment gateway</b>: { gateway-type }
+    • <b>Reason</b>: { $timeout_phase ->
+        [connect] Timed out while connecting to the API.
+        [read] Timed out while waiting for the API response.
+        [write] Timed out while sending the request to the API.
+        [pool] Timed out while waiting for an available API connection.
+        *[OTHER] The API request timed out.
+    }
+    • <b>Request</b>: <code>{ $request_method } { $request_host }</code>
+    { $has_timeout ->
+    [1] • <b>Timeout limit</b>: { NUMBER($timeout_seconds, useGrouping: 0) } s
+    *[0] { empty }
+    }
+    • <b>Error type</b>: <code>{ $timeout_type }</code>
+    </blockquote>
+
     .remnawave-version =
     #RemnawaveVersionWarningEvent
 

@@ -8,6 +8,7 @@ import orjson
 from aiogram import Bot
 from fastapi import Request, Response
 from httpx import AsyncClient, Timeout
+from httpx import Request as HttpRequest
 from loguru import logger
 from starlette.datastructures import Headers
 
@@ -15,6 +16,8 @@ from src.application.dto import PaymentGatewayDto, PaymentResultDto
 from src.core.config import AppConfig
 from src.core.constants import T_ME
 from src.core.enums import TransactionStatus
+
+from .diagnostics import PAYMENT_GATEWAY_EXTENSION
 
 
 class PaymentGatewayFactory(Protocol):
@@ -71,7 +74,17 @@ class BasePaymentGateway(ABC):
         headers: Optional[dict[str, str]] = None,
         timeout: float = 30.0,
     ) -> AsyncClient:
-        return AsyncClient(base_url=base_url, auth=auth, headers=headers, timeout=Timeout(timeout))
+        return AsyncClient(
+            base_url=base_url,
+            auth=auth,
+            headers=headers,
+            timeout=Timeout(timeout),
+            event_hooks={"request": [self._set_request_context]},
+        )
+
+    async def _set_request_context(self, request: HttpRequest) -> None:
+        # Keep HTTPX's original exception types so gateway retry policies still work.
+        request.extensions[PAYMENT_GATEWAY_EXTENSION] = self.data.type.value
 
     def _is_test_payment(self, payment_id: str) -> bool:
         return payment_id.startswith("test:")
