@@ -422,6 +422,32 @@ msg-access-channel =
 
 
 # Broadcast
+msg-tobevpn-broadcast-disabled = Интеграция TobeVPN выключена.
+msg-tobevpn-broadcast-audience =
+    <b>🔔 Рассылка в TobeVPN</b>
+
+    Выберите аудиторию. «Все установки» включает приложения без входа в аккаунт.
+msg-tobevpn-broadcast-content =
+    <b>Текст уведомления</b>
+
+    Пришлите одним сообщением заголовок на первой строке и текст на следующих. Заголовок до 100 символов, текст до 3000.
+msg-tobevpn-broadcast-invalid = Нужны заголовок до 100 символов и текст до 3000 символов со следующей строки.
+msg-tobevpn-broadcast-preview =
+    <b>Предпросмотр рассылки в TobeVPN</b>
+
+    Аудитория: { $is_public ->
+        [1] Все установки
+       *[0] { audience-type }{ $plan_name }
+    }
+    { $fcm_enabled ->
+        [1] Лента TobeVPN и пуши Android
+       *[0] Лента TobeVPN
+    }
+
+    <b>{ $title }</b>
+    { $body }
+msg-tobevpn-broadcast-published = ✅ Уведомление опубликовано в TobeVPN.
+
 msg-broadcast-list = <b>📄 Список рассылок</b>
 msg-broadcast-repeat =
     <b>🔁 Повтор рассылки</b>

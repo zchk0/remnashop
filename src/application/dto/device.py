@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
+from uuid import UUID, uuid4
 
 from .base import BaseDto, TimestampMixin
 
@@ -27,6 +28,7 @@ class AuthTokenDto(BaseDto, TimestampMixin):
     short_uuid: Optional[str] = None
     panel_user_uuid: Optional[str] = None
     panel_user_id: Optional[int] = None
+    device_session_id: Optional[UUID] = None
 
 
 @dataclass(kw_only=True)
@@ -40,6 +42,8 @@ class DeviceSessionDto(BaseDto, TimestampMixin):
     integrity_token_hash: Optional[str] = None
     last_used_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None
+    session_id: UUID = field(default_factory=uuid4)
+    verified_telegram_id: Optional[int] = None
 
 
 @dataclass(kw_only=True)
@@ -48,3 +52,4 @@ class TvPairingCodeDto(BaseDto, TimestampMixin):
     device_id: str
     status: str = "pending"
     telegram_id: Optional[int] = None
+    device_session_id: Optional[UUID] = None

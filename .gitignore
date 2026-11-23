@@ -39,6 +39,7 @@ tests/*
 !tests/test_referral_invitation_ui.py
 !tests/test_tobevpn_referrer_rate_limit.py
 !tests/test_tobevpn_device_unlink.py
+!tests/test_tobevpn_notifications.py
 !tests/test_i18n_startup.py
 !tests/test_logger_privacy.py
 .DS_Store
@@ -52,6 +53,7 @@ docs/*
 !docs/platega-autopay.md
 !docs/flippay.md
 !docs/rivarapay.md
+!docs/tobevpn-notifications.md
 
 # Environment
 .venv/

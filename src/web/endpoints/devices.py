@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Annotated, NoReturn, Optional, cast
+from uuid import UUID
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
@@ -100,6 +101,8 @@ class DeviceAuthContext:
     panel_user_id: Optional[int] = None
     short_uuid: Optional[str] = None
     platform: Optional[str] = None
+    session_id: Optional[UUID] = None
+    verified_telegram_id: Optional[int] = None
 
 
 def _utcnow() -> datetime:
@@ -275,6 +278,8 @@ async def get_device_auth_context(
         panel_user_id=linked_device.panel_user_id if linked_device else None,
         short_uuid=linked_device.short_uuid if linked_device else None,
         platform=session.platform,
+        session_id=session.session_id,
+        verified_telegram_id=session.verified_telegram_id,
     )
 
 
@@ -938,8 +943,10 @@ async def _create_auth_token(
     device_id = _resolve_device_id(auth, request.device_id)
     auth_token = request.auth_token or secrets.token_urlsafe(24)
     prior_token = await auth_dao.get_by_token(auth_token)
-    if prior_token is not None and prior_token.device_id != device_id:
-        raise HTTPException(status_code=403, detail="Auth token belongs to a different device")
+    if prior_token is not None and (
+        prior_token.device_id != device_id or prior_token.device_session_id != auth.session_id
+    ):
+        raise HTTPException(status_code=403, detail="Auth token belongs to a different session")
 
     existing = await device_dao.get_by_device_id(device_id)
     if not existing:
@@ -951,14 +958,17 @@ async def _create_auth_token(
         legacy_alias = legacy_alias or existing.panel_user_uuid
     _validate_auth_panel_identity(request, auth, anonymous_user, legacy_alias)
 
-    await auth_dao.create(
+    created_token = await auth_dao.create(
         AuthTokenDto(
             token=auth_token,
             device_id=device_id,
             panel_user_uuid=legacy_alias,
             panel_user_id=anonymous_user.id if anonymous_user else None,
+            device_session_id=auth.session_id,
         )
     )
+    if created_token.device_id != device_id or created_token.device_session_id != auth.session_id:
+        raise HTTPException(status_code=403, detail="Auth token belongs to a different session")
     await uow.commit()
 
     return {"success": True, "data": {"auth_token": auth_token}}
@@ -1753,7 +1763,9 @@ async def tv_pair_create(
 ) -> dict:
     device_id = _resolve_device_id(auth, request.device_id)
     code = secrets.token_hex(8).upper()
-    await pairing_dao.create(TvPairingCodeDto(code=code, device_id=device_id))
+    await pairing_dao.create(
+        TvPairingCodeDto(code=code, device_id=device_id, device_session_id=auth.session_id)
+    )
     await uow.commit()
 
     return {
@@ -1769,6 +1781,7 @@ async def tv_pair_confirm(
     auth: Annotated[DeviceAuthContext, Depends(get_device_auth_context)],
     device_dao: FromDishka[LinkedDeviceDao],
     pairing_dao: FromDishka[TvPairingDao],
+    session_dao: FromDishka[DeviceSessionDao],
     remnawave: FromDishka[Remnawave],
     uow: FromDishka[UnitOfWork],
 ) -> dict:
@@ -1816,6 +1829,9 @@ async def tv_pair_confirm(
     if not binding.is_bound:
         await uow.rollback()
         return {"success": False, "message": binding.message}
+
+    if auth.verified_telegram_id == telegram_id and pairing.device_session_id is not None:
+        await session_dao.verify_telegram(pairing.device_id, pairing.device_session_id, telegram_id)
 
     await uow.commit()
 
@@ -2087,7 +2103,8 @@ async def refresh_device_session(
         cryptographer=cryptographer,
         current_session=current_session,
     )
-    await session_dao.upsert(session)
+    if not await session_dao.rotate(session, refresh_token_hash):
+        raise _build_device_auth_unauthorized("Invalid or expired refresh token")
     linked_device = await device_dao.get_by_device_id(current_session.device_id)
     await uow.commit()
 

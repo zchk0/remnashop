@@ -42,6 +42,7 @@ from src.infrastructure.database.dao import (
     WebhookDaoImpl,
 )
 from src.infrastructure.database.dao.earning import EarningDaoImpl
+from src.infrastructure.database.dao.tobevpn_notification import ToBeVpnNotificationDao
 from src.infrastructure.redis.activity import RedisActivityRepository
 from src.infrastructure.redis.auth import RedisAuthRepository
 
@@ -55,6 +56,7 @@ class DaoProvider(Provider):
     broadcast = provide(source=BroadcastDaoImpl, provides=BroadcastDao)
     device_session = provide(source=DeviceSessionDaoImpl, provides=DeviceSessionDao)
     linked_device = provide(source=LinkedDeviceDaoImpl, provides=LinkedDeviceDao)
+    tobevpn_notification = provide(ToBeVpnNotificationDao)
     payment_gateway = provide(source=PaymentGatewayDaoImpl, provides=PaymentGatewayDao)
     plan = provide(source=PlanDaoImpl, provides=PlanDao)
     promocode = provide(source=PromocodeDaoImpl, provides=PromocodeDao)

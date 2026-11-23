@@ -422,6 +422,32 @@ msg-access-channel =
 
 
 # Broadcast
+msg-tobevpn-broadcast-disabled = TobeVPN integration is disabled.
+msg-tobevpn-broadcast-audience =
+    <b>🔔 Broadcast to TobeVPN</b>
+
+    Choose an audience. “All installations” includes apps without a signed-in account.
+msg-tobevpn-broadcast-content =
+    <b>Notification text</b>
+
+    Send one message with a title on the first line and the text on the following lines. Use up to 100 characters for the title and 3,000 for the text.
+msg-tobevpn-broadcast-invalid = Enter a title of up to 100 characters and a body of up to 3,000 characters on the following lines.
+msg-tobevpn-broadcast-preview =
+    <b>TobeVPN broadcast preview</b>
+
+    Audience: { $is_public ->
+        [1] All installations
+       *[0] { audience-type }{ $plan_name }
+    }
+    { $fcm_enabled ->
+        [1] TobeVPN inbox and Android push
+       *[0] TobeVPN inbox
+    }
+
+    <b>{ $title }</b>
+    { $body }
+msg-tobevpn-broadcast-published = ✅ The notification is published in TobeVPN.
+
 msg-broadcast-list = <b>📄 Broadcast list</b>
 msg-broadcast-repeat =
     <b>🔁 Repeat broadcast</b>

@@ -81,6 +81,11 @@ class DashboardBroadcast(StatesGroup):
     CUSTOM_BUTTON_TEXT = State()
     CUSTOM_BUTTON_URL = State()
     EXCLUDED_USERS = State()
+    TOBEVPN_AUDIENCE = State()
+    TOBEVPN_PLAN = State()
+    TOBEVPN_CONTENT = State()
+    TOBEVPN_PREVIEW = State()
+    TOBEVPN_PUBLISHED = State()
 
 
 class DashboardPromocodes(StatesGroup):

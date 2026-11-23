@@ -1,4 +1,5 @@
 from typing import Optional, Protocol, runtime_checkable
+from uuid import UUID
 
 from src.application.dto.device import (
     AuthTokenDto,
@@ -46,6 +47,10 @@ class AuthTokenDao(Protocol):
 @runtime_checkable
 class DeviceSessionDao(Protocol):
     async def upsert(self, session: DeviceSessionDto) -> DeviceSessionDto: ...
+
+    async def rotate(self, session: DeviceSessionDto, previous_refresh_token_hash: str) -> bool: ...
+
+    async def verify_telegram(self, device_id: str, session_id: UUID, telegram_id: int) -> None: ...
 
     async def get_by_device_id(self, device_id: str) -> Optional[DeviceSessionDto]: ...
 

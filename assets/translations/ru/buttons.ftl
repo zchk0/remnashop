@@ -262,6 +262,15 @@ btn-broadcast =
     *[OTHER] { $status }
     } { $created_at }
 
+btn-tobevpn-broadcast =
+    .open = 🔔 TobeVPN
+    .all = 👥 Все установки
+    .action = { $open_plans ->
+        [1] ☑️ Кнопка «Открыть тарифы»
+       *[0] ⬜ Кнопка «Открыть тарифы»
+    }
+    .publish = ✅ Опубликовать в TobeVPN
+
 btn-goto =
     .subscription = 💳 Купить подписку
     .promocode = 🎟 Активировать промокод

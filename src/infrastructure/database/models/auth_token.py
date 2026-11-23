@@ -1,4 +1,5 @@
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import BigInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,3 +20,4 @@ class AuthToken(BaseSql, TimestampMixin):
     short_uuid: Mapped[Optional[str]] = mapped_column(Text)
     panel_user_uuid: Mapped[Optional[str]] = mapped_column(Text)
     panel_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
+    device_session_id: Mapped[Optional[UUID]]

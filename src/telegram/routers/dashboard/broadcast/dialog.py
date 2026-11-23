@@ -5,9 +5,11 @@ from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.text import Format
 from magic_filter import F
 
+from src.application.common.policy import Permission
 from src.core.enums import BannerName, BroadcastAudience, BroadcastStatus
 from src.telegram.keyboards import main_menu_button
 from src.telegram.states import Dashboard, DashboardBroadcast
+from src.telegram.utils import require_permission
 from src.telegram.widgets import Banner, I18nFormat, IgnoreUpdate
 from src.telegram.widgets.kbd import (
     Button,
@@ -51,6 +53,14 @@ from .handlers import (
     on_send,
     on_view_preview,
 )
+from .tobevpn import (
+    open_tobevpn,
+    tobevpn_audience,
+    tobevpn_confirm,
+    tobevpn_content,
+    tobevpn_plan,
+    tobevpn_published,
+)
 
 broadcast = Window(
     Banner(BannerName.DASHBOARD),
@@ -61,6 +71,12 @@ broadcast = Window(
             id="list",
             on_click=on_broadcast_list,
         ),
+    ),
+    Button(
+        I18nFormat("btn-tobevpn-broadcast.open"),
+        id="tobevpn",
+        on_click=open_tobevpn,
+        when=require_permission(Permission.BROADCAST),
     ),
     Row(
         Button(
@@ -539,4 +555,9 @@ router = Dialog(
     custom_button_text,
     custom_button_url,
     excluded_users,
+    tobevpn_audience,
+    tobevpn_plan,
+    tobevpn_content,
+    tobevpn_confirm,
+    tobevpn_published,
 )

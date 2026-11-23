@@ -17,7 +17,7 @@ from dishka.integrations.aiogram_dialog import inject
 from loguru import logger
 
 from src.application.common import Remnawave, TranslatorRunner
-from src.application.common.dao.device import AuthTokenDao, LinkedDeviceDao
+from src.application.common.dao.device import AuthTokenDao, DeviceSessionDao, LinkedDeviceDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import PlanSnapshotDto, UserDto
 from src.application.services.device_binding import bind_linked_device
@@ -174,6 +174,7 @@ async def on_device_auth(  # noqa: C901
     user: UserDto,
     auth_dao: FromDishka[AuthTokenDao],
     device_dao: FromDishka[LinkedDeviceDao],
+    session_dao: FromDishka[DeviceSessionDao],
     get_available_trial: FromDishka[GetAvailableTrial],
     activate_trial_subscription: FromDishka[ActivateTrialSubscription],
     remnawave: FromDishka[Remnawave],
@@ -278,6 +279,11 @@ async def on_device_auth(  # noqa: C901
             f"{user.log} ToBeVPN auth failed: device limit '{binding.device_limit}' reached"
         )
         return
+
+    if token_record.device_session_id is not None:
+        await session_dao.verify_telegram(
+            token_record.device_id, token_record.device_session_id, telegram_id
+        )
 
     anon_traffic = 0
     if anon_uuid:

@@ -13,6 +13,12 @@ from .recurring_payment import RecurringPayment, RecurringPaymentEvent
 from .referral import Referral, ReferralReward
 from .settings import Settings
 from .subscription import Subscription
+from .tobevpn_notification import (
+    ToBeVpnNotification,
+    ToBeVpnNotificationRead,
+    ToBeVpnNotificationRecipient,
+    ToBeVpnPushDelivery,
+)
 from .transaction import Transaction
 from .tv_pairing import TvPairingCode
 from .user import User
@@ -41,6 +47,10 @@ __all__ = [
     "ReferralReward",
     "Settings",
     "Subscription",
+    "ToBeVpnNotification",
+    "ToBeVpnNotificationRead",
+    "ToBeVpnNotificationRecipient",
+    "ToBeVpnPushDelivery",
     "Transaction",
     "TvPairingCode",
     "User",

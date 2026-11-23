@@ -262,6 +262,15 @@ btn-broadcast =
     *[OTHER] { $status }
     } { $created_at }
 
+btn-tobevpn-broadcast =
+    .open = 🔔 TobeVPN
+    .all = 👥 All installations
+    .action = { $open_plans ->
+        [1] ☑️ Open plans button
+       *[0] ⬜ Open plans button
+    }
+    .publish = ✅ Publish to TobeVPN
+
 btn-goto =
     .subscription = 💳 Buy subscription
     .promocode = 🎟 Redeem promo code

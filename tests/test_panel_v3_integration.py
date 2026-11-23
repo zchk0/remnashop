@@ -453,7 +453,9 @@ async def test_auth_request_saves_server_resolved_numeric_user():
         users=SimpleNamespace(get_user_by_username=AsyncMock(return_value=remote))
     )
     device_dao = SimpleNamespace(get_by_device_id=AsyncMock(return_value=None), upsert=AsyncMock())
-    auth_dao = SimpleNamespace(get_by_token=AsyncMock(return_value=None), create=AsyncMock())
+    auth_dao = SimpleNamespace(
+        get_by_token=AsyncMock(return_value=None), create=AsyncMock(side_effect=lambda token: token)
+    )
     uow = _Uow()
     result = await _create_auth_token(
         AuthRequest(device_id="device-a", panel_user_id=42),
@@ -509,7 +511,9 @@ async def test_auth_request_cannot_reassign_another_device_token():
 async def test_auth_request_never_marks_primary_account_as_anonymous_cleanup_target():
     sdk = SimpleNamespace(users=SimpleNamespace(get_user_by_username=AsyncMock(return_value=None)))
     device_dao = SimpleNamespace(get_by_device_id=AsyncMock(return_value=None), upsert=AsyncMock())
-    auth_dao = SimpleNamespace(get_by_token=AsyncMock(return_value=None), create=AsyncMock())
+    auth_dao = SimpleNamespace(
+        get_by_token=AsyncMock(return_value=None), create=AsyncMock(side_effect=lambda token: token)
+    )
     await _create_auth_token(
         AuthRequest(device_id="device-a", panel_user_id=42),
         DeviceAuthContext(device_id="device-a", telegram_id=123, panel_user_id=42),

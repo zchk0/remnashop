@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
-from sqlalchemy import String, Text
+from sqlalchemy import BigInteger, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import BaseSql
@@ -21,3 +22,6 @@ class DeviceSession(BaseSql, TimestampMixin):
     integrity_token_hash: Mapped[Optional[str]] = mapped_column(Text)
     last_used_at: Mapped[Optional[datetime]]
     revoked_at: Mapped[Optional[datetime]]
+    session_id: Mapped[UUID] = mapped_column(server_default=func.gen_random_uuid())
+    verified_telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    push_token: Mapped[Optional[str]] = mapped_column(String(512), unique=True)

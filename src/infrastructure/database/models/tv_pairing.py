@@ -1,4 +1,5 @@
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import BigInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,3 +17,4 @@ class TvPairingCode(BaseSql, TimestampMixin):
 
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    device_session_id: Mapped[Optional[UUID]]

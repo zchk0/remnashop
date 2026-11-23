@@ -19,6 +19,7 @@ from .endpoints import (
     public_router,
     remnawave_router,
 )
+from .endpoints.device_notifications import router as device_notifications_router
 
 
 def resolve_cors(origins: list[str]) -> tuple[list[str], bool]:
@@ -52,6 +53,7 @@ def get_app(config: AppConfig, dispatcher: Dispatcher) -> FastAPI:
     app.include_router(banners_router)
     if config.tobevpn.is_enabled:
         app.include_router(devices_router)
+        app.include_router(device_notifications_router)
     else:
         logger.info("ToBeVPN device endpoints are disabled: TOBEVPN_ENABLED is false")
 

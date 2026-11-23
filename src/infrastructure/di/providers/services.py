@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterable
+
+from aiohttp import ClientSession, ClientTimeout
 from dishka import AnyOf, Provider, Scope, alias, provide
 from remnapy import RemnawaveSDK
 
@@ -22,6 +25,7 @@ from src.application.services import (
     RemnaWebhookService,
 )
 from src.core.config import AppConfig
+from src.core.config.tobevpn import FcmServiceAccount
 from src.infrastructure.remnawave_v3.compat import PanelClient
 from src.infrastructure.services import (
     AiogramFileDownloader,
@@ -43,6 +47,7 @@ from src.infrastructure.services import (
     WebhookService,
     XuiDbReaderImpl,
 )
+from src.infrastructure.services.fcm import FcmClient
 from src.infrastructure.services.platega_autopay import PlategaAutopayService
 from src.infrastructure.services.remnawave_v3 import RemnawaveV3Impl
 
@@ -65,6 +70,15 @@ class ServicesProvider(Provider):
 
     command = provide(source=CommandService)
     webhook = provide(source=WebhookService)
+
+    @provide
+    async def fcm(self, config: AppConfig) -> AsyncIterable[FcmClient]:
+        secret = config.tobevpn.fcm_service_account_json
+        account = (
+            FcmServiceAccount.model_validate_json(secret.get_secret_value()) if secret else None
+        )
+        async with ClientSession(timeout=ClientTimeout(total=8)) as http:
+            yield FcmClient(http, account)
 
     @provide
     def remnawave(self, sdk: RemnawaveSDK, panel: PanelClient, config: AppConfig) -> Remnawave:

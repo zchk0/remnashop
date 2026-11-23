@@ -1,6 +1,7 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional, cast
+from uuid import UUID
 
 from adaptix import Retort
 from adaptix.conversion import ConversionRetort
@@ -196,8 +197,6 @@ class AuthTokenDaoImpl(AuthTokenDao):
             .on_conflict_do_update(
                 index_elements=[AuthToken.token],
                 set_={
-                    "device_id": data["device_id"],
-                    "status": "pending",
                     "panel_user_uuid": _preserve_legacy_alias(
                         AuthToken, data.get("panel_user_uuid"), data.get("panel_user_id")
                     ),
@@ -205,11 +204,20 @@ class AuthTokenDaoImpl(AuthTokenDao):
                         AuthToken, data.get("panel_user_uuid"), data.get("panel_user_id")
                     ),
                 },
+                where=(
+                    (AuthToken.device_id == auth_token.device_id)
+                    & AuthToken.device_session_id.is_not_distinct_from(auth_token.device_session_id)
+                    & (AuthToken.status == "pending")
+                ),
             )
             .returning(AuthToken)
             .execution_options(populate_existing=True)
         )
         db_token = await self.session.scalar(stmt)
+        if db_token is None:
+            db_token = await self.session.scalar(
+                select(AuthToken).where(AuthToken.token == auth_token.token)
+            )
         assert db_token is not None
         await self.session.flush()
 
@@ -287,6 +295,9 @@ class DeviceSessionDaoImpl(DeviceSessionDao):
                     "integrity_token_hash": data.get("integrity_token_hash"),
                     "last_used_at": data.get("last_used_at"),
                     "revoked_at": data.get("revoked_at"),
+                    "session_id": data["session_id"],
+                    "verified_telegram_id": None,
+                    "push_token": None,
                 },
             )
             .returning(DeviceSession)
@@ -306,6 +317,36 @@ class DeviceSessionDaoImpl(DeviceSessionDao):
             return self._to_dto(db_session)
         return None
 
+    async def rotate(self, session: DeviceSessionDto, previous_refresh_token_hash: str) -> bool:
+        stmt = (
+            update(DeviceSession)
+            .where(
+                DeviceSession.device_id == session.device_id,
+                DeviceSession.refresh_token_hash == previous_refresh_token_hash,
+                DeviceSession.revoked_at.is_(None),
+            )
+            .values(
+                access_token_hash=session.access_token_hash,
+                refresh_token_hash=session.refresh_token_hash,
+                access_expires_at=session.access_expires_at,
+                refresh_expires_at=session.refresh_expires_at,
+                last_used_at=session.last_used_at,
+            )
+            .returning(DeviceSession.id)
+        )
+        return await self.session.scalar(stmt) is not None
+
+    async def verify_telegram(self, device_id: str, session_id: UUID, telegram_id: int) -> None:
+        await self.session.execute(
+            update(DeviceSession)
+            .where(
+                DeviceSession.device_id == device_id,
+                DeviceSession.session_id == session_id,
+                DeviceSession.revoked_at.is_(None),
+            )
+            .values(verified_telegram_id=telegram_id)
+        )
+
     async def get_by_access_token_hash(self, token_hash: str) -> Optional[DeviceSessionDto]:
         stmt = select(DeviceSession).where(DeviceSession.access_token_hash == token_hash)
         db_session = await self.session.scalar(stmt)
@@ -324,7 +365,9 @@ class DeviceSessionDaoImpl(DeviceSessionDao):
         stmt = (
             update(DeviceSession)
             .where(DeviceSession.device_id == device_id, DeviceSession.revoked_at.is_(None))
-            .values(revoked_at=datetime.now(timezone.utc))
+            .values(
+                revoked_at=datetime.now(timezone.utc), verified_telegram_id=None, push_token=None
+            )
             .returning(DeviceSession.id)
         )
         result = await self.session.scalar(stmt)
