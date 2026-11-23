@@ -1,7 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, SmallInteger, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import BaseSql
@@ -9,12 +18,19 @@ from .base import BaseSql
 
 class ToBeVpnNotification(BaseSql):
     __tablename__ = "tobevpn_notifications"
+    __table_args__ = (
+        CheckConstraint(
+            "NOT (is_public AND guests_only)",
+            name="ck_tobevpn_notifications_installation_audience",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(100))
     body: Mapped[str] = mapped_column(Text)
     action: Mapped[str | None] = mapped_column(String(16))
     is_public: Mapped[bool]
+    guests_only: Mapped[bool] = mapped_column(server_default=false())
     published_at: Mapped[datetime] = mapped_column(index=True)
     expires_at: Mapped[datetime] = mapped_column(index=True)
 

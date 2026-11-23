@@ -10,7 +10,10 @@ from sqlalchemy.exc import IntegrityError
 
 from src.application.common.dao import UserDao
 from src.application.common.uow import UnitOfWork
-from src.infrastructure.database.dao.tobevpn_notification import ToBeVpnNotificationDao
+from src.infrastructure.database.dao.tobevpn_notification import (
+    NotificationReader,
+    ToBeVpnNotificationDao,
+)
 from src.infrastructure.database.models import ToBeVpnNotification
 
 from .devices import DeviceAuthContext, get_device_auth_context
@@ -71,7 +74,7 @@ class PushRegistration(BaseModel):
 async def notification_reader(
     auth: DeviceAuth,
     user_dao: FromDishka[UserDao],
-) -> tuple[int | None, str]:
+) -> NotificationReader:
     if auth.session_id is None:
         raise HTTPException(status_code=401, detail="Missing device session")
 
@@ -80,12 +83,14 @@ async def notification_reader(
         if user is not None:
             if user.is_blocked:
                 raise HTTPException(status_code=403, detail="User is blocked")
-            return user.id, f"u:{user.id}"
+            return NotificationReader(key=f"u:{user.id}", user_id=user.id, is_guest=False)
 
-    return None, f"s:{auth.session_id}"
+    return NotificationReader(
+        key=f"s:{auth.session_id}", user_id=None, is_guest=auth.telegram_id is None
+    )
 
 
-Reader = Annotated[tuple[int | None, str], Depends(notification_reader)]
+Reader = Annotated[NotificationReader, Depends(notification_reader)]
 
 
 @router.get("/notifications")
@@ -102,7 +107,7 @@ async def list_notifications(
                 id=item_id, title=title, preview=preview, published_at=published_at, read_at=read_at
             )
             for item_id, title, preview, published_at, read_at in await notifications.list_visible(
-                *reader
+                reader
             )
         ]
     )
@@ -117,7 +122,7 @@ async def get_notification(
     response: Response,
 ) -> NotificationDetailResponse:
     response.headers["Cache-Control"] = "private, no-store"
-    result = await notifications.get_visible(notification_id, *reader)
+    result = await notifications.get_visible(notification_id, reader)
     if result is None:
         raise HTTPException(status_code=404, detail="Notification not found")
     item, read_at = result
@@ -138,7 +143,7 @@ async def read_notification(
     notifications: FromDishka[ToBeVpnNotificationDao],
     uow: FromDishka[UnitOfWork],
 ) -> NotificationReadResponse:
-    read_at = await notifications.mark_read(notification_id, *reader)
+    read_at = await notifications.mark_read(notification_id, reader)
     if read_at is None:
         raise HTTPException(status_code=404, detail="Notification not found")
     await uow.commit()

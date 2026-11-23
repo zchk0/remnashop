@@ -29,6 +29,8 @@ from src.telegram.widgets.kbd import Button, Column, Row, Select, SwitchTo
 
 from .getters import plans_getter
 
+GUESTS_ONLY_BUTTON = "guests_only"
+
 
 @inject
 async def open_tobevpn(
@@ -50,9 +52,10 @@ async def select_audience(
 ) -> None:
     if widget.widget_id is None:
         return
-    audience = BroadcastAudience(widget.widget_id)
+    guests_only = widget.widget_id == GUESTS_ONLY_BUTTON
+    audience = BroadcastAudience.ALL if guests_only else BroadcastAudience(widget.widget_id)
     draft = manager.dialog_data["tobevpn"]
-    draft.update(audience=audience.value, plan_id=None, plan_name="")
+    draft.update(audience=audience.value, plan_id=None, plan_name="", guests_only=guests_only)
     await manager.switch_to(
         DashboardBroadcast.TOBEVPN_PLAN
         if audience == BroadcastAudience.PLAN
@@ -99,14 +102,15 @@ async def toggle_plans(
     draft["action"] = None if draft.get("action") == "plans" else "plans"
 
 
-@inject
 async def tobevpn_preview(
-    dialog_manager: DialogManager, config: FromDishka[AppConfig], **kwargs: Any
+    dialog_manager: DialogManager, config: AppConfig, **kwargs: Any
 ) -> dict[str, Any]:
     draft = dialog_manager.dialog_data["tobevpn"]
+    guests_only = draft.get("guests_only", False)
     return {
         "audience_type": draft["audience"],
-        "is_public": draft["audience"] == BroadcastAudience.ALL,
+        "is_public": draft["audience"] == BroadcastAudience.ALL and not guests_only,
+        "guests_only": guests_only,
         "plan_name": f" — {html.escape(draft['plan_name'])}" if draft["plan_name"] else "",
         "title": html.escape(draft["title"]),
         "body": html.escape(draft["body"]),
@@ -139,6 +143,7 @@ async def publish_tobevpn(
         audience=BroadcastAudience(values["audience"]),
         plan_id=values.get("plan_id"),
         action=values.get("action"),
+        guests_only=values.get("guests_only", False),
     )
     queue_push = config.tobevpn.fcm_service_account_json is not None
     is_new = await notifications.publish(draft, queue_push=queue_push)
@@ -170,6 +175,11 @@ tobevpn_audience = Window(
     Row(
         audience_button(BroadcastAudience.ALL, "btn-tobevpn-broadcast.all"),
         audience_button(BroadcastAudience.PLAN, "btn-broadcast.plan"),
+    ),
+    Button(
+        I18nFormat("btn-tobevpn-broadcast.guests"),
+        id=GUESTS_ONLY_BUTTON,
+        on_click=select_audience,
     ),
     Row(
         audience_button(BroadcastAudience.SUBSCRIBED, "btn-broadcast.subscribed"),

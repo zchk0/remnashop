@@ -8,12 +8,105 @@ import pytest
 from fastapi import HTTPException
 from pydantic import SecretStr
 
+from src.application.common import TranslatorRunner
+from src.application.common.uow import UnitOfWork
+from src.application.dto import UserDto
 from src.application.dto.device import AuthTokenDto
+from src.core.config import AppConfig
 from src.core.config.tobevpn import FcmServiceAccount
-from src.infrastructure.database.dao.tobevpn_notification import PushDelivery
+from src.core.constants import CONFIG_KEY, CONTAINER_KEY, USER_KEY
+from src.core.enums import BroadcastAudience, Role
+from src.infrastructure.database.dao.tobevpn_notification import (
+    NotificationReader,
+    PushDelivery,
+    ToBeVpnNotificationDao,
+)
 from src.infrastructure.services.fcm import FcmClient
+from src.telegram.routers.dashboard.broadcast.tobevpn import (
+    GUESTS_ONLY_BUTTON,
+    enter_content,
+    publish_tobevpn,
+    select_audience,
+    tobevpn_audience,
+    tobevpn_confirm,
+)
+from src.telegram.states import DashboardBroadcast
 from src.web.endpoints.device_notifications import notification_reader
 from src.web.endpoints.devices import AuthRequest, DeviceAuthContext, _create_auth_token
+
+
+@pytest.mark.parametrize("push_enabled", [False, True])
+@pytest.mark.parametrize(
+    ("audience_button_id", "guests_only"),
+    [(BroadcastAudience.ALL.value, False), (GUESTS_ONLY_BUTTON, True)],
+)
+async def test_entering_broadcast_text_loads_the_preview_with_middleware_config(
+    push_enabled, audience_button_id, guests_only
+):
+    credentials = SecretStr("test") if push_enabled else None
+    config = SimpleNamespace(tobevpn=SimpleNamespace(fcm_service_account_json=credentials))
+    translator = SimpleNamespace(get=MagicMock())
+    dependencies = {AppConfig: config, TranslatorRunner: translator}
+    manager = SimpleNamespace(
+        dialog_data={"tobevpn": {}},
+        is_preview=lambda: False,
+        switch_to=AsyncMock(),
+        middleware_data={
+            CONFIG_KEY: config,
+            CONTAINER_KEY: SimpleNamespace(
+                get=AsyncMock(side_effect=lambda dependency, **kwargs: dependencies[dependency])
+            ),
+        },
+    )
+    manager.middleware_data["dialog_manager"] = manager
+    button = tobevpn_audience.keyboard.find(audience_button_id)
+    assert button is not None
+    await select_audience(None, button, manager)
+    manager.switch_to.assert_awaited_once_with(DashboardBroadcast.TOBEVPN_CONTENT)
+    manager.switch_to.reset_mock()
+
+    await enter_content(SimpleNamespace(text="Title <test>\nBody & details"), None, manager)
+    manager.switch_to.assert_awaited_once_with(DashboardBroadcast.TOBEVPN_PREVIEW)
+
+    dialog = SimpleNamespace(load_data=AsyncMock(return_value={}))
+    preview = await tobevpn_confirm.load_data(dialog, manager)
+    assert preview["title"] == "Title &lt;test&gt;"
+    assert preview["body"] == "Body &amp; details"
+    assert preview["guests_only"] is guests_only
+    assert preview["is_public"] is (not guests_only)
+    assert preview["fcm_enabled"] is push_enabled
+
+
+async def test_publishing_guest_broadcast_saves_guest_audience():
+    config = SimpleNamespace(
+        tobevpn=SimpleNamespace(is_enabled=True, fcm_service_account_json=None)
+    )
+    notifications = SimpleNamespace(publish=AsyncMock(return_value=True))
+    uow = SimpleNamespace(commit=AsyncMock())
+    dependencies = {
+        AppConfig: config,
+        TranslatorRunner: SimpleNamespace(),
+        ToBeVpnNotificationDao: notifications,
+        UnitOfWork: uow,
+    }
+    manager = SimpleNamespace(
+        dialog_data={"tobevpn": {"id": str(uuid4()), "title": "Title", "body": "Body"}},
+        switch_to=AsyncMock(),
+        middleware_data={
+            USER_KEY: UserDto(id=1, telegram_id=1, name="Admin", role=Role.OWNER),
+            CONTAINER_KEY: SimpleNamespace(
+                get=AsyncMock(side_effect=lambda dependency, **kwargs: dependencies[dependency])
+            ),
+        },
+    )
+    await select_audience(None, tobevpn_audience.keyboard.find(GUESTS_ONLY_BUTTON), manager)
+    await publish_tobevpn(None, None, manager)
+
+    draft = notifications.publish.await_args.args[0]
+    assert draft.audience == BroadcastAudience.ALL
+    assert draft.guests_only is True
+    uow.commit.assert_awaited_once()
+    assert manager.switch_to.await_args.args == (DashboardBroadcast.TOBEVPN_PUBLISHED,)
 
 
 async def test_a_linked_device_needs_session_verification_for_targeted_notifications():
@@ -24,15 +117,28 @@ async def test_a_linked_device_needs_session_verification_for_targeted_notificat
     auth = DeviceAuthContext(device_id="phone", session_id=session_id, telegram_id=123)
     resolve_reader = notification_reader.__dishka_orig_func__
 
-    assert await resolve_reader(auth, users) == (None, f"s:{session_id}")
+    assert await resolve_reader(auth, users) == NotificationReader(
+        key=f"s:{session_id}", user_id=None, is_guest=False
+    )
     users.get_by_telegram_id.assert_not_awaited()
 
     auth.verified_telegram_id = 123
-    assert await resolve_reader(auth, users) == (7, "u:7")
+    assert await resolve_reader(auth, users) == NotificationReader(
+        key="u:7", user_id=7, is_guest=False
+    )
     users.get_by_telegram_id.assert_awaited_once_with(123)
 
     auth.telegram_id = 456
-    assert await resolve_reader(auth, users) == (None, f"s:{session_id}")
+    assert await resolve_reader(auth, users) == NotificationReader(
+        key=f"s:{session_id}", user_id=None, is_guest=False
+    )
+
+    auth.telegram_id = None
+    auth.verified_telegram_id = None
+    auth.panel_user_id = 42
+    assert await resolve_reader(auth, users) == NotificationReader(
+        key=f"s:{session_id}", user_id=None, is_guest=True
+    )
 
 
 async def test_existing_auth_token_cannot_move_to_new_session_for_same_device():

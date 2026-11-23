@@ -265,6 +265,7 @@ btn-broadcast =
 btn-tobevpn-broadcast =
     .open = 🔔 TobeVPN
     .all = 👥 All installations
+    .guests = 👤 Without sign-in
     .action = { $open_plans ->
         [1] ☑️ Open plans button
        *[0] ⬜ Open plans button

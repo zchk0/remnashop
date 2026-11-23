@@ -265,6 +265,7 @@ btn-broadcast =
 btn-tobevpn-broadcast =
     .open = 🔔 TobeVPN
     .all = 👥 Все установки
+    .guests = 👤 Без входа в аккаунт
     .action = { $open_plans ->
         [1] ☑️ Кнопка «Открыть тарифы»
        *[0] ⬜ Кнопка «Открыть тарифы»

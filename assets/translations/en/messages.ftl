@@ -426,7 +426,7 @@ msg-tobevpn-broadcast-disabled = TobeVPN integration is disabled.
 msg-tobevpn-broadcast-audience =
     <b>🔔 Broadcast to TobeVPN</b>
 
-    Choose an audience. “All installations” includes apps without a signed-in account.
+    Choose an audience. “All installations” includes everyone. “Without sign-in” reaches guest installations only.
 msg-tobevpn-broadcast-content =
     <b>Notification text</b>
 
@@ -435,9 +435,12 @@ msg-tobevpn-broadcast-invalid = Enter a title of up to 100 characters and a body
 msg-tobevpn-broadcast-preview =
     <b>TobeVPN broadcast preview</b>
 
-    Audience: { $is_public ->
-        [1] All installations
-       *[0] { audience-type }{ $plan_name }
+    Audience: { $guests_only ->
+        [1] Without sign-in
+       *[0] { $is_public ->
+            [1] All installations
+           *[0] { audience-type }{ $plan_name }
+        }
     }
     { $fcm_enabled ->
         [1] TobeVPN inbox and Android push

@@ -11,6 +11,7 @@ from sqlalchemy import (
     exists,
     func,
     literal,
+    not_,
     or_,
     select,
     update,
@@ -45,6 +46,14 @@ class NotificationDraft:
     audience: BroadcastAudience
     plan_id: int | None
     action: str | None
+    guests_only: bool = False
+
+
+@dataclass(frozen=True)
+class NotificationReader:
+    key: str
+    user_id: int | None
+    is_guest: bool
 
 
 @dataclass(frozen=True)
@@ -66,7 +75,8 @@ class ToBeVpnNotificationDao:
 
     async def publish(self, draft: NotificationDraft, *, queue_push: bool) -> bool:
         now = datetime.now(UTC)
-        is_public = draft.audience == BroadcastAudience.ALL
+        # Older servers hide nonpublic announcements with no account recipients.
+        is_public = draft.audience == BroadcastAudience.ALL and not draft.guests_only
         published_id = await self.session.scalar(
             insert(ToBeVpnNotification)
             .values(
@@ -75,6 +85,7 @@ class ToBeVpnNotificationDao:
                 body=draft.body,
                 action=draft.action,
                 is_public=is_public,
+                guests_only=draft.guests_only,
                 published_at=now,
                 expires_at=now + NOTIFICATION_LIFETIME,
             )
@@ -84,7 +95,7 @@ class ToBeVpnNotificationDao:
         if published_id is None:
             return False
 
-        if not is_public:
+        if not (is_public or draft.guests_only):
             await self.session.execute(
                 insert(ToBeVpnNotificationRecipient).from_select(
                     ["notification_id", "user_id"], self._recipients(draft)
@@ -103,7 +114,9 @@ class ToBeVpnNotificationDao:
                 .outerjoin(User, User.telegram_id == LinkedDevice.telegram_id)
                 .where(
                     self._active_android_session(now),
-                    self._eligible_for_push(literal(is_public), literal(draft.id)),
+                    self._eligible_for_push(
+                        literal(is_public), literal(draft.guests_only), literal(draft.id)
+                    ),
                 )
             )
             await self.session.execute(
@@ -140,15 +153,22 @@ class ToBeVpnNotificationDao:
         return users
 
     def _visible(
-        self, user_id: int | None, reader: str
+        self, reader: NotificationReader
     ) -> Select[tuple[ToBeVpnNotification, datetime | None]]:
-        visible: ColumnElement[bool] = ToBeVpnNotification.is_public.is_(True)
-        if user_id is not None:
+        visible = or_(
+            ToBeVpnNotification.is_public.is_(True),
+            and_(ToBeVpnNotification.guests_only.is_(True), reader.is_guest),
+        )
+        if reader.user_id is not None:
             visible = or_(
                 visible,
-                exists().where(
-                    ToBeVpnNotificationRecipient.notification_id == ToBeVpnNotification.id,
-                    ToBeVpnNotificationRecipient.user_id == user_id,
+                and_(
+                    ToBeVpnNotification.is_public.is_(False),
+                    ToBeVpnNotification.guests_only.is_(False),
+                    exists().where(
+                        ToBeVpnNotificationRecipient.notification_id == ToBeVpnNotification.id,
+                        ToBeVpnNotificationRecipient.user_id == reader.user_id,
+                    ),
                 ),
             )
         return (
@@ -160,17 +180,17 @@ class ToBeVpnNotificationDao:
                 ToBeVpnNotificationRead,
                 and_(
                     ToBeVpnNotificationRead.notification_id == ToBeVpnNotification.id,
-                    ToBeVpnNotificationRead.reader == reader,
+                    ToBeVpnNotificationRead.reader == reader.key,
                 ),
             )
             .where(visible, ToBeVpnNotification.expires_at > func.now())
         )
 
     async def list_visible(
-        self, user_id: int | None, reader: str
+        self, reader: NotificationReader
     ) -> list[tuple[UUID, str, str, datetime, datetime | None]]:
         stmt = (
-            self._visible(user_id, reader)
+            self._visible(reader)
             .with_only_columns(
                 ToBeVpnNotification.id,
                 ToBeVpnNotification.title,
@@ -184,29 +204,27 @@ class ToBeVpnNotificationDao:
         return list((await self.session.execute(stmt)).tuples().all())
 
     async def get_visible(
-        self, notification_id: UUID, user_id: int | None, reader: str
+        self, notification_id: UUID, reader: NotificationReader
     ) -> tuple[ToBeVpnNotification, datetime | None] | None:
-        stmt = self._visible(user_id, reader).where(ToBeVpnNotification.id == notification_id)
+        stmt = self._visible(reader).where(ToBeVpnNotification.id == notification_id)
         return (await self.session.execute(stmt)).tuples().one_or_none()
 
-    async def mark_read(
-        self, notification_id: UUID, user_id: int | None, reader: str
-    ) -> datetime | None:
-        visible = await self.get_visible(notification_id, user_id, reader)
+    async def mark_read(self, notification_id: UUID, reader: NotificationReader) -> datetime | None:
+        visible = await self.get_visible(notification_id, reader)
         if visible is None:
             return None
         if visible[1] is not None:
             return visible[1]
         stmt = (
             insert(ToBeVpnNotificationRead)
-            .values(notification_id=notification_id, reader=reader, read_at=datetime.now(UTC))
+            .values(notification_id=notification_id, reader=reader.key, read_at=datetime.now(UTC))
             .on_conflict_do_nothing()
             .returning(ToBeVpnNotificationRead.read_at)
         )
         return await self.session.scalar(stmt) or await self.session.scalar(
             select(ToBeVpnNotificationRead.read_at).where(
                 ToBeVpnNotificationRead.notification_id == notification_id,
-                ToBeVpnNotificationRead.reader == reader,
+                ToBeVpnNotificationRead.reader == reader.key,
             )
         )
 
@@ -242,13 +260,18 @@ class ToBeVpnNotificationDao:
 
     @staticmethod
     def _eligible_for_push(
-        is_public: SQLColumnExpression[bool], notification_id: SQLColumnExpression[UUID]
+        is_public: SQLColumnExpression[bool],
+        guests_only: SQLColumnExpression[bool],
+        notification_id: SQLColumnExpression[UUID],
     ) -> ColumnElement[bool]:
         return and_(
             User.is_blocked.is_not(True),
             or_(
                 is_public,
+                and_(guests_only, LinkedDevice.telegram_id.is_(None)),
                 and_(
+                    not_(is_public),
+                    not_(guests_only),
                     DeviceSession.verified_telegram_id == LinkedDevice.telegram_id,
                     exists().where(
                         ToBeVpnNotificationRecipient.notification_id == notification_id,
@@ -311,7 +334,11 @@ class ToBeVpnNotificationDao:
                 ToBeVpnPushDelivery.id.in_(claimed),
                 ToBeVpnNotification.published_at > now - PUSH_LIFETIME,
                 self._active_android_session(now),
-                self._eligible_for_push(ToBeVpnNotification.is_public, ToBeVpnNotification.id),
+                self._eligible_for_push(
+                    ToBeVpnNotification.is_public,
+                    ToBeVpnNotification.guests_only,
+                    ToBeVpnNotification.id,
+                ),
             )
         )
         valid: list[PushDelivery] = []

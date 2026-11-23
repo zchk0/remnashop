@@ -426,7 +426,7 @@ msg-tobevpn-broadcast-disabled = Интеграция TobeVPN выключена
 msg-tobevpn-broadcast-audience =
     <b>🔔 Рассылка в TobeVPN</b>
 
-    Выберите аудиторию. «Все установки» включает приложения без входа в аккаунт.
+    Выберите аудиторию. «Все установки» включает всех, а «Без входа в аккаунт» — только гостевые установки.
 msg-tobevpn-broadcast-content =
     <b>Текст уведомления</b>
 
@@ -435,9 +435,12 @@ msg-tobevpn-broadcast-invalid = Нужны заголовок до 100 симв�
 msg-tobevpn-broadcast-preview =
     <b>Предпросмотр рассылки в TobeVPN</b>
 
-    Аудитория: { $is_public ->
-        [1] Все установки
-       *[0] { audience-type }{ $plan_name }
+    Аудитория: { $guests_only ->
+        [1] Без входа в аккаунт
+       *[0] { $is_public ->
+            [1] Все установки
+           *[0] { audience-type }{ $plan_name }
+        }
     }
     { $fcm_enabled ->
         [1] Лента TobeVPN и пуши Android
