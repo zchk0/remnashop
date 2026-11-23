@@ -213,6 +213,7 @@ btn-broadcast =
     .unsubscribed = ❌ Без подписки
     .expired = ⌛ Просроченным
     .trial = ✳️ С пробником
+    .available-tasks = 📋 Есть задания
     .content = ✉️ Редактировать содержимое
     .buttons = ✳️ Редактировать кнопки
     .custom-button = Своя кнопка

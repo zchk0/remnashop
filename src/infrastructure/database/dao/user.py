@@ -6,14 +6,17 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import Select, delete, func, or_, select, update
+from sqlalchemy import Select, delete, false, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import UserDao
 from src.application.dto import UserDto
+from src.application.dto.earning import EarningSettingsDto
 from src.core.enums import Role, SubscriptionStatus
 from src.core.utils.panel_identity import PanelUserRef
 from src.infrastructure.database.models import Referral, Subscription, User
+
+from .earning import user_has_available_tasks
 
 
 class UserDaoImpl(UserDao):
@@ -50,6 +53,31 @@ class UserDaoImpl(UserDao):
             )
             stmt = stmt.where(User.created_at >= registration_cutoff)
         return stmt
+
+    def _filter_available_task_recipients(
+        self,
+        stmt: Select[Any],
+        earning: EarningSettingsDto,
+        excluded_telegram_ids: Sequence[int],
+        exclude_registered_older_than_days: int | None,
+    ) -> Select[Any]:
+        if not earning.enabled:
+            return stmt.where(false())
+        if earning.audience == "admins":
+            stmt = stmt.where(User.role.in_([role for role in Role if role.includes(Role.ADMIN)]))
+        elif earning.audience == "selected":
+            stmt = stmt.where(User.telegram_id.in_(earning.allowed_telegram_ids))
+        elif earning.audience != "all":
+            return stmt.where(false())
+
+        stmt = stmt.where(
+            User.is_blocked.is_(False),
+            User.is_bot_blocked.is_(False),
+            user_has_available_tasks(),
+        )
+        return self._filter_broadcast_recipients(
+            stmt, excluded_telegram_ids, exclude_registered_older_than_days
+        )
 
     async def create(self, user: UserDto) -> UserDto:
         user_data = self.retort.dump(user)
@@ -428,6 +456,32 @@ class UserDaoImpl(UserDao):
         count = await self.session.scalar(stmt) or 0
         logger.debug(f"Total users without subscription count is '{count}'")
         return count
+
+    async def count_with_available_tasks(
+        self,
+        earning: EarningSettingsDto,
+        excluded_telegram_ids: Sequence[int],
+        exclude_registered_older_than_days: int | None,
+    ) -> int:
+        stmt = self._filter_available_task_recipients(
+            select(func.count(User.id)),
+            earning,
+            excluded_telegram_ids,
+            exclude_registered_older_than_days,
+        )
+        return await self.session.scalar(stmt) or 0
+
+    async def get_with_available_tasks(
+        self,
+        earning: EarningSettingsDto,
+        excluded_telegram_ids: Sequence[int],
+        exclude_registered_older_than_days: int | None,
+    ) -> list[UserDto]:
+        stmt = self._filter_available_task_recipients(
+            select(User), earning, excluded_telegram_ids, exclude_registered_older_than_days
+        )
+        result = await self.session.scalars(stmt)
+        return self._convert_to_dto_list(list(result.all()))
 
     async def get_active_non_blocked(
         self,

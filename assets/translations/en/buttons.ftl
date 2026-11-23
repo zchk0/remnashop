@@ -213,6 +213,7 @@ btn-broadcast =
     .unsubscribed = ❌ Unsubscribed
     .expired = ⌛ Expired subscriptions
     .trial = ✳️ Trial users
+    .available-tasks = 📋 Available tasks
     .content = ✉️ Edit content
     .buttons = ✳️ Edit buttons
     .custom-button = Custom button

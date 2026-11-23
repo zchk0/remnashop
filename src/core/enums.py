@@ -64,6 +64,7 @@ class BroadcastAudience(UpperStrEnum):
     UNSUBSCRIBED = auto()
     EXPIRED = auto()
     TRIAL = auto()
+    AVAILABLE_TASKS = auto()
 
 
 class PlanType(UpperStrEnum):

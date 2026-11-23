@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from typing import Optional, Protocol, runtime_checkable
 
 from src.application.dto import UserDto
+from src.application.dto.earning import EarningSettingsDto
 from src.core.enums import Role
 from src.core.utils.panel_identity import PanelUserRef
 
@@ -95,6 +96,13 @@ class UserDao(Protocol):
         exclude_registered_older_than_days: Optional[int] = None,
     ) -> int: ...
 
+    async def count_with_available_tasks(
+        self,
+        earning: EarningSettingsDto,
+        excluded_telegram_ids: Sequence[int],
+        exclude_registered_older_than_days: int | None,
+    ) -> int: ...
+
     async def get_active_non_blocked(
         self,
         excluded_telegram_ids: Optional[Sequence[int]] = None,
@@ -130,6 +138,13 @@ class UserDao(Protocol):
         self,
         excluded_telegram_ids: Optional[Sequence[int]] = None,
         exclude_registered_older_than_days: Optional[int] = None,
+    ) -> list[UserDto]: ...
+
+    async def get_with_available_tasks(
+        self,
+        earning: EarningSettingsDto,
+        excluded_telegram_ids: Sequence[int],
+        exclude_registered_older_than_days: int | None,
     ) -> list[UserDto]: ...
 
     async def count_new(self, days: int) -> int: ...

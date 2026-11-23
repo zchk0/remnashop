@@ -5,7 +5,7 @@ from uuid import UUID
 from loguru import logger
 
 from src.application.common import Interactor
-from src.application.common.dao import BroadcastDao, PlanDao, SubscriptionDao, UserDao
+from src.application.common.dao import BroadcastDao, PlanDao, SettingsDao, SubscriptionDao, UserDao
 from src.application.common.policy import Permission
 from src.application.dto import UserDto
 from src.core.enums import BroadcastAudience
@@ -45,10 +45,12 @@ class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
         user_dao: UserDao,
         subscription_dao: SubscriptionDao,
         broadcast_dao: BroadcastDao,
+        settings_dao: SettingsDao,
     ) -> None:
         self.user_dao = user_dao
         self.subscription_dao = subscription_dao
         self.broadcast_dao = broadcast_dao
+        self.settings_dao = settings_dao
 
     async def _execute(self, actor: UserDto, data: GetBroadcastAudienceCountDto) -> int:
         audience = data.audience
@@ -94,6 +96,12 @@ class GetBroadcastAudienceCount(Interactor[GetBroadcastAudienceCountDto, int]):
                 excluded_telegram_ids, exclude_registered_older_than_days
             )
 
+        elif audience == BroadcastAudience.AVAILABLE_TASKS:
+            settings = await self.settings_dao.get()
+            count = await self.user_dao.count_with_available_tasks(
+                settings.earning, excluded_telegram_ids, exclude_registered_older_than_days
+            )
+
         else:
             logger.error(f"{actor.log} Received unknown broadcast audience '{audience}'")
             raise ValueError(f"Unknown broadcast audience '{audience}'")
@@ -114,9 +122,12 @@ class GetBroadcastAudienceUsersDto:
 class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[UserDto]]):
     required_permission = Permission.BROADCAST
 
-    def __init__(self, user_dao: UserDao, broadcast_dao: BroadcastDao) -> None:
+    def __init__(
+        self, user_dao: UserDao, broadcast_dao: BroadcastDao, settings_dao: SettingsDao
+    ) -> None:
         self.user_dao = user_dao
         self.broadcast_dao = broadcast_dao
+        self.settings_dao = settings_dao
 
     async def _execute(self, actor: UserDto, data: GetBroadcastAudienceUsersDto) -> list[UserDto]:
         audience = data.audience
@@ -153,6 +164,11 @@ class GetBroadcastAudienceUsers(Interactor[GetBroadcastAudienceUsersDto, list[Us
         elif audience == BroadcastAudience.TRIAL:
             users = await self.user_dao.get_with_trial_subscription(
                 excluded_telegram_ids, exclude_registered_older_than_days
+            )
+        elif audience == BroadcastAudience.AVAILABLE_TASKS:
+            settings = await self.settings_dao.get()
+            users = await self.user_dao.get_with_available_tasks(
+                settings.earning, excluded_telegram_ids, exclude_registered_older_than_days
             )
         else:
             logger.error(f"{actor.log} Received unknown broadcast audience '{audience}'")

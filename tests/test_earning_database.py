@@ -21,12 +21,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from src.application.dto import PlanSnapshotDto, SettingsDto, SubscriptionDto, UserDto
 from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningSettingsDto
 from src.application.use_cases.earning.manage import ResetChannelTaskCompletions
-from src.application.use_cases.earning.rewards import ClaimChannelReward, EarningError
+from src.application.use_cases.earning.rewards import (
+    ClaimChannelReward,
+    EarningError,
+    GetEarningTasks,
+)
 from src.core.enums import Role, SubscriptionStatus
 from src.core.utils.time import datetime_now
-from src.infrastructure.database.dao.earning import EarningDaoImpl
+from src.infrastructure.database.dao.earning import EarningDaoImpl, user_has_available_tasks
 from src.infrastructure.database.dao.subscription import SubscriptionDaoImpl
-from src.infrastructure.database.models import Subscription
+from src.infrastructure.database.models import Subscription, User
 from src.infrastructure.database.models.earning import ChannelClaim
 from src.infrastructure.database.uow import UnitOfWorkImpl
 from src.infrastructure.di.providers.retort import RetortProvider
@@ -147,6 +151,52 @@ async def test_postgres_double_click_has_one_ledger_entry(earning_database):
     async with AsyncSession(earning_database) as session:
         rows = (await session.scalars(select(ChannelClaim))).all()
         assert len(rows) == 1 and rows[0].status == "completed"
+
+
+async def test_postgres_broadcast_task_filter_matches_tasks_menu(earning_database):
+    async with AsyncSession(earning_database) as session:
+        await session.execute(text("ALTER TABLE users ADD COLUMN current_subscription_id INTEGER"))
+        await session.execute(text("INSERT INTO users (id) VALUES (3), (4), (5), (6)"))
+        await session.execute(text("UPDATE users SET current_subscription_id = 1 WHERE id = 3"))
+
+        recipients = select(User.id).where(user_has_available_tasks())
+        assert (await session.scalars(recipients)).all() == []
+
+        dao = EarningDaoImpl(session)
+        template = ChannelTaskDto(title="Channel", days=0, discount=15, active=True)
+        first = await dao.save_task(template)
+        second = await dao.save_task(template)
+        await dao.save_task(replace(template, days=1, discount=0))
+        await dao.save_task(replace(template, discount=0))
+        full = await dao.save_task(replace(template, max_claims=1))
+        deleted = await dao.save_task(replace(template, active=False, deleted=True))
+        for user_id in (1, 2, 3, 4, 5):
+            await dao.save_claim(
+                ChannelClaimDto(task_id=first.id, user_id=user_id, status="completed")
+            )
+        for user_id in (1, 3, 4, 5):
+            await dao.save_claim(
+                ChannelClaimDto(task_id=second.id, user_id=user_id, status="completed")
+            )
+        await dao.save_claim(ChannelClaimDto(task_id=deleted.id, user_id=4))
+        await dao.save_claim(ChannelClaimDto(task_id=full.id, user_id=5))
+
+        async def get_current(user_id):
+            return SimpleNamespace() if user_id == 3 else None
+
+        settings = SettingsDto(earning=EarningSettingsDto(enabled=True, audience="all"))
+        menu = GetEarningTasks(
+            dao,
+            SimpleNamespace(get=AsyncMock(return_value=settings)),
+            SimpleNamespace(get_current=get_current),
+        )
+        users_with_tasks = set()
+        for user_id in range(1, 7):
+            user = UserDto(id=user_id, telegram_id=100 + user_id, name="User")
+            if (await menu(user)).tasks:
+                users_with_tasks.add(user_id)
+
+        assert set(await session.scalars(recipients)) == users_with_tasks == {2, 3, 4, 5, 6}
 
 
 async def test_postgres_reset_clears_statistics_and_allows_repeat_preserving_pending(

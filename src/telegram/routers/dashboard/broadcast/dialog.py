@@ -114,6 +114,11 @@ broadcast = Window(
             on_click=on_audience_select,
         ),
     ),
+    Button(
+        I18nFormat("btn-broadcast.available-tasks"),
+        id=BroadcastAudience.AVAILABLE_TASKS,
+        on_click=on_audience_select,
+    ),
     Row(
         Start(
             I18nFormat("btn-back.general"),
@@ -263,6 +268,11 @@ repeat = Window(
             id=BroadcastAudience.TRIAL,
             on_click=on_audience_select,
         ),
+    ),
+    Button(
+        I18nFormat("btn-broadcast.available-tasks"),
+        id=BroadcastAudience.AVAILABLE_TASKS,
+        on_click=on_audience_select,
     ),
     Row(
         SwitchTo(

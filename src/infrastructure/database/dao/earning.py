@@ -1,14 +1,69 @@
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Subquery
 
 from src.application.common.dao.earning import EarningDao
 from src.application.dto.earning import ChannelClaimDto, ChannelTaskDto, EarningStatisticsDto
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.models.earning import ChannelClaim, ChannelTask
 from src.infrastructure.database.models.user import User
+
+
+def _task_claim_counts() -> Subquery:
+    return (
+        select(
+            ChannelClaim.task_id,
+            func.count().label("count"),
+            func.count().filter(ChannelClaim.status == "completed").label("completed"),
+        )
+        .group_by(ChannelClaim.task_id)
+        .subquery()
+    )
+
+
+def user_has_available_tasks() -> ColumnElement[bool]:
+    """Match tasks shown by GetEarningTasks for users with access to the feature."""
+    pending_claim = (
+        select(ChannelClaim.id)
+        .where(ChannelClaim.user_id == User.id, ChannelClaim.status != "completed")
+        .correlate(User)
+        .exists()
+    )
+    already_claimed = (
+        select(ChannelClaim.id)
+        .where(ChannelClaim.task_id == ChannelTask.id, ChannelClaim.user_id == User.id)
+        .correlate(ChannelTask, User)
+        .exists()
+    )
+    counts = _task_claim_counts()
+    active_task = (
+        select(ChannelTask.id)
+        .outerjoin(counts, counts.c.task_id == ChannelTask.id)
+        .where(
+            ChannelTask.active.is_(True),
+            ChannelTask.deleted.is_(False),
+            or_(
+                ChannelTask.max_claims.is_(None),
+                func.coalesce(counts.c.count, 0) < ChannelTask.max_claims,
+            ),
+            or_(
+                ChannelTask.days > 0, ChannelTask.reset_traffic.is_(True), ChannelTask.discount > 0
+            ),
+            or_(
+                User.current_subscription_id.is_not(None),
+                and_(ChannelTask.days == 0, ChannelTask.reset_traffic.is_(False)),
+                and_(ChannelTask.days > 0, ChannelTask.plan_id.is_not(None)),
+            ),
+            ~already_claimed,
+        )
+        .correlate(User)
+        .exists()
+    )
+    # A pending claim is still shown when its task has been paused or deleted.
+    return or_(pending_claim, active_task)
 
 
 class EarningDaoImpl(EarningDao):
@@ -28,15 +83,7 @@ class EarningDaoImpl(EarningDao):
         )
 
     async def list_tasks(self) -> list[ChannelTaskDto]:
-        counts = (
-            select(
-                ChannelClaim.task_id,
-                func.count().label("count"),
-                func.count().filter(ChannelClaim.status == "completed").label("completed"),
-            )
-            .group_by(ChannelClaim.task_id)
-            .subquery()
-        )
+        counts = _task_claim_counts()
         rows = await self.session.execute(
             select(
                 ChannelTask, func.coalesce(counts.c.count, 0), func.coalesce(counts.c.completed, 0)

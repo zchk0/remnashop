@@ -412,6 +412,7 @@ audience-type = { $audience_type ->
     [UNSUBSCRIBED] Unsubscribed
     [EXPIRED] Expired subscriptions
     [TRIAL] Trial users
+    [AVAILABLE_TASKS] Available tasks
     *[OTHER] { $audience_type }
 }
 

@@ -412,6 +412,7 @@ audience-type = { $audience_type ->
     [UNSUBSCRIBED] Без подписки
     [EXPIRED] Просроченным
     [TRIAL] С пробником
+    [AVAILABLE_TASKS] Есть задания
     *[OTHER] { $audience_type }
 }
 

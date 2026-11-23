@@ -128,8 +128,9 @@ def _flow(monkeypatch):  # noqa: C901
         return len(await recipients(excluded, days))
 
     user_dao = SimpleNamespace(get_active_non_blocked=recipients, count_active_non_blocked=count)
-    count_audience = GetBroadcastAudienceCount(user_dao, SimpleNamespace(), history)
-    get_users = GetBroadcastAudienceUsers(user_dao, history)
+    settings = SimpleNamespace()
+    count_audience = GetBroadcastAudienceCount(user_dao, SimpleNamespace(), history, settings)
+    get_users = GetBroadcastAudienceUsers(user_dao, history, settings)
     dispatcher = SimpleNamespace(start=AsyncMock())
     start = StartBroadcast(_Uow(history), history, count_audience, dispatcher)
 
