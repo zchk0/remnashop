@@ -450,6 +450,24 @@ msg-tobevpn-broadcast-preview =
     <b>{ $title }</b>
     { $body }
 msg-tobevpn-broadcast-published = ✅ Уведомление опубликовано в TobeVPN.
+msg-tobevpn-broadcast-view =
+    <b>🔔 Рассылка ToBeVPN</b>
+
+    <blockquote>
+    • <b>Опубликовано</b> { $published_at }
+    • <b>Аудитория</b> { $guests_only ->
+        [1] Без входа в аккаунт
+       *[0] { $is_public ->
+            [1] Все установки
+           *[0] Выбранные аккаунты ({ $recipient_count })
+        }
+    }
+    • <b>Отметок о прочтении</b> { $read_count }
+    </blockquote>
+
+    <b>{ $title }</b>
+    { $body }
+msg-tobevpn-broadcast-unavailable = <i>Публикация ToBeVPN больше недоступна.</i>
 
 msg-broadcast-list = <b>📄 Список рассылок</b>
 msg-broadcast-repeat =

@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from aiogram_dialog import Dialog, StartMode, Window
 from aiogram_dialog.widgets.input import MessageInput
 from aiogram_dialog.widgets.text import Format
@@ -60,6 +58,7 @@ from .tobevpn import (
     tobevpn_content,
     tobevpn_plan,
     tobevpn_published,
+    tobevpn_view,
 )
 
 broadcast = Window(
@@ -138,14 +137,14 @@ list = Window(
     ScrollingGroup(
         Select(
             text=I18nFormat(
-                "btn-broadcast.title",
+                "{item[label]}",
                 status=F["item"]["status"],
                 created_at=F["item"]["created_at"],
+                title=F["item"]["title"],
             ),
             id="broadcast",
-            item_id_getter=lambda item: item["task_id"],
+            item_id_getter=lambda item: item["id"],
             items="broadcasts",
-            type_factory=UUID,
             on_click=on_broadcast_select,
         ),
         id="scroll",
@@ -570,4 +569,5 @@ router = Dialog(
     tobevpn_content,
     tobevpn_confirm,
     tobevpn_published,
+    tobevpn_view,
 )

@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 
 from src.application.common.dao import UserDao
 from src.application.common.uow import UnitOfWork
+from src.core.constants import T_ME
+from src.core.enums import ToBeVpnNotificationButton
 from src.infrastructure.database.dao.tobevpn_notification import (
     NotificationReader,
     ToBeVpnNotificationDao,
@@ -20,6 +22,10 @@ from .devices import DeviceAuthContext, get_device_auth_context
 
 router = APIRouter(prefix="/api/device", tags=["ToBeVPN notifications"])
 DeviceAuth = Annotated[DeviceAuthContext, Depends(get_device_auth_context)]
+
+EXTERNAL_BUTTONS: dict[str, tuple[str, str]] = {
+    ToBeVpnNotificationButton.CHANNEL: (f"{T_ME}meow_meow_vpn", "Перейти в канал"),
+}
 
 
 class NotificationItem(BaseModel):
@@ -50,6 +56,8 @@ class NotificationList(BaseModel):
 class NotificationDetails(NotificationItem):
     body: str
     action: str | None
+    action_url: str | None = None
+    action_label: str | None = None
 
 
 class NotificationDetailResponse(BaseModel):
@@ -113,7 +121,7 @@ async def list_notifications(
     )
 
 
-@router.get("/notifications/{notification_id}")
+@router.get("/notifications/{notification_id}", response_model_exclude_unset=True)
 @inject
 async def get_notification(
     notification_id: UUID,
@@ -126,13 +134,16 @@ async def get_notification(
     if result is None:
         raise HTTPException(status_code=404, detail="Notification not found")
     item, read_at = result
-    return NotificationDetailResponse(
-        data=NotificationDetails(
-            **NotificationItem.from_record(item, read_at).model_dump(),
-            body=item.body,
-            action=item.action,
-        )
+    detail = NotificationDetails(
+        **NotificationItem.from_record(item, read_at).model_dump(),
+        body=item.body,
+        action=item.action,
     )
+    external_button = EXTERNAL_BUTTONS.get(item.action or "")
+    if external_button is not None:
+        detail.action = "url"
+        detail.action_url, detail.action_label = external_button
+    return NotificationDetailResponse(success=True, data=detail)
 
 
 @router.post("/notifications/{notification_id}/read")

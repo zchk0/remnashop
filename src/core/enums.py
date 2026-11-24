@@ -67,6 +67,13 @@ class BroadcastAudience(UpperStrEnum):
     AVAILABLE_TASKS = auto()
 
 
+class ToBeVpnNotificationButton(StrEnum):
+    """Button presets stored with ToBeVPN announcements."""
+
+    PLANS = "plans"
+    CHANNEL = "channel"
+
+
 class PlanType(UpperStrEnum):
     TRAFFIC = auto()
     DEVICES = auto()

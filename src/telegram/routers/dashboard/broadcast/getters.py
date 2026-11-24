@@ -1,5 +1,7 @@
 import html
-from typing import Any
+from datetime import datetime
+from operator import itemgetter
+from typing import Any, cast
 
 from aiogram_dialog import DialogManager
 from dishka import FromDishka
@@ -10,7 +12,10 @@ from src.application.common.dao import BroadcastDao, PlanDao, SettingsDao
 from src.application.dto import PlanDto
 from src.core.constants import DATETIME_VIEW_FORMAT, USER_KEY
 from src.core.enums import BroadcastStatus
+from src.infrastructure.database.dao.tobevpn_notification import ToBeVpnNotificationDao
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
+
+TOBEVPN_BROADCAST_ID_PREFIX = "vpn_"
 
 
 @inject
@@ -166,20 +171,39 @@ async def custom_button_getter(
 async def list_getter(
     dialog_manager: DialogManager,
     broadcast_dao: FromDishka[BroadcastDao],
+    notifications: FromDishka[ToBeVpnNotificationDao],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    broadcasts = await broadcast_dao.get_all()
-
-    formatted_broadcasts = [
-        {
-            "task_id": broadcast.task_id,
-            "status": broadcast.status,
-            "created_at": broadcast.created_at.strftime(DATETIME_VIEW_FORMAT),  # type: ignore[union-attr]
-        }
-        for broadcast in broadcasts
+    entries = [
+        (
+            cast(datetime, broadcast.created_at),
+            {
+                "id": str(broadcast.task_id),
+                "label": "btn-broadcast.title",
+                "status": broadcast.status,
+            },
+        )
+        for broadcast in await broadcast_dao.get_all()
     ]
+    entries.extend(
+        (
+            published_at,
+            {
+                "id": f"{TOBEVPN_BROADCAST_ID_PREFIX}{notification_id}",
+                "label": "btn-tobevpn-broadcast.title",
+                # Keep a title from being interpreted as custom emoji markup in the button.
+                "title": title.replace("<", "‹").replace(">", "›"),
+            },
+        )
+        for notification_id, title, published_at in await notifications.list_published()
+    )
+    entries.sort(key=itemgetter(0), reverse=True)
 
-    return {"broadcasts": formatted_broadcasts}
+    return {
+        "broadcasts": [
+            {**entry, "created_at": date.strftime(DATETIME_VIEW_FORMAT)} for date, entry in entries
+        ]
+    }
 
 
 @inject

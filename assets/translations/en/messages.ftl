@@ -450,6 +450,24 @@ msg-tobevpn-broadcast-preview =
     <b>{ $title }</b>
     { $body }
 msg-tobevpn-broadcast-published = ✅ The notification is published in TobeVPN.
+msg-tobevpn-broadcast-view =
+    <b>🔔 ToBeVPN broadcast</b>
+
+    <blockquote>
+    • <b>Published</b> { $published_at }
+    • <b>Audience</b> { $guests_only ->
+        [1] Without sign-in
+       *[0] { $is_public ->
+            [1] All installations
+           *[0] Selected accounts ({ $recipient_count })
+        }
+    }
+    • <b>Read receipts</b> { $read_count }
+    </blockquote>
+
+    <b>{ $title }</b>
+    { $body }
+msg-tobevpn-broadcast-unavailable = <i>This ToBeVPN broadcast is no longer available.</i>
 
 msg-broadcast-list = <b>📄 Broadcast list</b>
 msg-broadcast-repeat =

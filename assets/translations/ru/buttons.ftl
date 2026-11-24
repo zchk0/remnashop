@@ -265,11 +265,16 @@ btn-broadcast =
 
 btn-tobevpn-broadcast =
     .open = 🔔 TobeVPN
+    .title = 🔔 ToBeVPN · { $title } · { $created_at }
     .all = 👥 Все установки
     .guests = 👤 Без входа в аккаунт
     .action = { $open_plans ->
         [1] ☑️ Кнопка «Открыть тарифы»
        *[0] ⬜ Кнопка «Открыть тарифы»
+    }
+    .open-channel = { $open_channel ->
+        [1] ☑️ Кнопка «Перейти в канал»
+       *[0] ⬜ Кнопка «Перейти в канал»
     }
     .publish = ✅ Опубликовать в TobeVPN
 

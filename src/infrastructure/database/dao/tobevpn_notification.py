@@ -127,6 +127,39 @@ class ToBeVpnNotificationDao:
             )
         return True
 
+    async def list_published(self) -> list[tuple[UUID, str, datetime]]:
+        stmt = (
+            select(
+                ToBeVpnNotification.id,
+                ToBeVpnNotification.title,
+                ToBeVpnNotification.published_at,
+            )
+            .where(ToBeVpnNotification.expires_at > func.now())
+            .order_by(ToBeVpnNotification.published_at.desc(), ToBeVpnNotification.id.desc())
+        )
+        return list((await self.session.execute(stmt)).tuples().all())
+
+    async def get_publication(
+        self, notification_id: UUID
+    ) -> tuple[ToBeVpnNotification, int, int] | None:
+        read_count = (
+            select(func.count())
+            .select_from(ToBeVpnNotificationRead)
+            .where(ToBeVpnNotificationRead.notification_id == notification_id)
+            .scalar_subquery()
+        )
+        recipient_count = (
+            select(func.count())
+            .select_from(ToBeVpnNotificationRecipient)
+            .where(ToBeVpnNotificationRecipient.notification_id == notification_id)
+            .scalar_subquery()
+        )
+        stmt = select(ToBeVpnNotification, read_count, recipient_count).where(
+            ToBeVpnNotification.id == notification_id,
+            ToBeVpnNotification.expires_at > func.now(),
+        )
+        return (await self.session.execute(stmt)).tuples().one_or_none()
+
     def _recipients(self, draft: NotificationDraft) -> Select[tuple[UUID, int]]:
         users = select(literal(draft.id), User.id).where(
             User.is_blocked.is_(False),

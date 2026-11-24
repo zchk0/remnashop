@@ -41,9 +41,12 @@ from src.core.exceptions import (
     BroadcastRepeatSourceNotFoundError,
 )
 from src.core.utils.validators import is_valid_url
+from src.infrastructure.database.dao.tobevpn_notification import ToBeVpnNotificationDao
 from src.telegram.keyboards import CLOSE_BUTTON_ID, get_broadcast_buttons
 from src.telegram.states import DashboardBroadcast
 from src.telegram.utils import is_double_click
+
+from .getters import TOBEVPN_BROADCAST_ID_PREFIX
 
 MAX_EXCLUDED_TELEGRAM_IDS = 1000
 MAX_TELEGRAM_ID = 9_223_372_036_854_775_807
@@ -174,12 +177,11 @@ async def on_broadcast_list(
     widget: Button,
     dialog_manager: DialogManager,
     broadcast_dao: FromDishka[BroadcastDao],
+    notifications: FromDishka[ToBeVpnNotificationDao],
     notifier: FromDishka[Notifier],
 ) -> None:
     user: TelegramUserDto = dialog_manager.middleware_data[USER_KEY]
-    broadcasts = await broadcast_dao.get_all()
-
-    if not broadcasts:
+    if not await broadcast_dao.get_all() and not await notifications.list_published():
         await notifier.notify_user(user, i18n_key="ntf-broadcast.list-empty")
         return
 
@@ -191,9 +193,15 @@ async def on_broadcast_select(
     callback: CallbackQuery,
     widget: Select,
     dialog_manager: DialogManager,
-    selected_broadcast: UUID,
+    selected_broadcast: str,
 ) -> None:
-    dialog_manager.dialog_data["task_id"] = selected_broadcast
+    if selected_broadcast.startswith(TOBEVPN_BROADCAST_ID_PREFIX):
+        notification_id = selected_broadcast.removeprefix(TOBEVPN_BROADCAST_ID_PREFIX)
+        dialog_manager.dialog_data["tobevpn_notification_id"] = notification_id
+        await dialog_manager.switch_to(state=DashboardBroadcast.TOBEVPN_VIEW)
+        return
+
+    dialog_manager.dialog_data["task_id"] = UUID(selected_broadcast)
     await dialog_manager.switch_to(state=DashboardBroadcast.VIEW)
 
 

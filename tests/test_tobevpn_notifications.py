@@ -5,23 +5,28 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from aiogram.enums import ButtonStyle
+from aiogram_dialog import ShowMode
+from fastapi import HTTPException, Response
 from pydantic import SecretStr
 
-from src.application.common import TranslatorRunner
+from src.application.common import Notifier, TranslatorRunner
+from src.application.common.dao import BroadcastDao
 from src.application.common.uow import UnitOfWork
 from src.application.dto import UserDto
 from src.application.dto.device import AuthTokenDto
 from src.core.config import AppConfig
 from src.core.config.tobevpn import FcmServiceAccount
 from src.core.constants import CONFIG_KEY, CONTAINER_KEY, USER_KEY
-from src.core.enums import BroadcastAudience, Role
+from src.core.enums import BroadcastAudience, BroadcastStatus, Role
 from src.infrastructure.database.dao.tobevpn_notification import (
     NotificationReader,
     PushDelivery,
     ToBeVpnNotificationDao,
 )
 from src.infrastructure.services.fcm import FcmClient
+from src.telegram.routers.dashboard.broadcast.dialog import broadcast
+from src.telegram.routers.dashboard.broadcast.dialog import list as broadcast_list
 from src.telegram.routers.dashboard.broadcast.tobevpn import (
     GUESTS_ONLY_BUTTON,
     enter_content,
@@ -29,9 +34,10 @@ from src.telegram.routers.dashboard.broadcast.tobevpn import (
     select_audience,
     tobevpn_audience,
     tobevpn_confirm,
+    tobevpn_view,
 )
 from src.telegram.states import DashboardBroadcast
-from src.web.endpoints.device_notifications import notification_reader
+from src.web.endpoints.device_notifications import get_notification, notification_reader
 from src.web.endpoints.devices import AuthRequest, DeviceAuthContext, _create_auth_token
 
 
@@ -45,7 +51,7 @@ async def test_entering_broadcast_text_loads_the_preview_with_middleware_config(
 ):
     credentials = SecretStr("test") if push_enabled else None
     config = SimpleNamespace(tobevpn=SimpleNamespace(fcm_service_account_json=credentials))
-    translator = SimpleNamespace(get=MagicMock())
+    translator = SimpleNamespace(get=MagicMock(side_effect=lambda key, **kwargs: key))
     dependencies = {AppConfig: config, TranslatorRunner: translator}
     manager = SimpleNamespace(
         dialog_data={"tobevpn": {}},
@@ -65,8 +71,16 @@ async def test_entering_broadcast_text_loads_the_preview_with_middleware_config(
     manager.switch_to.assert_awaited_once_with(DashboardBroadcast.TOBEVPN_CONTENT)
     manager.switch_to.reset_mock()
 
+    invalid_message = SimpleNamespace(text="Only a title", answer=AsyncMock())
+    await enter_content(invalid_message, None, manager)
+    invalid_message.answer.assert_awaited_once()
+    assert manager.show_mode is ShowMode.NO_UPDATE
+    manager.switch_to.assert_not_awaited()
+
     await enter_content(SimpleNamespace(text="Title <test>\nBody & details"), None, manager)
-    manager.switch_to.assert_awaited_once_with(DashboardBroadcast.TOBEVPN_PREVIEW)
+    manager.switch_to.assert_awaited_once_with(
+        DashboardBroadcast.TOBEVPN_PREVIEW, show_mode=ShowMode.DELETE_AND_SEND
+    )
 
     dialog = SimpleNamespace(load_data=AsyncMock(return_value={}))
     preview = await tobevpn_confirm.load_data(dialog, manager)
@@ -75,9 +89,14 @@ async def test_entering_broadcast_text_loads_the_preview_with_middleware_config(
     assert preview["guests_only"] is guests_only
     assert preview["is_public"] is (not guests_only)
     assert preview["fcm_enabled"] is push_enabled
+    keyboard = await tobevpn_confirm.keyboard.render_keyboard(preview, manager)
+    publish_button = next(
+        button for row in keyboard for button in row if button.callback_data == "publish"
+    )
+    assert publish_button.style == ButtonStyle.SUCCESS
 
 
-async def test_publishing_guest_broadcast_saves_guest_audience():
+async def test_publishing_guest_broadcast_saves_guest_audience_and_channel_action():
     config = SimpleNamespace(
         tobevpn=SimpleNamespace(is_enabled=True, fcm_service_account_json=None)
     )
@@ -100,13 +119,118 @@ async def test_publishing_guest_broadcast_saves_guest_audience():
         },
     )
     await select_audience(None, tobevpn_audience.keyboard.find(GUESTS_ONLY_BUTTON), manager)
+    dialog = SimpleNamespace()
+    await tobevpn_confirm.process_callback(SimpleNamespace(data="plans"), dialog, manager)
+    assert manager.dialog_data["tobevpn"]["action"] == "plans"
+    await tobevpn_confirm.process_callback(SimpleNamespace(data="channel"), dialog, manager)
+    assert manager.dialog_data["tobevpn"]["action"] == "channel"
+    await tobevpn_confirm.process_callback(SimpleNamespace(data="channel"), dialog, manager)
+    assert manager.dialog_data["tobevpn"]["action"] is None
+    await tobevpn_confirm.process_callback(SimpleNamespace(data="channel"), dialog, manager)
     await publish_tobevpn(None, None, manager)
 
     draft = notifications.publish.await_args.args[0]
     assert draft.audience == BroadcastAudience.ALL
     assert draft.guests_only is True
+    assert draft.action == "channel"
     uow.commit.assert_awaited_once()
     assert manager.switch_to.await_args.args == (DashboardBroadcast.TOBEVPN_PUBLISHED,)
+
+
+@pytest.mark.parametrize(
+    ("button", "action"), [(None, None), ("plans", "plans"), ("channel", "url")]
+)
+async def test_notification_details_use_a_generic_url_action_for_external_buttons(button, action):
+    item = SimpleNamespace(
+        id=uuid4(), title="Title", body="Body", published_at=datetime.now(UTC), action=button
+    )
+    notifications = SimpleNamespace(get_visible=AsyncMock(return_value=(item, None)))
+    reader = NotificationReader(key="u:1", user_id=1, is_guest=False)
+    response = await get_notification.__dishka_orig_func__(
+        item.id, reader, notifications, Response()
+    )
+
+    result = response.model_dump(exclude_unset=True)
+    assert result["success"] is True
+    assert result["data"]["action"] == action
+    assert result["data"]["read_at"] is None
+    if action == "url":
+        assert result["data"]["action_url"] == "https://t.me/meow_meow_vpn"
+        assert result["data"]["action_label"] == "Перейти в канал"
+    else:
+        assert "action_url" not in result["data"]
+        assert "action_label" not in result["data"]
+
+
+async def test_broadcast_history_opens_tobevpn_and_telegram_entries():
+    now = datetime.now(UTC)
+    publication_id, task_id = uuid4(), uuid4()
+    publication = SimpleNamespace(
+        title="Title <test>",
+        body="Body & details",
+        published_at=now,
+        is_public=False,
+        guests_only=False,
+    )
+    notifications = SimpleNamespace(
+        list_published=AsyncMock(return_value=[(publication_id, publication.title, now)]),
+        get_publication=AsyncMock(return_value=(publication, 2, 3)),
+    )
+    telegram = SimpleNamespace(get_all=AsyncMock(return_value=[]))
+    translator = SimpleNamespace(get=lambda key, **kwargs: key)
+    dependencies = {
+        BroadcastDao: telegram,
+        Notifier: SimpleNamespace(notify_user=AsyncMock()),
+        ToBeVpnNotificationDao: notifications,
+        TranslatorRunner: translator,
+    }
+    manager = SimpleNamespace(
+        dialog_data={},
+        is_preview=lambda: False,
+        switch_to=AsyncMock(),
+        middleware_data={
+            USER_KEY: UserDto(id=1, telegram_id=1, name="Admin", role=Role.OWNER),
+            CONTAINER_KEY: SimpleNamespace(
+                get=AsyncMock(side_effect=lambda dependency, **kwargs: dependencies[dependency])
+            ),
+        },
+    )
+    manager.middleware_data["dialog_manager"] = manager
+    dialog = SimpleNamespace(load_data=AsyncMock(side_effect=lambda manager: {}))
+    await broadcast.process_callback(SimpleNamespace(data="list"), dialog, manager)
+    manager.switch_to.assert_awaited_once_with(state=DashboardBroadcast.LIST)
+
+    telegram.get_all.return_value = [
+        SimpleNamespace(
+            task_id=task_id, status=BroadcastStatus.COMPLETED, created_at=now - timedelta(days=1)
+        )
+    ]
+    data = await broadcast_list.load_data(dialog, manager)
+    picker = broadcast_list.keyboard.find("broadcast")
+    assert picker is not None
+    buttons = [button for row in await picker.render_keyboard(data, manager) for button in row]
+    assert [button.text for button in buttons] == [
+        "btn-tobevpn-broadcast.title",
+        "btn-broadcast.title",
+    ]
+    await broadcast_list.process_callback(
+        SimpleNamespace(data=buttons[0].callback_data), dialog, manager
+    )
+    manager.switch_to.assert_awaited_with(state=DashboardBroadcast.TOBEVPN_VIEW)
+    view = await tobevpn_view.load_data(dialog, manager)
+    notifications.get_publication.assert_awaited_once_with(publication_id)
+    assert view["read_count"] == 2
+    assert view["recipient_count"] == 3
+    assert view["title"] == "Title &lt;test&gt;"
+    assert view["body"] == "Body &amp; details"
+    notifications.get_publication.return_value = None
+    assert await tobevpn_view.load_data(dialog, manager) == {"publication_available": False}
+
+    await broadcast_list.process_callback(
+        SimpleNamespace(data=buttons[1].callback_data), dialog, manager
+    )
+    manager.switch_to.assert_awaited_with(state=DashboardBroadcast.VIEW)
+    assert manager.dialog_data["task_id"] == task_id
 
 
 async def test_a_linked_device_needs_session_verification_for_targeted_notifications():
