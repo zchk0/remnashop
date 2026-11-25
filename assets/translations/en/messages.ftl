@@ -468,6 +468,11 @@ msg-tobevpn-broadcast-view =
     <b>{ $title }</b>
     { $body }
 msg-tobevpn-broadcast-unavailable = <i>This ToBeVPN broadcast is no longer available.</i>
+msg-tobevpn-broadcast-confirm-delete =
+    Delete <b>{ $title }</b> for everyone?
+
+    The announcement will disappear from recipients' inboxes and the broadcast list.
+msg-tobevpn-broadcast-deleted = The broadcast was deleted for everyone.
 
 msg-broadcast-list = <b>📄 Broadcast list</b>
 msg-broadcast-repeat =

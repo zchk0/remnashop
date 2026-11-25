@@ -87,6 +87,7 @@ class DashboardBroadcast(StatesGroup):
     TOBEVPN_PREVIEW = State()
     TOBEVPN_PUBLISHED = State()
     TOBEVPN_VIEW = State()
+    TOBEVPN_DELETE = State()
 
 
 class DashboardPromocodes(StatesGroup):

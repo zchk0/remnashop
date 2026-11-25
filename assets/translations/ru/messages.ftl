@@ -468,6 +468,11 @@ msg-tobevpn-broadcast-view =
     <b>{ $title }</b>
     { $body }
 msg-tobevpn-broadcast-unavailable = <i>Публикация ToBeVPN больше недоступна.</i>
+msg-tobevpn-broadcast-confirm-delete =
+    Удалить рассылку <b>{ $title }</b> для всех?
+
+    Она исчезнет из ленты получателей и списка рассылок.
+msg-tobevpn-broadcast-deleted = Рассылка удалена для всех.
 
 msg-broadcast-list = <b>📄 Список рассылок</b>
 msg-broadcast-repeat =

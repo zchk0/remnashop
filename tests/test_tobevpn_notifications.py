@@ -34,6 +34,7 @@ from src.telegram.routers.dashboard.broadcast.tobevpn import (
     select_audience,
     tobevpn_audience,
     tobevpn_confirm,
+    tobevpn_delete,
     tobevpn_view,
 )
 from src.telegram.states import DashboardBroadcast
@@ -231,6 +232,69 @@ async def test_broadcast_history_opens_tobevpn_and_telegram_entries():
     )
     manager.switch_to.assert_awaited_with(state=DashboardBroadcast.VIEW)
     assert manager.dialog_data["task_id"] == task_id
+
+
+async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permission():
+    notification_id = uuid4()
+    publication = SimpleNamespace(
+        title="Release",
+        body="Details",
+        published_at=datetime.now(UTC),
+        is_public=True,
+        guests_only=False,
+    )
+    notifications = SimpleNamespace(
+        get_publication=AsyncMock(return_value=(publication, 0, 0)),
+        delete_publication=AsyncMock(),
+    )
+    uow = SimpleNamespace(commit=AsyncMock())
+    dependencies = {
+        ToBeVpnNotificationDao: notifications,
+        UnitOfWork: uow,
+        TranslatorRunner: SimpleNamespace(get=lambda key, **kwargs: key),
+    }
+    owner = UserDto(id=1, telegram_id=1, name="Owner", role=Role.OWNER)
+    manager = SimpleNamespace(
+        dialog_data={"tobevpn_notification_id": str(notification_id)},
+        is_preview=lambda: False,
+        switch_to=AsyncMock(),
+        middleware_data={
+            USER_KEY: owner,
+            CONTAINER_KEY: SimpleNamespace(
+                get=AsyncMock(side_effect=lambda dependency, **kwargs: dependencies[dependency])
+            ),
+        },
+    )
+    manager.middleware_data["dialog_manager"] = manager
+    dialog = SimpleNamespace(load_data=AsyncMock(side_effect=lambda manager: {}))
+    await tobevpn_view.process_callback(SimpleNamespace(data="delete"), dialog, manager)
+    manager.switch_to.assert_awaited_once_with(DashboardBroadcast.TOBEVPN_DELETE, show_mode=None)
+    notifications.delete_publication.assert_not_awaited()
+
+    confirm_data = await tobevpn_delete.load_data(dialog, manager)
+    confirm = tobevpn_delete.keyboard.find("delete_confirm")
+    assert confirm is not None
+    [[button]] = await confirm.render_keyboard(confirm_data, manager)
+    assert button.callback_data == f"delete_confirm:{notification_id}"
+
+    stale = SimpleNamespace(data=f"delete_confirm:{uuid4()}")
+    await tobevpn_delete.process_callback(stale, dialog, manager)
+    manager.middleware_data[USER_KEY] = UserDto(
+        id=2, telegram_id=2, name="Viewer", role=Role.PREVIEW
+    )
+    preview_data = await tobevpn_delete.load_data(dialog, manager)
+    assert not await confirm.render_keyboard(preview_data, manager)
+    callback = SimpleNamespace(data=button.callback_data, answer=AsyncMock())
+    await tobevpn_delete.process_callback(callback, dialog, manager)
+    notifications.delete_publication.assert_not_awaited()
+    uow.commit.assert_not_awaited()
+
+    manager.middleware_data[USER_KEY] = owner
+    await tobevpn_delete.process_callback(callback, dialog, manager)
+    notifications.delete_publication.assert_awaited_once_with(notification_id)
+    uow.commit.assert_awaited_once()
+    manager.switch_to.assert_awaited_with(DashboardBroadcast.LIST)
+    callback.answer.assert_awaited_once_with("msg-tobevpn-broadcast-deleted")
 
 
 async def test_a_linked_device_needs_session_verification_for_targeted_notifications():

@@ -56,6 +56,7 @@ from .tobevpn import (
     tobevpn_audience,
     tobevpn_confirm,
     tobevpn_content,
+    tobevpn_delete,
     tobevpn_plan,
     tobevpn_published,
     tobevpn_view,
@@ -134,6 +135,7 @@ broadcast = Window(
 list = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-broadcast-list"),
+    I18nFormat("ntf-broadcast.list-empty", ~F["broadcasts"]),
     ScrollingGroup(
         Select(
             text=I18nFormat(
@@ -570,4 +572,5 @@ router = Dialog(
     tobevpn_confirm,
     tobevpn_published,
     tobevpn_view,
+    tobevpn_delete,
 )

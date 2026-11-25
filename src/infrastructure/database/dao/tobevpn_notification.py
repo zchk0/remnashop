@@ -160,6 +160,11 @@ class ToBeVpnNotificationDao:
         )
         return (await self.session.execute(stmt)).tuples().one_or_none()
 
+    async def delete_publication(self, notification_id: UUID) -> None:
+        await self.session.execute(
+            delete(ToBeVpnNotification).where(ToBeVpnNotification.id == notification_id)
+        )
+
     def _recipients(self, draft: NotificationDraft) -> Select[tuple[UUID, int]]:
         users = select(literal(draft.id), User.id).where(
             User.is_blocked.is_(False),
@@ -243,7 +248,13 @@ class ToBeVpnNotificationDao:
         return (await self.session.execute(stmt)).tuples().one_or_none()
 
     async def mark_read(self, notification_id: UUID, reader: NotificationReader) -> datetime | None:
-        visible = await self.get_visible(notification_id, reader)
+        # Keep the publication available until the read receipt is saved.
+        stmt = (
+            self._visible(reader)
+            .where(ToBeVpnNotification.id == notification_id)
+            .with_for_update(read=True, key_share=True, of=ToBeVpnNotification)
+        )
+        visible = (await self.session.execute(stmt)).tuples().one_or_none()
         if visible is None:
             return None
         if visible[1] is not None:

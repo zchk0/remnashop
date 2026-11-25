@@ -277,6 +277,7 @@ btn-tobevpn-broadcast =
        *[0] ⬜ Кнопка «Перейти в канал»
     }
     .publish = ✅ Опубликовать в TobeVPN
+    .delete = 🗑️ Удалить для всех
 
 btn-goto =
     .subscription = 💳 Купить подписку

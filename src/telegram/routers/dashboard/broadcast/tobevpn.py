@@ -138,6 +138,10 @@ async def tobevpn_view_getter(
     notification, read_count, recipient_count = publication
     return {
         "publication_available": True,
+        "can_delete": PermissionPolicy.has_permission(
+            dialog_manager.middleware_data[USER_KEY], Permission.BROADCAST
+        ),
+        "notification_id": str(notification_id),
         "published_at": notification.published_at.strftime(DATETIME_VIEW_FORMAT),
         "is_public": notification.is_public,
         "guests_only": notification.guests_only,
@@ -146,6 +150,28 @@ async def tobevpn_view_getter(
         "title": html.escape(notification.title),
         "body": html.escape(notification.body),
     }
+
+
+@inject
+async def delete_tobevpn(
+    callback: CallbackQuery,
+    widget: Select,
+    manager: DialogManager,
+    notification_id: UUID,
+    i18n: FromDishka[TranslatorRunner],
+    notifications: FromDishka[ToBeVpnNotificationDao],
+    uow: FromDishka[UnitOfWork],
+) -> None:
+    user = manager.middleware_data[USER_KEY]
+    if not PermissionPolicy.has_permission(user, Permission.BROADCAST):
+        return
+    if str(notification_id) != manager.dialog_data.get("tobevpn_notification_id"):
+        return
+
+    await notifications.delete_publication(notification_id)
+    await uow.commit()
+    await manager.switch_to(DashboardBroadcast.LIST)
+    await callback.answer(i18n.get("msg-tobevpn-broadcast-deleted"))
 
 
 @inject
@@ -293,8 +319,34 @@ tobevpn_view = Window(
         state=DashboardBroadcast.TOBEVPN_VIEW,
         when="publication_available",
     ),
+    SwitchTo(
+        I18nFormat("btn-tobevpn-broadcast.delete"),
+        id="delete",
+        state=DashboardBroadcast.TOBEVPN_DELETE,
+        when="can_delete",
+        style=Style(ButtonStyle.DANGER),
+    ),
     SwitchTo(I18nFormat("btn-back.general"), id="back", state=DashboardBroadcast.LIST),
     IgnoreUpdate(),
     state=DashboardBroadcast.TOBEVPN_VIEW,
+    getter=tobevpn_view_getter,
+)
+
+tobevpn_delete = Window(
+    I18nFormat("msg-tobevpn-broadcast-confirm-delete", F["publication_available"]),
+    I18nFormat("msg-tobevpn-broadcast-unavailable", ~F["publication_available"]),
+    Select(
+        I18nFormat("btn-common.confirm-delete"),
+        id="delete_confirm",
+        item_id_getter=str,
+        items=lambda data: [data["notification_id"]],
+        type_factory=UUID,
+        on_click=delete_tobevpn,
+        when="can_delete",
+        style=Style(ButtonStyle.DANGER),
+    ),
+    SwitchTo(I18nFormat("btn-common.cancel"), id="cancel", state=DashboardBroadcast.TOBEVPN_VIEW),
+    IgnoreUpdate(),
+    state=DashboardBroadcast.TOBEVPN_DELETE,
     getter=tobevpn_view_getter,
 )
