@@ -9,6 +9,7 @@ btn-common =
     .notification-close = ❌ Закрыть
     .devices-empty = ⚠️ У вас нет подключенных устройств
     .cancel = Отмена
+    .confirm-delete = ✅ Да, удалить
     .next = ▶️ Далее
     .prev = ◀️ Назад
 

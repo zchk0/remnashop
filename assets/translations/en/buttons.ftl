@@ -9,6 +9,7 @@ btn-common =
     .notification-close = ❌ Close
     .devices-empty = ⚠️ You have no connected devices
     .cancel = Cancel
+    .confirm-delete = ✅ Yes, delete
     .next = ▶️ Next
     .prev = ◀️ Previous
 

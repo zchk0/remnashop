@@ -17,14 +17,17 @@ from src.application.dto import UserDto
 from src.application.dto.device import AuthTokenDto
 from src.core.config import AppConfig
 from src.core.config.tobevpn import FcmServiceAccount
-from src.core.constants import CONFIG_KEY, CONTAINER_KEY, USER_KEY
+from src.core.constants import ASSETS_DIR, CONFIG_KEY, CONTAINER_KEY, USER_KEY
 from src.core.enums import BroadcastAudience, BroadcastStatus, Role
 from src.infrastructure.database.dao.tobevpn_notification import (
     NotificationReader,
     PushDelivery,
     ToBeVpnNotificationDao,
 )
+from src.infrastructure.di.providers.retort import RetortProvider
 from src.infrastructure.services.fcm import FcmClient
+from src.infrastructure.services.i18n import LayeredFileStorage
+from src.infrastructure.services.translator import TranslatorRunnerImpl
 from src.telegram.routers.dashboard.broadcast.dialog import broadcast
 from src.telegram.routers.dashboard.broadcast.dialog import list as broadcast_list
 from src.telegram.routers.dashboard.broadcast.tobevpn import (
@@ -234,7 +237,12 @@ async def test_broadcast_history_opens_tobevpn_and_telegram_entries():
     assert manager.dialog_data["task_id"] == task_id
 
 
-async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permission():
+@pytest.mark.parametrize(
+    ("locale", "confirm_label"), [("ru", "✅ Да, удалить"), ("en", "✅ Yes, delete")]
+)
+async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permission(
+    tmp_path, locale, confirm_label
+):
     notification_id = uuid4()
     publication = SimpleNamespace(
         title="Release",
@@ -248,10 +256,14 @@ async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permi
         delete_publication=AsyncMock(),
     )
     uow = SimpleNamespace(commit=AsyncMock())
+    translations = LayeredFileStorage(tmp_path, ASSETS_DIR / "translations")
+    i18n = TranslatorRunnerImpl(
+        translations.get_translators_for_language(locale), RetortProvider().get_retort()
+    )
     dependencies = {
         ToBeVpnNotificationDao: notifications,
         UnitOfWork: uow,
-        TranslatorRunner: SimpleNamespace(get=lambda key, **kwargs: key),
+        TranslatorRunner: i18n,
     }
     owner = UserDto(id=1, telegram_id=1, name="Owner", role=Role.OWNER)
     manager = SimpleNamespace(
@@ -272,10 +284,13 @@ async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permi
     notifications.delete_publication.assert_not_awaited()
 
     confirm_data = await tobevpn_delete.load_data(dialog, manager)
+    assert "<b>Release</b>" in await tobevpn_delete.render_text(confirm_data, manager)
+    [[button], [cancel]] = await tobevpn_delete.keyboard.render_keyboard(confirm_data, manager)
+    assert button.text == confirm_label
+    assert button.callback_data == f"delete_confirm:{notification_id}"
+    assert cancel.callback_data == "cancel"
     confirm = tobevpn_delete.keyboard.find("delete_confirm")
     assert confirm is not None
-    [[button]] = await confirm.render_keyboard(confirm_data, manager)
-    assert button.callback_data == f"delete_confirm:{notification_id}"
 
     stale = SimpleNamespace(data=f"delete_confirm:{uuid4()}")
     await tobevpn_delete.process_callback(stale, dialog, manager)
@@ -294,7 +309,7 @@ async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permi
     notifications.delete_publication.assert_awaited_once_with(notification_id)
     uow.commit.assert_awaited_once()
     manager.switch_to.assert_awaited_with(DashboardBroadcast.LIST)
-    callback.answer.assert_awaited_once_with("msg-tobevpn-broadcast-deleted")
+    callback.answer.assert_awaited_once_with(i18n.get("msg-tobevpn-broadcast-deleted"))
 
 
 async def test_a_linked_device_needs_session_verification_for_targeted_notifications():
