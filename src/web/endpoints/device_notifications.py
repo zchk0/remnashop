@@ -86,7 +86,7 @@ async def notification_reader(
     if auth.session_id is None:
         raise HTTPException(status_code=401, detail="Missing device session")
 
-    if auth.telegram_id is not None and auth.verified_telegram_id == auth.telegram_id:
+    if auth.telegram_id is not None:
         user = await user_dao.get_by_telegram_id(auth.telegram_id)
         if user is not None:
             if user.is_blocked:

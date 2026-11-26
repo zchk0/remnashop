@@ -312,7 +312,7 @@ async def test_tobevpn_delete_confirms_the_selected_publication_and_checks_permi
     callback.answer.assert_awaited_once_with(i18n.get("msg-tobevpn-broadcast-deleted"))
 
 
-async def test_a_linked_device_needs_session_verification_for_targeted_notifications():
+async def test_a_linked_device_reads_notifications_for_its_account():
     session_id = uuid4()
     users = SimpleNamespace(
         get_by_telegram_id=AsyncMock(return_value=SimpleNamespace(id=7, is_blocked=False))
@@ -320,28 +320,22 @@ async def test_a_linked_device_needs_session_verification_for_targeted_notificat
     auth = DeviceAuthContext(device_id="phone", session_id=session_id, telegram_id=123)
     resolve_reader = notification_reader.__dishka_orig_func__
 
-    assert await resolve_reader(auth, users) == NotificationReader(
-        key=f"s:{session_id}", user_id=None, is_guest=False
-    )
-    users.get_by_telegram_id.assert_not_awaited()
-
-    auth.verified_telegram_id = 123
-    assert await resolve_reader(auth, users) == NotificationReader(
-        key="u:7", user_id=7, is_guest=False
-    )
+    account_reader = NotificationReader(key="u:7", user_id=7, is_guest=False)
+    assert await resolve_reader(auth, users) == account_reader
     users.get_by_telegram_id.assert_awaited_once_with(123)
 
-    auth.telegram_id = 456
-    assert await resolve_reader(auth, users) == NotificationReader(
-        key=f"s:{session_id}", user_id=None, is_guest=False
-    )
+    auth.verified_telegram_id = 456
+    users.get_by_telegram_id.reset_mock()
+    assert await resolve_reader(auth, users) == account_reader
+    users.get_by_telegram_id.assert_awaited_once_with(123)
 
     auth.telegram_id = None
-    auth.verified_telegram_id = None
     auth.panel_user_id = 42
+    users.get_by_telegram_id.reset_mock()
     assert await resolve_reader(auth, users) == NotificationReader(
         key=f"s:{session_id}", user_id=None, is_guest=True
     )
+    users.get_by_telegram_id.assert_not_awaited()
 
 
 async def test_existing_auth_token_cannot_move_to_new_session_for_same_device():
