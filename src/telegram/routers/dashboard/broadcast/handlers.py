@@ -556,6 +556,22 @@ async def on_registration_exclusion_select(
 
 
 @inject
+async def on_link_preview_toggle(
+    callback: CallbackQuery,
+    widget: Button,
+    dialog_manager: DialogManager,
+    retort: FromDishka[Retort],
+) -> None:
+    payload = dialog_manager.dialog_data.get("payload", {})
+    _update_payload(
+        dialog_manager,
+        retort,
+        link_preview_enabled=not payload.get("link_preview_enabled", False),
+    )
+    dialog_manager.dialog_data.pop("broadcast_confirm", None)
+
+
+@inject
 async def on_preview(
     callback: CallbackQuery,
     widget: Button,

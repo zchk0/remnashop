@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from xml.etree.ElementTree import fromstring
 
 import pytest
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.formatting import Bold, Text
 from fluent_compiler.bundle import FluentBundle
 from fluentogram.translator import FluentTranslator
@@ -22,11 +23,13 @@ from src.application.events.system import (
     WebhookErrorEvent,
 )
 from src.application.events.user import ReferralAttachedEvent
+from src.core.constants import RAW_BUTTON_TEXT_PREFIX, USER_KEY
 from src.core.enums import Locale, MediaType, PlanType
 from src.core.utils.i18n_helpers import i18n_format_days, i18n_format_traffic_limit
 from src.infrastructure.di.providers.retort import RetortProvider
 from src.infrastructure.services.notification import NotificationService
 from src.infrastructure.services.translator import TranslatorRunnerImpl
+from src.telegram.routers.dashboard.broadcast.handlers import on_link_preview_toggle, on_preview
 
 NAME = '<🐈 Alice & "Bob">'
 REASON = 'Bad Request: Unsupported start tag "<invalid>" & connection failed'
@@ -182,6 +185,7 @@ async def test_notification_delivery_preserves_safe_html(translator, destination
             payload,
             media_type=media_type,
             media=MediaDescriptorDto(kind="bytes", value="", filename="notice.txt"),
+            link_preview_enabled=True,
         )
     if destination == "route":
         await service._send_to_route(
@@ -194,6 +198,51 @@ async def test_notification_delivery_preserves_safe_html(translator, destination
     sender.assert_awaited_once()
     sent = sender.await_args.kwargs
     assert NAME in plain_text(sent["caption" if media_type else "text"])
+    if media_type:
+        assert "link_preview_options" not in sent
+    else:
+        assert sent["link_preview_options"].is_disabled is True
     if destination == "route":
         assert sent["message_thread_id"] == 4
     publisher.publish.assert_not_awaited()
+
+
+@pytest.mark.parametrize("button_url", [None, "https://t.me/example/1"])
+async def test_broadcast_link_preview_uses_the_saved_toggle(translator, button_url):
+    keyboard = [[InlineKeyboardButton(text="btn-menu.support", url="https://example.com/help")]]
+    if button_url:
+        button = InlineKeyboardButton(text=f"{RAW_BUTTON_TEXT_PREFIX}Open", url=button_url)
+        keyboard.append([button])
+    draft = {
+        "i18n_key": "raw-message",
+        "i18n_kwargs": {"content": "Read https://example.com/news"},
+        "reply_markup": InlineKeyboardMarkup(inline_keyboard=keyboard).model_dump(),
+        "delete_after": None,
+    }
+    manager = SimpleNamespace(
+        dialog_data={"payload": draft, "broadcast_confirm": 123},
+        middleware_data={USER_KEY: UserDto(telegram_id=123, name="Admin")},
+    )
+    retort = RetortProvider().get_retort()
+    bot = AsyncMock()
+    notifier = NotificationService(
+        bot=bot,
+        config=SimpleNamespace(default_locale=Locale.RU),
+        translator_hub=SimpleNamespace(get_translator_by_locale=lambda locale: translator),
+        user_dao=AsyncMock(),
+        settings_dao=AsyncMock(),
+        worker=AsyncMock(),
+        event_publisher=AsyncMock(),
+    )
+
+    await on_link_preview_toggle.__dishka_orig_func__(None, None, manager, retort)
+    await on_preview.__dishka_orig_func__(None, None, manager, retort, notifier)
+    sent = bot.send_message.await_args.kwargs
+    assert sent["link_preview_options"].is_disabled is False
+    assert sent["link_preview_options"].url == button_url
+    assert sent["text"] == draft["i18n_kwargs"]["content"]
+    assert "broadcast_confirm" not in manager.dialog_data
+
+    await on_link_preview_toggle.__dishka_orig_func__(None, None, manager, retort)
+    await on_preview.__dishka_orig_func__(None, None, manager, retort, notifier)
+    assert bot.send_message.await_args.kwargs["link_preview_options"].is_disabled is True

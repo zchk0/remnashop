@@ -24,6 +24,7 @@ from .getters import (
     buttons_getter,
     custom_button_getter,
     excluded_users_getter,
+    link_preview_getter,
     list_getter,
     plans_getter,
     repeat_getter,
@@ -44,6 +45,7 @@ from .handlers import (
     on_delete,
     on_excluded_users_input,
     on_excluded_users_reset,
+    on_link_preview_toggle,
     on_plan_select,
     on_preview,
     on_registration_exclusion_select,
@@ -324,6 +326,13 @@ plan = Window(
     getter=plans_getter,
 )
 
+link_preview_toggle = Button(
+    I18nFormat("btn-broadcast.link-preview", enabled=F["link_preview_enabled"]),
+    id="link_preview",
+    on_click=on_link_preview_toggle,
+    when=F["can_preview_links"],
+)
+
 send = Window(
     Banner(BannerName.DASHBOARD),
     I18nFormat("msg-broadcast-send"),
@@ -346,6 +355,7 @@ send = Window(
             state=DashboardBroadcast.EXCLUDED_USERS,
         ),
     ),
+    link_preview_toggle,
     Row(
         Button(
             I18nFormat("btn-broadcast.preview"),
@@ -377,7 +387,7 @@ send = Window(
     ),
     IgnoreUpdate(),
     state=DashboardBroadcast.SEND,
-    getter=send_getter,
+    getter=[send_getter, link_preview_getter],
 )
 
 content = Window(
@@ -465,6 +475,7 @@ custom_button = Window(
             state=DashboardBroadcast.CUSTOM_BUTTON_URL,
         ),
     ),
+    link_preview_toggle,
     Row(
         Button(
             I18nFormat("btn-broadcast.custom-button-delete"),
@@ -482,7 +493,7 @@ custom_button = Window(
     ),
     IgnoreUpdate(),
     state=DashboardBroadcast.CUSTOM_BUTTON,
-    getter=custom_button_getter,
+    getter=[custom_button_getter, link_preview_getter],
 )
 
 custom_button_text = Window(

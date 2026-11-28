@@ -11,6 +11,7 @@ tests/*
 !tests/test_rivarapay.py
 !tests/test_payment_timeouts.py
 !tests/test_payment_gateway_diagnostics.py
+!tests/test_valutix_report.py
 !tests/test_promocode_recovery.py
 !tests/test_broadcast_registration_exclusion.py
 !tests/test_notification_keyboard.py

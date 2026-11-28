@@ -221,6 +221,10 @@ btn-broadcast =
     .custom-button-text = ✏️ Edit text
     .custom-button-url = 🔗 Edit link
     .custom-button-delete = 🗑️ Delete custom button
+    .link-preview = { $enabled ->
+        [1] 🔘
+       *[0] ⚪
+    } Link previews
     .excluded-users = 🚫 Exclusions ({ $count } IDs, { $registration_days ->
         [7] older than 7 days
         [30] older than 30 days

@@ -221,6 +221,10 @@ btn-broadcast =
     .custom-button-text = ✏️ Изменить текст
     .custom-button-url = 🔗 Изменить ссылку
     .custom-button-delete = 🗑️ Удалить свою кнопку
+    .link-preview = { $enabled ->
+        [1] 🔘
+       *[0] ⚪
+    } Предпросмотр ссылок
     .excluded-users = 🚫 Исключения ({ $count } ID, { $registration_days ->
         [7] старше 7 дней
         [30] старше 30 дней

@@ -18,6 +18,7 @@ from aiogram.types import (
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    LinkPreviewOptions,
     Message,
     ReplyKeyboardMarkup,
 )
@@ -321,7 +322,7 @@ class NotificationService(Notifier):
                     chat_id=chat_id,  # type:ignore[arg-type]
                     text=text,
                     message_thread_id=thread_id,
-                    disable_web_page_preview=True,
+                    link_preview_options=self._get_link_preview_options(payload),
                     disable_notification=payload.disable_notification,
                     reply_markup=reply_markup,
                 )
@@ -446,7 +447,7 @@ class NotificationService(Notifier):
                 message = await self.bot.send_message(
                     chat_id=user.telegram_id,
                     text=text,
-                    disable_web_page_preview=True,
+                    link_preview_options=self._get_link_preview_options(payload),
                     **kwargs,
                 )
             elif payload.media:
@@ -479,6 +480,24 @@ class NotificationService(Notifier):
         except Exception as e:
             logger.exception(f"Failed to send notification to {user.log}: {e}")
             raise
+
+    @staticmethod
+    def _get_link_preview_options(payload: MessagePayloadDto) -> LinkPreviewOptions:
+        if not payload.link_preview_enabled:
+            return LinkPreviewOptions(is_disabled=True)
+
+        url = None
+        if isinstance(payload.reply_markup, InlineKeyboardMarkup):
+            url = next(
+                (
+                    button.url
+                    for row in payload.reply_markup.inline_keyboard
+                    for button in row
+                    if button.url and button.text.startswith(RAW_BUTTON_TEXT_PREFIX)
+                ),
+                None,
+            )
+        return LinkPreviewOptions(is_disabled=False, url=url)
 
     def _get_media_method(self, payload: MessagePayloadDto) -> Optional[Callable[..., Any]]:
         if payload.is_photo:

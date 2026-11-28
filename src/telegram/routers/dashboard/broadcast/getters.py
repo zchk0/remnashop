@@ -76,6 +76,17 @@ async def send_getter(
     }
 
 
+async def link_preview_getter(
+    dialog_manager: DialogManager,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    payload = dialog_manager.dialog_data.get("payload", {})
+    return {
+        "link_preview_enabled": payload.get("link_preview_enabled", False),
+        "can_preview_links": not payload.get("media_type"),
+    }
+
+
 async def excluded_users_getter(
     dialog_manager: DialogManager,
     **kwargs: Any,

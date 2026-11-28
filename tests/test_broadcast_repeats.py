@@ -37,6 +37,7 @@ from src.core.exceptions import (
 from src.core.utils.time import datetime_now
 from src.infrastructure.database.dao.broadcast import BroadcastDaoImpl
 from src.infrastructure.database.models import Broadcast, BroadcastDelivery
+from src.infrastructure.di.providers.retort import RetortProvider
 from src.infrastructure.taskiq.tasks.broadcast import delete_broadcast_task, send_broadcast_task
 from src.telegram.routers.dashboard.broadcast.getters import repeat_getter, send_getter
 from src.telegram.routers.dashboard.broadcast.handlers import (
@@ -956,7 +957,11 @@ async def test_repeat_button_selects_mode_through_confirmation_and_worker(
 ):
     flow = _flow(monkeypatch)
     source = _completed_broadcast(uuid4())
-    source.payload = MessagePayloadDto(i18n_key="msg-broadcast", i18n_kwargs={"content": "Hello"})
+    source.payload = MessagePayloadDto(
+        i18n_key="msg-broadcast",
+        i18n_kwargs={"content": "Hello"},
+        link_preview_enabled=True,
+    )
     await flow.history.create(source)
     for telegram_id in (101, 102):
         await flow.history.record_delivery(source.campaign_id, telegram_id)
@@ -967,10 +972,7 @@ async def test_repeat_button_selects_mode_through_confirmation_and_worker(
         dialog_data={"task_id": source.task_id, "excluded_telegram_ids": [999]},
         switch_to=AsyncMock(),
     )
-    retort = SimpleNamespace(
-        dump=lambda payload, kind: {"i18n_kwargs": payload.i18n_kwargs},
-        load=lambda payload, kind: source.payload,
-    )
+    retort = RetortProvider().get_retort()
     notifier = SimpleNamespace(notify_user=AsyncMock())
     await on_repeat.__dishka_orig_func__(
         None, SimpleNamespace(widget_id=button_id), dialog, flow.history, retort, notifier
@@ -995,6 +997,7 @@ async def test_repeat_button_selects_mode_through_confirmation_and_worker(
     await on_send.__dishka_orig_func__(None, None, dialog, retort, notifier, start)
     assert scheduled[0].exclude_delivered is exclude_delivered
     assert scheduled[0].source_task_id == source.task_id
+    assert scheduled[0].payload.link_preview_enabled
     created = flow.history.broadcasts[dialog.dialog_data["task_id"]]
     assert created.campaign_id == source.campaign_id
     assert created.total_count == total

@@ -26,6 +26,7 @@ class MessagePayloadDto:
     delete_after: Optional[int] = 5
     message_effect: Optional[MessageEffectId] = None
     disable_notification: bool = False
+    link_preview_enabled: bool = False
 
     @property
     def is_text(self) -> bool:
