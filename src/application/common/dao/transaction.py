@@ -19,6 +19,14 @@ class TransactionDao(Protocol):
 
     async def get_all(self, limit: int = 100, offset: int = 0) -> list[TransactionDto]: ...
 
+    async def list_valutix_order_ids(
+        self,
+        created_from: datetime,
+        created_until: datetime,
+        after_id: int,
+        limit: int,
+    ) -> list[tuple[int, UUID]]: ...
+
     async def get_by_status(self, status: TransactionStatus) -> list[TransactionDto]: ...
 
     async def update_status(

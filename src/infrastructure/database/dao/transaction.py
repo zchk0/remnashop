@@ -7,7 +7,7 @@ from adaptix import Retort
 from adaptix.conversion import ConversionRetort
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy import Numeric, and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.common.dao import TransactionDao
@@ -105,6 +105,29 @@ class TransactionDaoImpl(TransactionDao):
             f"with limit '{limit}' and offset '{offset}'"
         )
         return self._convert_to_dto_list(db_transactions)
+
+    async def list_valutix_order_ids(
+        self,
+        created_from: datetime,
+        created_until: datetime,
+        after_id: int,
+        limit: int,
+    ) -> list[tuple[int, UUID]]:
+        stmt = (
+            select(Transaction.id, Transaction.payment_id)
+            .where(
+                Transaction.gateway_type == PaymentGatewayType.VALUTIX,
+                Transaction.created_at >= created_from,
+                Transaction.created_at < created_until,
+                Transaction.id > after_id,
+                # Free checkouts only have a local payment ID.
+                Transaction.pricing["final_amount"].as_string().cast(Numeric) > 0,
+            )
+            .order_by(Transaction.id)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.tuples().all())
 
     async def get_by_status(self, status: TransactionStatus) -> list[TransactionDto]:
         stmt = select(Transaction).where(Transaction.status == status)

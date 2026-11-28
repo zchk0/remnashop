@@ -10,6 +10,7 @@ from aiogram import Bot
 from fastapi import Request
 from httpx import AsyncClient, HTTPStatusError
 from loguru import logger
+from pydantic import AwareDatetime, BaseModel, Field, StrictBool
 
 from src.application.dto import PaymentGatewayDto, PaymentResultDto
 from src.application.dto.payment_gateway import ValutixGatewaySettingsDto
@@ -17,6 +18,16 @@ from src.core.config import AppConfig
 from src.core.enums import TransactionStatus
 
 from .base import BasePaymentGateway
+
+
+class ValutixOrder(BaseModel):
+    id: UUID
+    status: str
+    currency: str
+    is_test: StrictBool = Field(alias="isTest")
+    created_at: AwareDatetime = Field(alias="createdAt")
+    settlement_currency: str | None = Field(default=None, alias="settlementCurrency")
+    received: Decimal | None = None
 
 
 # https://docs.panel.valutix.kz/ru/docs
@@ -69,6 +80,14 @@ class ValutixGateway(BasePaymentGateway):
         except Exception as e:
             logger.exception(f"Unexpected error creating Valutix payment: {e}")
             raise
+
+    async def get_order(self, order_id: UUID) -> ValutixOrder:
+        response = await self._client.get(f"v1/orders/{order_id}")
+        response.raise_for_status()
+        order = ValutixOrder.model_validate_json(response.content)
+        if order.id != order_id:
+            raise ValueError("Valutix returned an unexpected order ID")
+        return order
 
     async def handle_webhook(self, request: Request) -> Union[tuple[UUID, TransactionStatus], None]:
         logger.debug("Received ValutixGateway webhook request")

@@ -43,6 +43,7 @@ class AppConfig(BaseConfig, env_prefix="APP_"):
     crypt_key: SecretStr
     jwt_secret: Optional[SecretStr] = None
     api_key: Optional[SecretStr] = None
+    valutix_report_token: SecretStr | None = None
     assets_dir: Path = ASSETS_DIR
     origins: StringList = StringList("")
     swagger_enabled: bool = False

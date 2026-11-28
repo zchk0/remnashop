@@ -20,6 +20,7 @@ from .endpoints import (
     remnawave_router,
 )
 from .endpoints.device_notifications import router as device_notifications_router
+from .endpoints.valutix_report import router as valutix_report_router
 
 
 def resolve_cors(origins: list[str]) -> tuple[list[str], bool]:
@@ -51,6 +52,8 @@ def get_app(config: AppConfig, dispatcher: Dispatcher) -> FastAPI:
     app.include_router(payments_router)
     app.include_router(remnawave_router)
     app.include_router(banners_router)
+    if config.valutix_report_token:
+        app.include_router(valutix_report_router)
     if config.tobevpn.is_enabled:
         app.include_router(devices_router)
         app.include_router(device_notifications_router)
